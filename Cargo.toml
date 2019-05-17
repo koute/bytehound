@@ -1,5 +1,5 @@
 [workspace]
-members = ["common", "lz4-compress", "jemallocator", "preload", "cli-core", "cli", "server-core", "gather"]
+members = ["common", "lz4-compress", "jemallocator", "preload", "cli-core", "cli", "server-core", "gather", "integration-tests"]
 
 [profile.dev]
 opt-level = 2
