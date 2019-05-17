@@ -24,11 +24,11 @@
 ## Screenshots
 
 <p align="center">
-    <img src="screenshot_gui_allocations.png">
+    <img src="screenshot_gui_graphs.png">
 </p>
 
 <p align="center">
-    <img src="screenshot_gui_graphs.png">
+    <img src="screenshot_gui_allocations.png">
 </p>
 
 ## Building
