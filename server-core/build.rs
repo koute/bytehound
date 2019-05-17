@@ -48,6 +48,8 @@ fn main() {
         }
     }
 
+    assert!( webui_dir.join( "node_modules" ).exists() );
+
     let mut child = Command::new( "/bin/sh" )
         .args( &[ "-c", "$(yarn bin)/parcel build src/index.html -d ../target/webui" ] )
         .current_dir( &webui_dir )
