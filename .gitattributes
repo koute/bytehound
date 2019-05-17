@@ -1,1 +1,2 @@
-jemallocator linguist-vendored
+jemallocator/* linguist-vendored
+lz4-compress/* linguist-vendored
