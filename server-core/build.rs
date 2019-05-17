@@ -28,61 +28,78 @@ fn main() {
     let webui_dir = crate_root.join( ".." ).join( "webui" );
     let webui_out_dir = crate_root.join( ".." ).join( "target" ).join( "webui" );
 
-    let _ = fs::remove_dir_all( &webui_out_dir );
+    struct Lock {
+        semaphore: Option< semalock::Semalock >
+    }
 
-    if !webui_dir.join( "node_modules" ).exists() {
-        let mut child = Command::new( "yarn" )
-            .args( &[ "install" ] )
-            .current_dir( &webui_dir )
-            .spawn()
-            .expect( "cannot launch a child process to install the dependencies for the WebUI" );
-
-        match child.wait() {
-            Err( _ ) => {
-                panic!( "Failed to install the dependencies for the WebUI!" );
-            },
-            Ok( status ) if !status.success() => {
-                panic!( "Failed to install the dependencies for the WebUI; child process exited with error code {:?}! You might want to try to run 'rm -Rf ~/.cache/yarn' and try again.", status.code() );
-            },
-            Ok( _ ) => {}
+    impl Drop for Lock {
+        fn drop( &mut self ) {
+            let _ = self.semaphore.take().unwrap().unlink();
         }
     }
 
-    assert!( webui_dir.join( "node_modules" ).exists() );
+    let lock_path = crate_root.join( ".." ).join( "target" ).join( ".webui-lock" );
+    let mut lock = Lock {
+        semaphore: Some( semalock::Semalock::new( &lock_path ).expect( "failed to acquire a semaphore" ) )
+    };
 
-    let mut child = Command::new( "/bin/sh" )
-        .args( &[ "-c", "$(yarn bin)/parcel build src/index.html -d ../target/webui" ] )
-        .current_dir( &webui_dir )
-        .spawn()
-        .expect( "cannot launch a child process to build the WebUI" );
+    lock.semaphore.as_mut().unwrap().with( |_| {
+        let _ = fs::remove_dir_all( &webui_out_dir );
 
-    match child.wait() {
-        Err( _ ) => {
-            panic!( "Failed to build WebUI!" );
-        },
-        Ok( status ) if !status.success() => {
-            panic!( "Failed to build WebUI; child process exited with error code {:?}!", status.code() );
-        },
-        Ok( _ ) => {}
-    }
+        if !webui_dir.join( "node_modules" ).exists() {
+            let mut child = Command::new( "yarn" )
+                .args( &[ "install" ] )
+                .current_dir( &webui_dir )
+                .spawn()
+                .expect( "cannot launch a child process to install the dependencies for the WebUI" );
 
-    let webui_out_dir = webui_out_dir.canonicalize().unwrap();
-    let mut assets: Vec< PathBuf > = Vec::new();
-    grab_paths( &webui_out_dir, &mut assets );
+            match child.wait() {
+                Err( _ ) => {
+                    panic!( "Failed to install the dependencies for the WebUI!" );
+                },
+                Ok( status ) if !status.success() => {
+                    panic!( "Failed to install the dependencies for the WebUI; child process exited with error code {:?}! You might want to try to run 'rm -Rf ~/.cache/yarn' and try again.", status.code() );
+                },
+                Ok( _ ) => {}
+            }
+        }
 
-    let mut fp = File::create( src_out_dir.join( "webui_assets.rs" ) ).unwrap();
-    writeln!( fp, "#[cfg(not(test))]" ).unwrap();
-    writeln!( fp, "static WEBUI_ASSETS: &'static [(&'static str, &'static [u8])] = &[" ).unwrap();
-    for asset in &assets {
-        let target_path = asset.canonicalize().unwrap();
-        let key = target_path.strip_prefix( &webui_out_dir ).unwrap();
-        writeln!( fp, r#"    ("{}", include_bytes!( "{}" )),"#, key.to_str().unwrap(), target_path.to_str().unwrap() ).unwrap();
-    }
-    writeln!( fp, "];" ).unwrap();
+        assert!( webui_dir.join( "node_modules" ).exists() );
 
-    writeln!( fp, "#[cfg(test)]" ).unwrap();
-    writeln!( fp, "static WEBUI_ASSETS: &'static [(&'static str, &'static [u8])] = &[" ).unwrap();
-    writeln!( fp, "];" ).unwrap();
+        let mut child = Command::new( "/bin/sh" )
+            .args( &[ "-c", "$(yarn bin)/parcel build src/index.html -d ../target/webui" ] )
+            .current_dir( &webui_dir )
+            .spawn()
+            .expect( "cannot launch a child process to build the WebUI" );
+
+        match child.wait() {
+            Err( _ ) => {
+                panic!( "Failed to build WebUI!" );
+            },
+            Ok( status ) if !status.success() => {
+                panic!( "Failed to build WebUI; child process exited with error code {:?}!", status.code() );
+            },
+            Ok( _ ) => {}
+        }
+
+        let webui_out_dir = webui_out_dir.canonicalize().unwrap();
+        let mut assets: Vec< PathBuf > = Vec::new();
+        grab_paths( &webui_out_dir, &mut assets );
+
+        let mut fp = File::create( src_out_dir.join( "webui_assets.rs" ) ).unwrap();
+        writeln!( fp, "#[cfg(not(test))]" ).unwrap();
+        writeln!( fp, "static WEBUI_ASSETS: &'static [(&'static str, &'static [u8])] = &[" ).unwrap();
+        for asset in &assets {
+            let target_path = asset.canonicalize().unwrap();
+            let key = target_path.strip_prefix( &webui_out_dir ).unwrap();
+            writeln!( fp, r#"    ("{}", include_bytes!( "{}" )),"#, key.to_str().unwrap(), target_path.to_str().unwrap() ).unwrap();
+        }
+        writeln!( fp, "];" ).unwrap();
+
+        writeln!( fp, "#[cfg(test)]" ).unwrap();
+        writeln!( fp, "static WEBUI_ASSETS: &'static [(&'static str, &'static [u8])] = &[" ).unwrap();
+        writeln!( fp, "];" ).unwrap();
+    }).unwrap();
 
     let mut paths: Vec< PathBuf > = Vec::new();
     paths.push( webui_dir.join( ".babelrc" ) );
