@@ -25,4 +25,5 @@ cargo test -p memory-profiler-cli
 
 if [ "$IS_NIGHTLY" = "1" ]; then
     ./ci/build_for_deployment.sh
+    cargo test -p integration-tests
 fi
