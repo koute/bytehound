@@ -14,7 +14,15 @@ else
 fi
 set -e
 
-cargo check --all
+cargo check -p common
+if [ "$IS_NIGHTLY" = "1" ]; then
+    cargo check -p memory-profiler
+fi
+cargo check -p cli-core
+cargo check -p server-core
+cargo check -p memory-profiler-gather
+cargo check -p memory-profiler-cli
+
 cargo test -p common
 if [ "$IS_NIGHTLY" = "1" ]; then
     cargo test -p memory-profiler
