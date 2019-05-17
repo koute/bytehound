@@ -23,3 +23,6 @@ parking_lot = "0.7"
 common = { path = "../common" }
 mime_guess = "1"
 hashbrown = "0.2"
+
+[build-dependencies]
+semalock = "0.2"
