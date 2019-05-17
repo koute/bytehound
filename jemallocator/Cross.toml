@@ -1,0 +1,8 @@
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE",
+    "RUST_TEST_THREADS",
+    "RUST_TEST_NOCAPTURE",
+    "JEMALLOC_SYS_RUN_TESTS",
+    "JEMALLOC_SYS_VERIFY_CONFIGURE",
+]

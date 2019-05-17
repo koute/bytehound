@@ -1,0 +1,12 @@
+[package]
+name = "systest"
+version = "0.1.0"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+build = "build.rs"
+
+[dependencies]
+jemalloc-sys = { path = "../jemalloc-sys" }
+libc = "0.2"
+
+[build-dependencies]
+ctest = "0.2"

@@ -1,0 +1,8 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+
+script:
+  - ./ci/run_tests.sh

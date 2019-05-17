@@ -1,0 +1,30 @@
+[package]
+name = "jemallocator"
+version = "0.1.9"
+authors = ["Alex Crichton <alex@alexcrichton.com>"]
+license = "MIT/Apache-2.0"
+readme = "README.md"
+keywords = ["allocator"]
+repository = "https://github.com/alexcrichton/jemallocator"
+homepage = "https://github.com/alexcrichton/jemallocator"
+documentation = "https://docs.rs/jemallocator"
+description = """
+A Rust allocator backed by jemalloc
+"""
+
+[lib]
+test = false
+bench = false
+
+[dependencies]
+jemalloc-sys = { path = "jemalloc-sys", version = "0.1.6", default-features = false }
+libc = "0.2.8"
+
+[features]
+alloc_trait = []
+default = ["bg_thread"]
+profiling = ["jemalloc-sys/profiling"]
+debug = ["jemalloc-sys/debug"]
+stats = ["jemalloc-sys/stats"]
+bg_thread = ["jemalloc-sys/bg_thread"]
+unprefixed_malloc_on_supported_platforms = ["jemalloc-sys/unprefixed_malloc_on_supported_platforms"]

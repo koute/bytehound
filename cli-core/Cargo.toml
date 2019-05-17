@@ -1,0 +1,33 @@
+[package]
+name = "cli-core"
+version = "0.1.0"
+authors = ["Jan Bujak <jan.bujak@nokia.com>"]
+edition = "2018"
+
+[dependencies]
+byteorder = "1"
+ctrlc = "3"
+goblin = "0.0.21"
+string-interner = "0.7"
+cpp_demangle = "0.2"
+chrono = "0.4"
+libc = "0.2"
+log = "0.4"
+lru = "0.1"
+fxhash = "0.2"
+bitflags = "1"
+inferno = { version = "0.7", default-features = false }
+lazy_static = "1"
+hashbrown = "0.2"
+parking_lot = "0.7"
+crossbeam-channel = "0.3"
+
+common = { path = "../common" }
+lz4-compress = { path = "../lz4-compress" }
+
+[dependencies.nwind]
+git = "https://github.com/nokia/not-perf.git"
+rev = "1265a2d"
+
+[dev-dependencies]
+quickcheck = "0.8"

@@ -1,0 +1,16 @@
+[package]
+name = "memory-profiler-cli"
+version = "0.1.0"
+authors = ["Jan Bujak <jan.bujak@nokia.com>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4"
+env_logger = "0.6"
+structopt = "0.2"
+cli-core = { path = "../cli-core" }
+server-core = { path = "../server-core", optional = true }
+
+[features]
+default = ["subcommand-server"]
+subcommand-server = ["server-core"]

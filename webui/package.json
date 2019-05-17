@@ -1,0 +1,40 @@
+{
+  "name": "webui",
+  "version": "0.0.0",
+  "main": "index.js",
+  "author": "Jan Bujak <jan.bujak@nokia.com>",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "babel-plugin-transform-class-properties": "^6.24.1",
+    "babel-plugin-transform-es2015-parameters": "^6.24.1",
+    "babel-plugin-transform-es2015-template-literals": "^6.22.0",
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-preset-env": "^1.7.0",
+    "babel-preset-react": "^6.24.1",
+    "parcel-bundler": "^1.9.4"
+  },
+  "dependencies": {
+    "bootstrap": "^4.1.1",
+    "bootswatch": "^4.1.1",
+    "dygraphs": "^2.1.0",
+    "feather-icons": "^4.7.3",
+    "font-awesome": "^4.7.0",
+    "jquery": "^3.2.1",
+    "lodash": "^4.17.10",
+    "memoize-one": "^4.0.0",
+    "popper.js": "^1.14.3",
+    "prop-types": "^15.0.0",
+    "react": "16.x",
+    "react-contextmenu": "^2.11.0",
+    "react-dom": "^16.2.0",
+    "react-router-dom": "^4.3.1",
+    "react-table": "^6.8.6",
+    "reactdom": "^2.0.0",
+    "reactstrap": "^6.2.0"
+  },
+  "scripts": {
+    "start": "parcel ./src/index.html",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}

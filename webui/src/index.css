@@ -1,0 +1,272 @@
+body {
+    font-size: .875rem;
+    font-family: "Segoe UI", "Source Sans Pro", Calibri, Candara, Arial, sans-serif;
+}
+
+h1, h2, h3, .h1, .h2, .h3 {
+    font-weight: 300;
+}
+
+.feather {
+    width: 16px;
+    height: 16px;
+    vertical-align: text-bottom;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+}
+
+.navbar-brand {
+    padding: .75rem;
+    font-size: 1rem;
+    text-align: center;
+    background-color: #bbb;
+    background: linear-gradient(#eee, #fff);
+    box-shadow: inset -1px 0 0 rgba(0, 0, 0, .15);
+
+    width: 100%;
+    margin: 0;
+}
+.navbar-brand {
+    color: #666 !important;
+    font-weight: 600;
+}
+
+.rt-table {
+    position: relative;
+    top: 0;
+    font-size: .8rem;
+}
+
+.rt-td {
+    padding-left: 1em !important;
+    padding-right: 1em !important;
+    padding-top: 0.3em !important;
+    padding-bottom: 0.3em !important;
+}
+
+.rt-resizable-header {
+    padding-top: 0.6em !important;
+    padding-bottom: 0.8em !important;
+}
+
+.rt-thead {
+    color: #333;
+    font-weight: 600;
+}
+
+.rt-td {
+    color: #333;
+    display: flex;
+}
+
+.ReactTable .rt-tbody .rt-tr-group {
+    border-bottom: none;
+}
+
+.PageDataAllocations .ReactTable .rt-tbody .rt-tr-group {
+    margin-bottom: 0.5em;
+}
+
+.rt-table .btn-link {
+    font-size: .75rem;
+    padding: 0;
+    margin: 0;
+    font-weight: 600;
+}
+
+.ReactTable .pagination-bottom {
+    height: 3.0em;
+    margin-bottom: 1em;
+}
+
+.dygraph-title {
+    font-size: 1.075rem;
+    stroke: none;
+    fill: #444;
+    text-align: center;
+    padding-left: 2.5em;
+}
+
+.dygraph canvas {
+    margin-top: 3.5em;
+}
+
+.dygraph-axis-label-y, .dygraph-axis-label-x {
+    margin-top: 4.0em;
+}
+
+.dygraph {
+    margin-bottom: 7em !important;
+}
+
+.dygraph-axis-label-y, .dygraph-axis-label-x {
+    font-size: 0.75rem;
+    color: #444;
+}
+.dygraph-axis-label-y {
+    padding-right: 0.5em;
+
+}
+
+.dygraph-axis-label-x {
+    padding-top: 0.1em;
+}
+
+.dygraph-legend {
+    text-align: right;
+    margin-right: 1em;
+}
+
+.Switcher button {
+    background-color: white !important;
+    color: #aaa !important;
+    border-left: 0;
+    border-right: 0;
+}
+
+.Switcher button.active {
+    background-color: white !important;
+    color: #000 !important;
+}
+
+div.-sort-desc {
+    box-shadow: inset 0px -3px 0px 0px #2ae !important;
+}
+
+div.-sort-asc {
+    box-shadow: inset 0px 3px 0px 0px #2ae !important;
+}
+
+.react-contextmenu {
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid rgba(0,0,0,.15);
+    border-radius: .25rem;
+    color: #373a3c;
+    margin: 2px 0 0;
+    min-width: 160px;
+    outline: none;
+    opacity: 0;
+    padding: 5px 0;
+    pointer-events: none;
+    text-align: left;
+    transition: opacity 50ms ease !important;
+}
+
+.react-contextmenu.react-contextmenu--visible {
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 9999;
+}
+
+.react-contextmenu-item {
+    background: 0 0;
+    border: 0;
+    color: #444;
+    cursor: pointer;
+    line-height: 1.5;
+    text-align: inherit;
+    white-space: nowrap;
+}
+
+.react-contextmenu-item.react-contextmenu-item--active,
+.react-contextmenu-item.react-contextmenu-item--selected {
+    color: #fff;
+    background-color: #40b0ff;
+    border-color: #20a0ff;
+    text-decoration: none;
+}
+
+.react-contextmenu-item.react-contextmenu-item--disabled,
+.react-contextmenu-item.react-contextmenu-item--disabled:hover {
+    background-color: transparent;
+    border-color: rgba(0,0,0,.15);
+    color: #878a8c;
+}
+
+.react-contextmenu-item--divider {
+    border-bottom: 1px solid rgba(0,0,0,.15);
+    cursor: inherit;
+    margin-bottom: 3px;
+    padding: 2px 0;
+}
+
+.react-contextmenu-item--divider:hover {
+    background-color: transparent;
+    border-color: rgba(0,0,0,.15);
+}
+
+.react-contextmenu-item.react-contextmenu-submenu {
+    padding: 0;
+}
+
+.react-contextmenu-item.react-contextmenu-submenu > .react-contextmenu-item {
+}
+
+.react-contextmenu-item.react-contextmenu-submenu > .react-contextmenu-item:after {
+    content: "▶";
+    display: inline-block;
+    position: absolute;
+    right: 7px;
+}
+
+
+.react-contextmenu-item > * {
+    padding: 3px 20px;
+}
+
+.react-contextmenu-item > a {
+    color: #444;
+    width: 100%;
+    display: block;
+}
+
+.react-contextmenu-item--selected > a {
+    color: white !important;
+}
+
+.react-contextmenu-item--selected > a:hover {
+    text-decoration: none;
+}
+
+.PageDataAllocations {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.PageDataAllocations .ReactTable {
+    flex-grow: 1;
+    height: 400px;
+}
+
+.filter-pill {
+    margin: 0.2em;
+}
+
+.backtrace-cell {
+    white-space: nowrap;
+    overflow-x: auto;
+    padding: 1em;
+    padding-left: 2em;
+    border-bottom: 1px #aaa solid;
+    color: #333;
+}
+
+.PageDataAllocations .rt-thead > .rt-tr > .rt-th:first-child {
+    display: none;
+}
+
+.PageDataAllocations .rt-expandable {
+    display: none;
+}
+
+#overview-table > tbody > tr > td:first-child {
+    font-weight: 200;
+    color: #000;
+    padding-right: 1em;
+    text-align: right;
+}

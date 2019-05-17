@@ -1,0 +1,12 @@
+[workspace]
+members = ["common", "lz4-compress", "jemallocator", "preload", "cli-core", "cli", "server-core", "gather"]
+
+[profile.dev]
+opt-level = 2
+incremental = true
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+debug = true

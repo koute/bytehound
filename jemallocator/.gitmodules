@@ -1,0 +1,4 @@
+[submodule "jemalloc-sys/jemalloc"]
+	path = jemalloc-sys/jemalloc
+	url = https://github.com/jemalloc/jemalloc
+	branch = master

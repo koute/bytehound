@@ -1,0 +1,79 @@
+language: rust
+rust: nightly
+sudo: false
+services: docker
+
+matrix:
+  include:
+    # Linux
+    - env: TARGET=aarch64-unknown-linux-gnu
+    - env: TARGET=arm-unknown-linux-gnueabi
+    - env: TARGET=arm-unknown-linux-musleabi
+    - env: TARGET=armv7-unknown-linux-gnueabihf
+    - env: TARGET=armv7-unknown-linux-musleabihf
+    - env: TARGET=i586-unknown-linux-gnu
+      addons: &gcc_multilib
+        apt:
+          packages:
+            - gcc-multilib
+    - env: TARGET=i686-unknown-linux-gnu
+      addons: *gcc_multilib
+    - env: TARGET=i686-unknown-linux-gnu
+      addons: *gcc_multilib
+      rust: beta  
+    - env: TARGET=i686-unknown-linux-musl
+    - env: TARGET=mips-unknown-linux-gnu
+    - env: TARGET=mips64-unknown-linux-gnuabi64
+    - env: TARGET=mips64el-unknown-linux-gnuabi64
+    - env: TARGET=mipsel-unknown-linux-gnu
+    - env: TARGET=powerpc-unknown-linux-gnu
+    - env: TARGET=powerpc64-unknown-linux-gnu
+    - env: TARGET=powerpc64le-unknown-linux-gnu
+    - env: TARGET=sparc64-unknown-linux-gnu
+    - env: TARGET=x86_64-unknown-linux-gnu
+    - env: TARGET=x86_64-unknown-linux-gnu
+      rust: beta
+    - env: TARGET=x86_64-unknown-linux-musl
+
+    # Android
+    - env: TARGET=aarch64-linux-android
+    - env: TARGET=arm-linux-androideabi
+    - env: TARGET=armv7-linux-androideabi
+    - env: TARGET=x86_64-linux-android
+
+    # OSX
+    - env: TARGET=i686-apple-darwin
+      os: osx
+      osx_image: xcode9.2
+    - env: TARGET=x86_64-apple-darwin
+      os: osx
+      osx_image: xcode9.2
+    - env: TARGET=i686-apple-darwin
+      os: osx
+      osx_image: xcode9.2
+      rust: beta
+    - env: TARGET=x86_64-apple-darwin
+      os: osx
+      osx_image: xcode9.2
+      rust: beta
+
+    - env: DOCUMENTATION
+      install: pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
+      script: cargo doc
+      after_success:
+        - travis-cargo --only nightly doc-upload
+
+  allow_failures:
+    - env: TARGET=arm-linux-androideabi
+    - env: TARGET=armv7-linux-androideabi
+    - env: TARGET=arm-unknown-linux-musleabi
+    - env: TARGET=armv7-unknown-linux-musleabihf
+    - env: TARGET=sparc64-unknown-linux-gnu
+
+script: ci/run.sh
+env:
+  global:
+    - secure: "2Z1z4ir++XEQb9eegYTMolsNfTo1aATric2k4KfvRgnG1nAvvccf1Jg0828PVeqqD6w5f+X52AVT4bTDXbSL5L+/cTiBuVmY3943nyNOgHxFBTbVlnLtGnh18bb7AQAhyH1L9KjiLptMtFUfIg3TQ9r0QS+cBEJMFiE8BuuQMq/uPZYF3QMuV8W+9AwnqZPgdZV4q7LRnx2gHyVKifRfa4v0TxJA+fY5euON8CKemw12yVTZyNS5WUq6GLvQa5KsSYOSAIYizxz8Mze8plQytc6VhF3OuFyJ72u5LAx+szyxIu8zNAkyNeUqI1/V1gnlhWbZfov6KV56qoV9U8+xKp1J/nCXdabHEO/saOgWk4XgSSc7JNsT1PMPKT18r7JwNha0DS2onWBbegYMV0YXyH/WVAM+oXvhZAj7WPz5bHRbgkatGmBZD2jOjRQxzSugJsZzsmrKbWm8lIoyJGdNxTn5CisYElZvP1CV1OFaQBkaLfmnlpbJ0NQXpQdnpgXuLvI7sXptyn0Bjt41JQclB2BU98SrEiR0hPlkh8m4fH/QpQ8WdXEtvKXTX8UtG5RPW0UvTZVZtrU4Weyu2Hctj2D/hkXywtBXp7mUhB21fBGiaEc+vh6Q2OrZPrwoAj3YWfLlNBjFmfKmUwXXLno4FLLUujFmmypgs4Qit5HtzwQ="
+notifications:
+  email:
+    on_success: never

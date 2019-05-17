@@ -1,0 +1,14 @@
+[package]
+name = "lz4-compress"
+version = "0.1.1"
+authors = ["ticki <Ticki@users.noreply.github.com>"]
+description = "Pure Rust implementation of raw LZ4 compression/decompression."
+repository = "https://github.com/ticki/tfs"
+documentation = "https://docs.rs/lz4-compress"
+license = "MIT"
+keywords = ["compression", "lz4", "compress", "decompression", "decompress"]
+exclude = ["target", "Cargo.lock"]
+
+[dependencies]
+byteorder = "1"
+quick-error = "1"

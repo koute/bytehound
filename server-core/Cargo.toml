@@ -1,0 +1,25 @@
+[package]
+name = "server-core"
+version = "0.1.0"
+authors = ["Jan Bujak <jan.bujak@nokia.com>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4"
+actix = "0.7"
+actix-web = { version = "0.7", default-features = false }
+serde = "1"
+serde_json = "1"
+serde_derive = "1"
+cli-core = { path = "../cli-core" }
+futures = "0.1"
+serde_urlencoded = "0.5"
+regex = "1"
+bytes = "0.4"
+itertools = "0.8"
+lru = "0.1"
+stable_deref_trait = "1"
+parking_lot = "0.7"
+common = { path = "../common" }
+mime_guess = "1"
+hashbrown = "0.2"
