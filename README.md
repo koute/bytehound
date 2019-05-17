@@ -75,39 +75,39 @@ Available endpoints:
 
    * A list of loaded data files:
 
-        /list
+         /list
 
    * JSON containing a list of matched allocations:
 
-        /data/<id>/allocations?<allocation_filter>&sort_by=<sort_by>&order=<order>&count=<count>&skip=<skip>
+         /data/<id>/allocations?<allocation_filter>&sort_by=<sort_by>&order=<order>&count=<count>&skip=<skip>
 
    * JSON whose each entry corresponds to a group of matched allocations from a single, unique backtrace:
 
-        /data/<id>/allocation_groups?<allocation_filter>&sort_by=<group_sort_by>&order=<order>&count=<count>&skip=<skip>
+         /data/<id>/allocation_groups?<allocation_filter>&sort_by=<group_sort_by>&order=<order>&count=<count>&skip=<skip>
 
    * An ASCII tree with matched allocations:
 
-        /data/<id>/allocation_ascii_tree?<allocation_filter>`
+         /data/<id>/allocation_ascii_tree?<allocation_filter>`
 
    * Exports matched allocations as a flamegraph:
 
-        /data/<id>/export/flamegraph?<allocation_filter>
+         /data/<id>/export/flamegraph?<allocation_filter>
 
    * Exports matched allocations into a format accepted by [flamegraph.pl]:
 
-        /data/<id>/export/flamegraph.pl?<allocation_filter>
+         /data/<id>/export/flamegraph.pl?<allocation_filter>
 
    * Exports matched allocations into a format accepted by [Heaptrack GUI]:
 
-        /data/<id>/export/heaptrack?<allocation_filter>
+         /data/<id>/export/heaptrack?<allocation_filter>
 
    * JSON containing a list of `mmap` calls:
 
-        /data/<id>/mmaps
+         /data/<id>/mmaps
 
    * JSON containing a list of `mallopt` calls:
 
-        /data/<id>/mallopts
+         /data/<id>/mallopts
 
 [flamegraph.pl]: https://github.com/brendangregg/FlameGraph/blob/master/flamegraph.pl
 
