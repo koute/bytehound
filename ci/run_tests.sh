@@ -14,15 +14,6 @@ else
 fi
 set -e
 
-cargo check -p common
-if [ "$IS_NIGHTLY" = "1" ]; then
-    cargo check -p memory-profiler
-fi
-cargo check -p cli-core
-cargo check -p server-core
-cargo check -p memory-profiler-gather
-cargo check -p memory-profiler-cli
-
 cargo test -p common
 if [ "$IS_NIGHTLY" = "1" ]; then
     cargo test -p memory-profiler
@@ -31,3 +22,7 @@ cargo test -p cli-core
 cargo test -p server-core
 cargo test -p memory-profiler-gather
 cargo test -p memory-profiler-cli
+
+if [ "$IS_NIGHTLY" = "1" ]; then
+    ./ci/build_for_deployment.sh
+fi

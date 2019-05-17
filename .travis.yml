@@ -1,8 +1,52 @@
 language: rust
-rust:
-  - stable
-  - beta
-  - nightly
+dist: trusty
 
-script:
-  - ./ci/run_tests.sh
+custom:
+  test: &test
+    stage: test
+    script:
+      - ./ci/run_tests.sh
+  deploy: &deploy
+    stage: deploy
+    if: (tag IS present)
+    rust: nightly-2019-04-30
+    script: ./ci/build_for_deployment.sh
+    deploy:
+      provider: releases
+      # To generate the API key:
+      #   1. On Github: Settings -> Developer settings -> Personal access tokens -> Generate new token
+      #   2. Select only `public_repo`
+      #   3. gem install travis
+      #   4. travis login
+      #   5. travis encrypt <TOKEN>
+      api_key:
+        secure: j8d4NhF7DGyhWmPEsByP/LmRzaHvtZ1zfC9QXjvbEMoY/XmJLgdJjtjBobRiIfHla5OoI7wmKvU8VpYBQPL/OTFweOIIUQ8YkdpaayGKZpTQJC8gpzC514/twzT9Y86CYBSJkVUrAywjNjArgENIXOySPSfJx2xjsKfhHs7O1otzLHzgARX77yJZK/muZtM65HvZJ/n1fA30tF9xOfLTxhfdUpWgRYKrBE8QHKvPpgdhsQpTQRvKYAh6r7mYd72sqlpVaaiAhsstkgSuLI3Vs5jvZoa12LqUoIxeQAYFVOBYykP0OQSp9PdW4GN9/Qs1TSSTfKa5LzT5WBi3GoH18lwZehQAEsHl2Ii7ve0BLeE447lh1g2KYIrMx9OzgLGVVoPLBfuBj7WP9s+mejq7Lt09tdDdzrocIKZxyngQda4K2Ws8aW365VLW9h9jZt0X9t8UM3xeMS/Q1rv/HZ/Xtc4pahv9cCO41KLZhxebKiDMrgFXAxb+pk4utlc6oqWFMxBttI/a/BgRb+Ell6L/Js5C3SGSOA6QGrlo5aUNMWxadSAnESkMw3oolIkw2WZw2cGfGOdqpTjCZpaoN8SBep1ttfkBkRSSPEgo/6LZQh8zqvAijNQcStifEiXjxw7zHpdoNttmk+QM0gS58f7LdUBV7i+6VkrxhmMENZPYoCA=
+      file_glob: true
+      file:
+        - target/travis-deployment/*
+      skip_cleanup: true
+      on:
+        repo: nokia/memory-profiler
+        branch: master
+        tags: true
+
+jobs:
+  include:
+    - <<: *test
+      os: linux
+      rust: nightly-2019-04-30
+
+    - <<: *test
+      os: linux
+      rust: nightly
+
+    - <<: *test
+      os: linux
+      rust: stable
+
+    - <<: *test
+      os: linux
+      rust: beta
+
+    - <<: *deploy
+      os: linux
