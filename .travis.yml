@@ -1,6 +1,13 @@
 language: rust
 dist: trusty
 
+before_install:
+  - nvm install 9
+  - curl https://yarnpkg.com/install.sh > /tmp/install-yarn.sh
+  - chmod +x /tmp/install-yarn.sh
+  - /tmp/install-yarn.sh --version 1.16.0
+  - export PATH="$HOME/.yarn/bin:$PATH"
+
 custom:
   test: &test
     stage: test
