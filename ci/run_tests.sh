@@ -3,6 +3,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+TEST_SUBSET=${TEST_SUBSET:-0}
+
 export RUST_BACKTRACE=1
 
 set +e
@@ -14,14 +16,18 @@ else
 fi
 set -e
 
-cargo test -p common
-if [ "$IS_NIGHTLY" = "1" ]; then
-    cargo test -p memory-profiler
+if [[ "$TEST_SUBSET" == 0 || "$TEST_SUBSET" == 1 ]]; then
+    cargo test -p common
+    if [ "$IS_NIGHTLY" = "1" ]; then
+        cargo test -p memory-profiler
+    fi
+    cargo test -p cli-core
+    cargo test -p server-core
 fi
-cargo test -p cli-core
-cargo test -p server-core
 
-if [ "$IS_NIGHTLY" = "1" ]; then
-    ./ci/build_for_deployment.sh
-    cargo test -p integration-tests
+if [[ "$TEST_SUBSET" == 0 || "$TEST_SUBSET" == 2 ]]; then
+    if [ "$IS_NIGHTLY" = "1" ]; then
+        ./ci/build_for_deployment.sh
+        cargo test -p integration-tests
+    fi
 fi
