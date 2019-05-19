@@ -121,7 +121,7 @@ The `<allocation_filter>` can be composed of any of the following parameters:
    * `lifetime` - an enum specifying the lifetime of matched allocations:
       * `all` - matches every allocation (default)
       * `only_leaked` - matches only leaked allocations
-      * `only_not_deallocated_in_current_range` - matches allocationwhich were not deallocated in the interval specified by `from`/`to`
+      * `only_not_deallocated_in_current_range` - matches allocation which were not deallocated in the interval specified by `from`/`to`
       * `only_deallocated_in_current_range` - matches allocations which were deallocated in the interval specified by `from`/`to`
       * `only_temporary` - matches only temporary allocations
       * `only_whole_group_leaked` - matches only allocations whose whole group (that is - every allocation from a given call site) was leaked
@@ -161,7 +161,7 @@ The `<group_sort_by>` for allocation groups can be one of:
    * `all.leaked_count`
    * `all.size`
 
-The `only_matched.*` variants will sort by aggegate values derived only from allocations
+The `only_matched.*` variants will sort by aggregate values derived only from allocations
 which were matched by the `allocation_filter`, while the `all.*` variants will sort
 by values derived from every allocation in a given group.
 
