@@ -296,7 +296,6 @@ fn handler_list( req: &HttpRequest< StateRef > ) -> HttpResponse {
 
 fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationTimeline {
     use std::ops::Range;
-    use std::cmp::Ordering;
 
     #[derive(Clone)]
     struct Entry( Range< u64 > );
@@ -1233,7 +1232,6 @@ fn handler_allocation_ascii_tree( req: &HttpRequest< StateRef > ) -> Result< Htt
 fn handler_collation_json< F >( req: &HttpRequest< StateRef >, callback: F ) -> Result< HttpResponse >
     where F: Fn( &Data ) -> BTreeMap< String, BTreeMap< u32, CountAndSize > > + Send + 'static
 {
-    use std::collections::BTreeMap;
     use serde_json::json;
 
     let body = async_data_handler( &req, move |data, tx| {
