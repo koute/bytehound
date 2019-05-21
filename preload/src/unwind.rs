@@ -11,20 +11,43 @@ type ReasonCode = c_int;
 type Callback = extern "C" fn( Context, *mut c_void ) -> ReasonCode;
 
 pub struct Backtrace {
-    pub frames: smallvec::SmallVec< [u64; 14] >,
+    pub frames: Vec< u64 >,
     pub stale_count: Option< u32 >
+}
+
+const CACHE_SIZE: usize = 256;
+
+lazy_static! {
+    static ref BACKTRACE_CACHE: SpinLock< Vec< Vec< u64 > > > = {
+        SpinLock::new( Vec::with_capacity( CACHE_SIZE ) )
+    };
 }
 
 impl Backtrace {
     pub fn new() -> Self {
+        let mut cache = BACKTRACE_CACHE.lock();
         Backtrace {
-            frames: Default::default(),
+            frames: cache.pop().unwrap_or_else( Default::default ),
             stale_count: None
         }
     }
 
     pub fn is_empty( &self ) -> bool {
         self.frames.is_empty()
+    }
+}
+
+impl Drop for Backtrace {
+    fn drop( &mut self ) {
+        let mut vec = std::mem::replace( &mut self.frames, Vec::new() );
+        if vec.capacity() > 0 && vec.capacity() <= 1024 {
+            vec.clear();
+            let mut cache = BACKTRACE_CACHE.lock();
+            if cache.len() >= CACHE_SIZE {
+                return;
+            }
+            cache.push( vec );
+        }
     }
 }
 
