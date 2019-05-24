@@ -1029,13 +1029,6 @@ fn thread_main() {
             break;
         }
 
-        if events.len() < 200 {
-            // This is here to reduce the CPU usage so that
-            // we don't end up triggering all the time for
-            // a few events at a time.
-            thread::sleep( Duration::from_millis( 1 ) );
-        }
-
         if saved_error.is_some() {
             // We've encountered some errors; keep running, but drop all events.
             events.clear();
@@ -1207,7 +1200,7 @@ fn send_event( event: InternalEvent ) {
 
 #[inline(never)]
 fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F ) {
-    let length = EVENT_CHANNEL.send_with( callback );
+    let length = EVENT_CHANNEL.chunked_send_with( 64, callback );
 
     if length >= 512 {
         if length >= 1024 {

@@ -47,10 +47,20 @@ impl< T > Channel< T > {
 
     pub fn send_with< F: FnOnce() -> T >( &self, callback: F ) -> usize {
         let mut guard = self.queue.lock();
-        guard.push( callback() );
         self.condvar.notify_all();
-
+        guard.push( callback() );
         guard.len()
+    }
+
+    pub fn chunked_send_with< F: FnOnce() -> T >( &self, chunk_size: usize, callback: F ) -> usize {
+        let mut guard = self.queue.lock();
+        let length = guard.len() + 1;
+        if length % chunk_size == 0 {
+            self.condvar.notify_all();
+        }
+
+        guard.push( callback() );
+        length
     }
 
     #[allow(dead_code)]
