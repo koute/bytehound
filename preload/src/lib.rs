@@ -14,6 +14,7 @@ use std::env;
 use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::sync::Weak;
 use std::fs::{self, File, remove_file, read_link};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::cell::Cell;
@@ -171,7 +172,8 @@ enum InternalEvent {
         flags: u32,
         extra_usable_space: u32,
         preceding_free_space: u64,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        throttle: ThrottleHandle
     },
     Realloc {
         old_ptr: usize,
@@ -182,13 +184,15 @@ enum InternalEvent {
         flags: u32,
         extra_usable_space: u32,
         preceding_free_space: u64,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        throttle: ThrottleHandle
     },
     Free {
         ptr: usize,
         backtrace: Backtrace,
         thread: u32,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        throttle: ThrottleHandle
     },
     Exit,
     GrabMemoryDump,
@@ -205,14 +209,16 @@ enum InternalEvent {
         backtrace: Backtrace,
         thread: u32,
         file_descriptor: u32,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        throttle: ThrottleHandle
     },
     Munmap {
         ptr: usize,
         len: usize,
         backtrace: Backtrace,
         thread: u32,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        throttle: ThrottleHandle
     },
     Mallopt {
         param: i32,
@@ -220,7 +226,8 @@ enum InternalEvent {
         result: i32,
         backtrace: Backtrace,
         thread: u32,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        throttle: ThrottleHandle
     },
     OverrideNextTimestamp {
         timestamp: Timestamp
@@ -1048,13 +1055,14 @@ fn thread_main() {
         let skip = stopped || serializer.inner().is_none();
         for event in events.drain(..) {
             match event {
-                InternalEvent::Alloc { ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, timestamp } => {
+                InternalEvent::Alloc { ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                        mem::drop( throttle );
                         let event = Event::Alloc {
                             timestamp,
                             allocation: AllocBody {
@@ -1070,13 +1078,14 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, timestamp } => {
+                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                        mem::drop( throttle );
                         let event = Event::Realloc {
                             timestamp, old_pointer: old_ptr as u64,
                             allocation: AllocBody {
@@ -1091,24 +1100,26 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Free { ptr, backtrace, thread, timestamp } => {
+                InternalEvent::Free { ptr, backtrace, thread, timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                        mem::drop( throttle );
                         let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Mmap { pointer, length, backtrace, thread, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, timestamp } => {
+                InternalEvent::Mmap { pointer, length, backtrace, thread, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                        mem::drop( throttle );
                         let event = Event::MemoryMap {
                             timestamp,
                             pointer: pointer as u64,
@@ -1125,24 +1136,26 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Munmap { ptr, len, backtrace, thread, timestamp } => {
+                InternalEvent::Munmap { ptr, len, backtrace, thread, timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                        mem::drop( throttle );
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Mallopt { param, value, result, timestamp, backtrace, thread } => {
+                InternalEvent::Mallopt { param, value, result, timestamp, backtrace, thread, throttle } => {
                     if skip {
                         continue;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                        mem::drop( throttle );
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
@@ -1200,15 +1213,7 @@ fn send_event( event: InternalEvent ) {
 
 #[inline(never)]
 fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F ) {
-    let length = EVENT_CHANNEL.chunked_send_with( 64, callback );
-
-    if length >= 512 {
-        if length >= 1024 {
-            thread::sleep( Duration::from_millis( 1 ) );
-        } else {
-            thread::yield_now();
-        }
-    }
+    EVENT_CHANNEL.chunked_send_with( 64, callback );
 }
 
 static FLAG: AtomicBool = AtomicBool::new( false );
@@ -1232,6 +1237,8 @@ extern fn on_exit() {
 fn initialize() {
     if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == false {
         assert!( !on_application_thread() );
+
+        let _ = ThrottleHandle::new();
 
         static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
         static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
@@ -1352,6 +1359,37 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
     syscall!( EXIT, status );
 }
 
+static THROTTLE_LIMIT: usize = 1024;
+thread_local! {
+    static THROTTLE_STATE: Arc< AtomicUsize > = {
+        Arc::new( AtomicUsize::new( 0 ) )
+    };
+}
+
+struct ThrottleHandle( Weak< AtomicUsize > );
+impl ThrottleHandle {
+    fn new() -> Self {
+        THROTTLE_STATE.try_with( |state| {
+            while state.load( Ordering::Relaxed ) >= THROTTLE_LIMIT {
+                thread::yield_now();
+            }
+
+            state.fetch_add( 1, Ordering::Relaxed );
+            ThrottleHandle( Arc::downgrade( state ) )
+        }).ok().unwrap_or_else( || {
+            ThrottleHandle( Weak::new() )
+        })
+    }
+}
+
+impl Drop for ThrottleHandle {
+    fn drop( &mut self ) {
+        if let Some( state ) = self.0.upgrade() {
+            state.fetch_sub( 1, Ordering::Relaxed );
+        }
+    }
+}
+
 struct AllocationLock {
     _guard: RwLockReadGuard< 'static, () >
 }
@@ -1409,12 +1447,18 @@ fn get_glibc_metadata( ptr: *mut c_void, size: usize ) -> (u32, u32, u64) {
 unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
     initialize();
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() && is_tracing_enabled() {
-        lock = Some( AllocationLock::new() );
-        unwind::grab( &mut backtrace );
+    if !on_application_thread() || !is_tracing_enabled() {
+        if opt::zero_memory() || is_calloc {
+            return calloc_real( size as size_t, 1 );
+        } else {
+            return malloc_real( size as size_t );
+        };
     }
+
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut backtrace );
 
     let ptr = if opt::zero_memory() || is_calloc {
         calloc_real( size as size_t, 1 )
@@ -1422,27 +1466,31 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
         malloc_real( size as size_t )
     };
 
-    if lock.is_some() && !ptr.is_null() {
-        let (mut flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( ptr, size );
-        if is_calloc {
-            flags |= event::ALLOC_FLAG_CALLOC;
-        }
-
-        let thread = get_thread_id();
-        send_event_throttled( move || {
-            InternalEvent::Alloc {
-                ptr: ptr as usize,
-                size: size as usize,
-                backtrace,
-                thread,
-                flags,
-                extra_usable_space,
-                preceding_free_space,
-                timestamp: get_timestamp()
-            }
-        });
+    if ptr.is_null() {
+        return ptr;
     }
 
+    let (mut flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( ptr, size );
+    if is_calloc {
+        flags |= event::ALLOC_FLAG_CALLOC;
+    }
+
+    let thread = get_thread_id();
+    send_event_throttled( move || {
+        InternalEvent::Alloc {
+            ptr: ptr as usize,
+            size: size as usize,
+            backtrace,
+            thread,
+            flags,
+            extra_usable_space,
+            preceding_free_space,
+            timestamp: get_timestamp(),
+            throttle
+        }
+    });
+
+    mem::drop( lock );
     ptr
 }
 
@@ -1477,45 +1525,49 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
 
     initialize();
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() && is_tracing_enabled() {
-        lock = Some( AllocationLock::new() );
-        unwind::grab( &mut backtrace );
+    if !on_application_thread() || !is_tracing_enabled() {
+        return realloc_real( old_ptr, size );
     }
+
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut backtrace );
 
     let new_ptr = realloc_real( old_ptr, size );
-    if lock.is_some() {
-        let thread = get_thread_id();
-        let timestamp = get_timestamp();
 
-        if !new_ptr.is_null() {
-            let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( new_ptr, size );
-            send_event_throttled( move || {
-                InternalEvent::Realloc {
-                    old_ptr: old_ptr as usize,
-                    new_ptr: new_ptr as usize,
-                    size: size as usize,
-                    backtrace,
-                    thread,
-                    flags,
-                    extra_usable_space,
-                    preceding_free_space,
-                    timestamp
-                }
-            });
-        } else {
-            send_event_throttled( || {
-                InternalEvent::Free {
-                    ptr: old_ptr as usize,
-                    backtrace,
-                    thread,
-                    timestamp
-                }
-            });
-        }
+    let thread = get_thread_id();
+    let timestamp = get_timestamp();
+
+    if !new_ptr.is_null() {
+        let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( new_ptr, size );
+        send_event_throttled( move || {
+            InternalEvent::Realloc {
+                old_ptr: old_ptr as usize,
+                new_ptr: new_ptr as usize,
+                size: size as usize,
+                backtrace,
+                thread,
+                flags,
+                extra_usable_space,
+                preceding_free_space,
+                timestamp,
+                throttle
+            }
+        });
+    } else {
+        send_event_throttled( || {
+            InternalEvent::Free {
+                ptr: old_ptr as usize,
+                backtrace,
+                thread,
+                timestamp,
+                throttle
+            }
+        });
     }
 
+    mem::drop( lock );
     new_ptr
 }
 
@@ -1528,28 +1580,31 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
 
     initialize();
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() && is_tracing_enabled() {
-        lock = Some( AllocationLock::new() );
-        if opt::grab_backtraces_on_free() {
-            unwind::grab( &mut backtrace );
-        }
+    if !on_application_thread() || !is_tracing_enabled() {
+        free_real( ptr );
+        return;
     }
 
-    if lock.is_some() {
-        let thread = get_thread_id();
-        send_event_throttled( || {
-            InternalEvent::Free {
-                ptr: ptr as usize,
-                backtrace,
-                thread,
-                timestamp: get_timestamp()
-            }
-        });
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    if opt::grab_backtraces_on_free() {
+        unwind::grab( &mut backtrace );
     }
+
+    let thread = get_thread_id();
+    send_event_throttled( || {
+        InternalEvent::Free {
+            ptr: ptr as usize,
+            backtrace,
+            thread,
+            timestamp: get_timestamp(),
+            throttle
+        }
+    });
 
     free_real( ptr );
+    mem::drop( lock );
 }
 
 #[cfg(not(test))]
@@ -1564,33 +1619,44 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
         return libc::EINVAL;
     }
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() && is_tracing_enabled() {
-        lock = Some( AllocationLock::new() );
-        unwind::grab( &mut backtrace );
-    }
+    initialize();
 
-    let pointer = memalign_real( alignment, size );
-    if lock.is_some() {
-        if !pointer.is_null() {
-            let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
-
-            let thread = get_thread_id();
-            send_event_throttled( || {
-                InternalEvent::Alloc {
-                    ptr: pointer as usize,
-                    size: size as usize,
-                    backtrace,
-                    thread,
-                    flags,
-                    extra_usable_space,
-                    preceding_free_space,
-                    timestamp: get_timestamp()
-                }
-            });
+    if !on_application_thread() || !is_tracing_enabled() {
+        let pointer = memalign_real( alignment, size );
+        *memptr = pointer;
+        if pointer.is_null() {
+            return libc::ENOMEM;
+        } else {
+            return 0;
         }
     }
+
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut backtrace );
+
+    let pointer = memalign_real( alignment, size );
+    if !pointer.is_null() {
+        let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
+
+        let thread = get_thread_id();
+        send_event_throttled( || {
+            InternalEvent::Alloc {
+                ptr: pointer as usize,
+                size: size as usize,
+                backtrace,
+                thread,
+                flags,
+                extra_usable_space,
+                preceding_free_space,
+                timestamp: get_timestamp(),
+                throttle
+            }
+        });
+    }
+
+    mem::drop( lock );
 
     *memptr = pointer;
     if pointer.is_null() {
@@ -1604,29 +1670,35 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     initialize();
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() && is_tracing_enabled() {
-        lock = Some( AllocationLock::new() );
-        unwind::grab( &mut backtrace );
+    if !on_application_thread() || !is_tracing_enabled() {
+        return sys_mmap( addr, length, prot, flags, fildes, off );
     }
+
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut backtrace );
 
     let ptr = sys_mmap( addr, length, prot, flags, fildes, off );
-    if ptr != libc::MAP_FAILED && lock.is_some() {
-        send_event_throttled( || InternalEvent::Mmap {
-            pointer: ptr as usize,
-            length: length as usize,
-            requested_address: addr as usize,
-            mmap_protection: prot as u32,
-            mmap_flags: flags as u32,
-            file_descriptor: fildes as u32,
-            offset: off as u64,
-            backtrace,
-            thread: get_thread_id(),
-            timestamp: get_timestamp()
-        });
+    if ptr == libc::MAP_FAILED {
+        return ptr;
     }
 
+    send_event_throttled( || InternalEvent::Mmap {
+        pointer: ptr as usize,
+        length: length as usize,
+        requested_address: addr as usize,
+        mmap_protection: prot as u32,
+        mmap_flags: flags as u32,
+        file_descriptor: fildes as u32,
+        offset: off as u64,
+        backtrace,
+        thread: get_thread_id(),
+        timestamp: get_timestamp(),
+        throttle
+    });
+
+    mem::drop( lock );
     ptr
 }
 
@@ -1634,49 +1706,57 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     initialize();
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() && is_tracing_enabled() {
-        lock = Some( AllocationLock::new() );
-        unwind::grab( &mut backtrace );
+    if !on_application_thread() || !is_tracing_enabled() {
+        return sys_munmap( ptr, length );
     }
 
-    if lock.is_some() && !ptr.is_null() {
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut backtrace );
+
+    if !ptr.is_null() {
         send_event_throttled( || InternalEvent::Munmap {
             ptr: ptr as usize,
             len: length as usize,
             backtrace,
             thread: get_thread_id(),
-            timestamp: get_timestamp()
+            timestamp: get_timestamp(),
+            throttle
         });
     }
 
-    sys_munmap( ptr, length )
+    let result = sys_munmap( ptr, length );
+    mem::drop( lock );
+
+    result
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     initialize();
 
-    let mut lock = None;
-    let mut backtrace = Backtrace::new();
-    if on_application_thread() {
-        lock = Some( AllocationLock::new() );
-        unwind::grab( &mut backtrace );
+    if !on_application_thread() || !is_tracing_enabled() {
+        return mallopt_real( param, value );
     }
+
+    let lock = AllocationLock::new();
+    let throttle = ThrottleHandle::new();
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut backtrace );
 
     let result = mallopt_real( param, value );
-    if lock.is_some() {
-        send_event_throttled( || InternalEvent::Mallopt {
-            param: param as i32,
-            value: value as i32,
-            result: result as i32,
-            backtrace,
-            thread: get_thread_id(),
-            timestamp: get_timestamp()
-        });
-    }
+    send_event_throttled( || InternalEvent::Mallopt {
+        param: param as i32,
+        value: value as i32,
+        result: result as i32,
+        backtrace,
+        thread: get_thread_id(),
+        timestamp: get_timestamp(),
+        throttle
+    });
 
+    mem::drop( lock );
     result
 }
 
