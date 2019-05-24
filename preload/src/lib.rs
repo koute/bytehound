@@ -1735,7 +1735,7 @@ pub unsafe extern "C" fn memory_profiler_set_marker( value: u32 ) {
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_override_next_timestamp( timestamp: u64 ) {
     let _lock = AllocationLock::new();
-    send_event( InternalEvent::OverrideNextTimestamp {
+    send_event_throttled( || InternalEvent::OverrideNextTimestamp {
         timestamp: Timestamp::from_usecs( timestamp )
     });
 }
