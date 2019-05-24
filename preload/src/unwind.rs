@@ -1,5 +1,6 @@
 use std::mem::transmute;
 use std::env;
+use std::sync::{Arc, Weak};
 use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
 
@@ -12,23 +13,32 @@ type Callback = extern "C" fn( Context, *mut c_void ) -> ReasonCode;
 
 pub struct Backtrace {
     pub frames: Vec< u64 >,
-    pub stale_count: Option< u32 >
+    pub stale_count: Option< u32 >,
+    cache: Weak< SpinLock< Vec< Vec< u64 > > > >
 }
 
-const CACHE_SIZE: usize = 256;
-
-lazy_static! {
-    static ref BACKTRACE_CACHE: SpinLock< Vec< Vec< u64 > > > = {
-        SpinLock::new( Vec::with_capacity( CACHE_SIZE ) )
+thread_local! {
+    static BACKTRACE_CACHE: Arc< SpinLock< Vec< Vec< u64 > > > > = {
+        Arc::new( SpinLock::new( Vec::new() ) )
     };
 }
 
 impl Backtrace {
+    fn reserve_from_cache( &mut self ) {
+        let _ = BACKTRACE_CACHE.try_with( |cache| {
+            self.cache = Arc::downgrade( cache );
+            let mut cache = cache.lock();
+            if let Some( frames ) = cache.pop() {
+                self.frames = frames;
+            }
+        });
+    }
+
     pub fn new() -> Self {
-        let mut cache = BACKTRACE_CACHE.lock();
         Backtrace {
-            frames: cache.pop().unwrap_or_else( Default::default ),
-            stale_count: None
+            frames: Vec::new(),
+            stale_count: None,
+            cache: Weak::new()
         }
     }
 
@@ -40,12 +50,10 @@ impl Backtrace {
 impl Drop for Backtrace {
     fn drop( &mut self ) {
         let mut vec = std::mem::replace( &mut self.frames, Vec::new() );
-        if vec.capacity() > 0 && vec.capacity() <= 1024 {
-            vec.clear();
-            let mut cache = BACKTRACE_CACHE.lock();
-            if cache.len() >= CACHE_SIZE {
-                return;
-            }
+        vec.clear();
+
+        if let Some( cache ) = self.cache.upgrade() {
+            let mut cache = cache.lock();
             cache.push( vec );
         }
     }
@@ -140,6 +148,7 @@ lazy_static! {
 
 #[inline(never)]
 pub fn grab( out: &mut Backtrace ) {
+    out.reserve_from_cache();
     out.frames.clear();
 
     if false {
