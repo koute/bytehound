@@ -1359,7 +1359,7 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
     syscall!( EXIT, status );
 }
 
-static THROTTLE_LIMIT: usize = 1024;
+static THROTTLE_LIMIT: usize = 4096;
 thread_local! {
     static THROTTLE_STATE: Arc< AtomicUsize > = {
         Arc::new( AtomicUsize::new( 0 ) )
