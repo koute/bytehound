@@ -196,7 +196,7 @@ lazy_static! {
 #[inline(never)]
 pub fn grab( out: &mut Backtrace ) {
     out.reserve_from_cache();
-    out.frames.clear();
+    debug_assert!( out.frames.is_empty() );
 
     if false {
         unsafe {
