@@ -207,8 +207,9 @@ pub fn grab( out: &mut Backtrace ) {
     }
 
     let mut reload_address_space = false;
-    {
-        let mut perf = PERF.lock();
+    let perf = &*PERF;
+    if unsafe { perf.unsafe_as_ref().are_events_pending() } {
+        let mut perf = perf.lock();
         if perf.are_events_pending() {
             for event in perf.iter() {
                 match event.get() {

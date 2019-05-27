@@ -44,6 +44,10 @@ impl< T > SpinLock< T > {
             None
         }
     }
+
+    pub unsafe fn unsafe_as_ref( &self ) -> &T {
+        &*self.value.get()
+    }
 }
 
 impl< 'a, T > SpinLockGuard< 'a, T > {
