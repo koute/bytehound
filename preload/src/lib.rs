@@ -18,7 +18,7 @@ use std::fs::{self, File, remove_file, read_link};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::cell::Cell;
 use std::net::{TcpListener, TcpStream, UdpSocket, IpAddr, SocketAddr};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::path::{Path, PathBuf};
@@ -163,6 +163,14 @@ static TRACING_ENABLED: AtomicBool = AtomicBool::new( true );
 
 static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = spin_lock_new!( false );
 thread_local!( static ON_APPLICATION_THREAD: Cell< bool > = Cell::new( *ON_APPLICATION_THREAD_DEFAULT.lock() ) );
+
+fn get_timestamp_if_enabled() -> Timestamp {
+    if opt::precise_timestamps() {
+        get_timestamp()
+    } else {
+        Timestamp::min()
+    }
+}
 
 enum InternalEvent {
     Alloc {
@@ -998,17 +1006,19 @@ fn thread_main() {
     }
 
     let mut last_flush_timestamp = get_timestamp();
+    let mut coarse_timestamp = get_timestamp();
     let mut running = true;
     let mut allocation_lock_for_memory_dump = None;
-    let mut last_broadcast = Instant::now();
+    let mut last_broadcast = coarse_timestamp;
     let mut timestamp_override = None;
     let mut stopped = false;
     let mut poll_fds = Vec::new();
     'main_loop: loop {
         EVENT_CHANNEL.timed_recv_all( &mut events, Duration::from_millis( 250 ) );
 
-        if last_broadcast.elapsed() >= Duration::from_millis( 1000 ) {
-            last_broadcast = Instant::now();
+        coarse_timestamp = get_timestamp();
+        if (coarse_timestamp - last_broadcast).as_secs() >= 1 {
+            last_broadcast = coarse_timestamp;
             if send_broadcasts {
                 let _ = send_broadcast();
             }
@@ -1056,12 +1066,16 @@ fn thread_main() {
         let skip = stopped || serializer.inner().is_none();
         for event in events.drain(..) {
             match event {
-                InternalEvent::Alloc { ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, timestamp, throttle } => {
+                InternalEvent::Alloc { ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, mut timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
-                    let timestamp = timestamp_override.take().unwrap_or( timestamp );
+                    if timestamp == Timestamp::min() {
+                        timestamp = coarse_timestamp;
+                    }
+
+                    timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
                         mem::drop( throttle );
                         let event = Event::Alloc {
@@ -1079,12 +1093,16 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, timestamp, throttle } => {
+                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, mut timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
-                    let timestamp = timestamp_override.take().unwrap_or( timestamp );
+                    if timestamp == Timestamp::min() {
+                        timestamp = coarse_timestamp;
+                    }
+
+                    timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
                         mem::drop( throttle );
                         let event = Event::Realloc {
@@ -1101,24 +1119,32 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Free { ptr, backtrace, thread, timestamp, throttle } => {
+                InternalEvent::Free { ptr, backtrace, thread, mut timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
-                    let timestamp = timestamp_override.take().unwrap_or( timestamp );
+                    if timestamp == Timestamp::min() {
+                        timestamp = coarse_timestamp;
+                    }
+
+                    timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
                         mem::drop( throttle );
                         let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Mmap { pointer, length, backtrace, thread, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, timestamp, throttle } => {
+                InternalEvent::Mmap { pointer, length, backtrace, thread, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, mut timestamp, throttle } => {
                     if skip {
                         continue;
                     }
 
-                    let timestamp = timestamp_override.take().unwrap_or( timestamp );
+                    if timestamp == Timestamp::min() {
+                        timestamp = coarse_timestamp;
+                    }
+
+                    timestamp = timestamp_override.take().unwrap_or( timestamp );
                     if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
                         mem::drop( throttle );
                         let event = Event::MemoryMap {
@@ -1137,9 +1163,13 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Munmap { ptr, len, backtrace, thread, timestamp, throttle } => {
+                InternalEvent::Munmap { ptr, len, backtrace, thread, mut timestamp, throttle } => {
                     if skip {
                         continue;
+                    }
+
+                    if timestamp == Timestamp::min() {
+                        timestamp = coarse_timestamp;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
@@ -1149,9 +1179,13 @@ fn thread_main() {
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
                     }
                 },
-                InternalEvent::Mallopt { param, value, result, timestamp, backtrace, thread, throttle } => {
+                InternalEvent::Mallopt { param, value, result, mut timestamp, backtrace, thread, throttle } => {
                     if skip {
                         continue;
+                    }
+
+                    if timestamp == Timestamp::min() {
+                        timestamp = coarse_timestamp;
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
@@ -1189,9 +1223,8 @@ fn thread_main() {
             }
         }
 
-        let timestamp = get_timestamp();
-        if (timestamp - last_flush_timestamp).as_secs() > 30 {
-            last_flush_timestamp = timestamp;
+        if (coarse_timestamp - last_flush_timestamp).as_secs() > 30 {
+            last_flush_timestamp = get_timestamp();
             save_error!( serializer.flush() );
         }
     }
@@ -1284,6 +1317,8 @@ fn initialize() {
                 TRACING_ENABLED.store( false, Ordering::SeqCst );
             }
         }
+
+        opt::initialize();
 
         let _ = *INITIAL_TIMESTAMP;
         let _ = *UUID;
@@ -1476,7 +1511,7 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
             flags,
             extra_usable_space,
             preceding_free_space,
-            timestamp: get_timestamp(),
+            timestamp: get_timestamp_if_enabled(),
             throttle
         }
     });
@@ -1528,7 +1563,7 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
     let new_ptr = realloc_real( old_ptr, size );
 
     let thread = get_thread_id();
-    let timestamp = get_timestamp();
+    let timestamp = get_timestamp_if_enabled();
 
     if !new_ptr.is_null() {
         let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( new_ptr, size );
@@ -1589,7 +1624,7 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
             ptr: ptr as usize,
             backtrace,
             thread,
-            timestamp: get_timestamp(),
+            timestamp: get_timestamp_if_enabled(),
             throttle
         }
     });
@@ -1641,7 +1676,7 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
                 flags,
                 extra_usable_space,
                 preceding_free_space,
-                timestamp: get_timestamp(),
+                timestamp: get_timestamp_if_enabled(),
                 throttle
             }
         });
@@ -1685,7 +1720,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
         offset: off as u64,
         backtrace,
         thread: get_thread_id(),
-        timestamp: get_timestamp(),
+        timestamp: get_timestamp_if_enabled(),
         throttle
     });
 
@@ -1712,7 +1747,7 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
             len: length as usize,
             backtrace,
             thread: get_thread_id(),
-            timestamp: get_timestamp(),
+            timestamp: get_timestamp_if_enabled(),
             throttle
         });
     }
@@ -1743,7 +1778,7 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
         result: result as i32,
         backtrace,
         thread: get_thread_id(),
-        timestamp: get_timestamp(),
+        timestamp: get_timestamp_if_enabled(),
         throttle
     });
 

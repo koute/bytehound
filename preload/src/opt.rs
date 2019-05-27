@@ -1,5 +1,28 @@
 use std::env;
 
+static mut PRECISE_TIMESTAMPS: bool = true;
+
+pub fn initialize() {
+    let flag_precise_timestamps = env::var_os( "MEMORY_PROFILER_PRECISE_TIMESTAMPS" )
+        .map( |value| value == "1" )
+        .unwrap_or( false );
+
+    if flag_precise_timestamps {
+        info!( "Timestamp granularity: precise" );
+    } else {
+        info!( "Timestamp granularity: coarse" );
+    }
+
+    unsafe {
+        PRECISE_TIMESTAMPS = flag_precise_timestamps;
+    }
+}
+
+#[inline]
+pub fn precise_timestamps() -> bool {
+    unsafe { PRECISE_TIMESTAMPS }
+}
+
 #[inline]
 pub fn grab_backtraces_on_free() -> bool {
     lazy_static! {
