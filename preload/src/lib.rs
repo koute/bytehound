@@ -14,7 +14,6 @@ use std::env;
 use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::sync::Weak;
 use std::fs::{self, File, remove_file, read_link};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::cell::Cell;
@@ -64,6 +63,7 @@ mod logger;
 mod opt;
 mod syscall;
 mod raw_file;
+mod arc_counter;
 
 use common::event::{self, DataId, Event, HeaderBody, AllocBody, FramesInvalidated, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::lz4_stream::Lz4Writer;
@@ -88,6 +88,7 @@ use crate::utils::{
     temporarily_change_umask
 };
 use crate::spin_lock::SpinLock;
+use crate::arc_counter::ArcCounter;
 
 extern "C" {
     #[link_name = "__libc_malloc"]
@@ -1360,33 +1361,23 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
 }
 
 static THROTTLE_LIMIT: usize = 4096;
+
 thread_local! {
-    static THROTTLE_STATE: Arc< AtomicUsize > = {
-        Arc::new( AtomicUsize::new( 0 ) )
-    };
+    static THROTTLE_STATE: ArcCounter = ArcCounter::new();
 }
 
-struct ThrottleHandle( Weak< AtomicUsize > );
+struct ThrottleHandle( Option< ArcCounter > );
 impl ThrottleHandle {
     fn new() -> Self {
         THROTTLE_STATE.try_with( |state| {
-            while state.load( Ordering::Relaxed ) >= THROTTLE_LIMIT {
+            while state.get() >= THROTTLE_LIMIT {
                 thread::yield_now();
             }
 
-            state.fetch_add( 1, Ordering::Relaxed );
-            ThrottleHandle( Arc::downgrade( state ) )
+            ThrottleHandle( Some( state.clone() ) )
         }).ok().unwrap_or_else( || {
-            ThrottleHandle( Weak::new() )
+            ThrottleHandle( None )
         })
-    }
-}
-
-impl Drop for ThrottleHandle {
-    fn drop( &mut self ) {
-        if let Some( state ) = self.0.upgrade() {
-            state.fetch_sub( 1, Ordering::Relaxed );
-        }
     }
 }
 
