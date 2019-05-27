@@ -1,4 +1,4 @@
-use std::mem::transmute;
+use std::mem::{self, transmute};
 use std::env;
 use std::sync::{Arc, Weak};
 use libc::{self, c_void, c_int, uintptr_t};
@@ -11,25 +11,73 @@ type Context = *mut c_void;
 type ReasonCode = c_int;
 type Callback = extern "C" fn( Context, *mut c_void ) -> ReasonCode;
 
+struct CacheEntry {
+    frames: *mut u64,
+    capacity: usize,
+    cache: Weak< Cache >
+}
+
+impl CacheEntry {
+    #[inline(always)]
+    fn pack( mut frames: Vec< u64 >, cache: Weak< Cache > ) -> Self {
+        let entry = CacheEntry {
+            frames: frames.as_mut_ptr(),
+            capacity: frames.capacity(),
+            cache
+        };
+
+        mem::forget( frames );
+        entry
+    }
+
+    #[inline(always)]
+    fn unpack( self ) -> (Vec< u64 >, Weak< Cache >) {
+        let frames = unsafe { Vec::from_raw_parts( self.frames, 0, self.capacity ) };
+        (frames, self.cache)
+    }
+}
+
+struct Cache {
+    entries: SpinLock< Vec< CacheEntry > >
+}
+
+impl Cache {
+    fn new() -> Self {
+        Cache {
+            entries: SpinLock::new( Vec::new() )
+        }
+    }
+}
+
+impl Drop for Cache {
+    fn drop( &mut self ) {
+        let mut entries = self.entries.lock();
+        for entry in entries.drain( .. ) {
+            mem::drop( entry.unpack() );
+        }
+    }
+}
+
 pub struct Backtrace {
     pub frames: Vec< u64 >,
     pub stale_count: Option< u32 >,
-    cache: Weak< SpinLock< Vec< Vec< u64 > > > >
+    cache: Weak< Cache >
 }
 
 thread_local! {
-    static BACKTRACE_CACHE: Arc< SpinLock< Vec< Vec< u64 > > > > = {
-        Arc::new( SpinLock::new( Vec::new() ) )
-    };
+    static BACKTRACE_CACHE: Arc< Cache > = Arc::new( Cache::new() );
 }
 
 impl Backtrace {
     fn reserve_from_cache( &mut self ) {
-        let _ = BACKTRACE_CACHE.try_with( |cache| {
-            self.cache = Arc::downgrade( cache );
-            let mut cache = cache.lock();
-            if let Some( frames ) = cache.pop() {
+        let _ = BACKTRACE_CACHE.try_with( |cache_arc| {
+            let mut entries = cache_arc.entries.lock();
+            if let Some( entry ) = entries.pop() {
+                let (frames, cache) = entry.unpack();
                 self.frames = frames;
+                self.cache = cache;
+            } else {
+                self.cache = Arc::downgrade( cache_arc );
             }
         });
     }
@@ -49,12 +97,11 @@ impl Backtrace {
 
 impl Drop for Backtrace {
     fn drop( &mut self ) {
-        let mut vec = std::mem::replace( &mut self.frames, Vec::new() );
-        vec.clear();
-
-        if let Some( cache ) = self.cache.upgrade() {
-            let mut cache = cache.lock();
-            cache.push( vec );
+        let frames = mem::replace( &mut self.frames, Vec::new() );
+        let cache_weak = mem::replace( &mut self.cache, Weak::new() );
+        if let Some( cache ) = cache_weak.upgrade() {
+            let mut entries = cache.entries.lock();
+            entries.push( CacheEntry::pack( frames, cache_weak ) );
         }
     }
 }
