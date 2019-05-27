@@ -1,6 +1,8 @@
 use std::env;
 
 static mut PRECISE_TIMESTAMPS: bool = true;
+static mut GRAB_BACKTRACES_ON_FREE: bool = false;
+static mut ZERO_MEMORY: bool = false;
 
 pub fn initialize() {
     let flag_precise_timestamps = env::var_os( "MEMORY_PROFILER_PRECISE_TIMESTAMPS" )
@@ -16,6 +18,34 @@ pub fn initialize() {
     unsafe {
         PRECISE_TIMESTAMPS = flag_precise_timestamps;
     }
+
+    let flag_backtraces_on_free = env::var_os( "MEMORY_PROFILER_GRAB_BACKTRACES_ON_FREE" )
+        .map( |value| value == "1" )
+        .unwrap_or( false );
+
+    if flag_backtraces_on_free {
+        info!( "Grab backtraces on `free`: yes" );
+    } else {
+        info!( "Grab backtraces on `free`: no" );
+    }
+
+    unsafe {
+        GRAB_BACKTRACES_ON_FREE = flag_backtraces_on_free;
+    }
+
+    let flag_zero_memory = env::var_os( "MEMORY_PROFILER_ZERO_MEMORY" )
+        .map( |value| value == "1" )
+        .unwrap_or( false );
+
+    if flag_zero_memory {
+        info!( "Will always return zero'd memory: yes" );
+    } else {
+        info!( "Will always return zero'd memory: no" );
+    }
+
+    unsafe {
+        ZERO_MEMORY = flag_zero_memory;
+    }
 }
 
 #[inline]
@@ -25,40 +55,12 @@ pub fn precise_timestamps() -> bool {
 
 #[inline]
 pub fn grab_backtraces_on_free() -> bool {
-    lazy_static! {
-        static ref VALUE: bool = {
-            let flag = env::var_os( "MEMORY_PROFILER_GRAB_BACKTRACES_ON_FREE" )
-                .map( |value| value == "1" )
-                .unwrap_or( false );
-
-            if flag {
-                info!( "Will grab backtraces on `free()`" );
-            }
-
-            flag
-        };
-    }
-
-    *VALUE
+    unsafe { GRAB_BACKTRACES_ON_FREE }
 }
 
 #[inline]
 pub fn zero_memory() -> bool {
-    lazy_static! {
-        static ref VALUE: bool = {
-            let flag = env::var_os( "MEMORY_PROFILER_ZERO_MEMORY" )
-                .map( |value| value == "1" )
-                .unwrap_or( false );
-
-            if flag {
-                info!( "Will always return zero'd memory" );
-            }
-
-            flag
-        };
-    }
-
-    *VALUE
+    unsafe { ZERO_MEMORY }
 }
 
 #[inline]
