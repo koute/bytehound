@@ -1,7 +1,7 @@
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{self, Write};
 use std::env;
 
 fn grab_paths< P: AsRef< Path > >( path: P, output: &mut Vec< PathBuf > ) {
@@ -45,6 +45,16 @@ fn main() {
 
     lock.semaphore.as_mut().unwrap().with( |_| {
         let _ = fs::remove_dir_all( &webui_out_dir );
+
+        match Command::new( "yarn" ).args( &[ "--version" ] ).status() {
+            Err( ref error ) if error.kind() == io::ErrorKind::NotFound => {
+                panic!( "Yarn not found; you need to install it before you can build the WebUI" );
+            },
+            Err( error ) => {
+                panic!( "Cannot launch Yarn: {}", error );
+            },
+            Ok( _ ) => {}
+        }
 
         if !webui_dir.join( "node_modules" ).exists() {
             let mut child = Command::new( "yarn" )
