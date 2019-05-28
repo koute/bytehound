@@ -194,3 +194,35 @@ fn test_basic() {
 
     assert_eq!( iter.next(), None );
 }
+
+#[test]
+fn test_alloc_in_tls() {
+    let cwd = repository_root().join( "target" );
+    run(
+        &cwd,
+        "g++",
+        &[
+            "-fasynchronous-unwind-tables",
+            "-O0",
+            "-pthread",
+            "-ggdb3",
+            "../integration-tests/test-programs/alloc-in-tls.cpp",
+            "-o",
+            "alloc-in-tls"
+        ],
+        EMPTY_ENV
+    ).assert_success();
+
+    run(
+        &cwd,
+        "./alloc-in-tls",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-alloc-in-tls.dat".into())
+        ]
+    ).assert_success();
+
+    assert_file_exists( cwd.join( "memory-profiling-alloc-in-tls.dat" ) );
+}
