@@ -12,14 +12,14 @@ type ReasonCode = c_int;
 type Callback = extern "C" fn( Context, *mut c_void ) -> ReasonCode;
 
 struct CacheEntry {
-    frames: *mut u64,
+    frames: *mut usize,
     capacity: usize,
     cache: Weak< Cache >
 }
 
 impl CacheEntry {
     #[inline(always)]
-    fn pack( mut frames: Vec< u64 >, cache: Weak< Cache > ) -> Self {
+    fn pack( mut frames: Vec< usize >, cache: Weak< Cache > ) -> Self {
         let entry = CacheEntry {
             frames: frames.as_mut_ptr(),
             capacity: frames.capacity(),
@@ -31,7 +31,7 @@ impl CacheEntry {
     }
 
     #[inline(always)]
-    fn unpack( self ) -> (Vec< u64 >, Weak< Cache >) {
+    fn unpack( self ) -> (Vec< usize >, Weak< Cache >) {
         let frames = unsafe { Vec::from_raw_parts( self.frames, 0, self.capacity ) };
         (frames, self.cache)
     }
@@ -59,7 +59,7 @@ impl Drop for Cache {
 }
 
 pub struct Backtrace {
-    pub frames: Vec< u64 >,
+    pub frames: Vec< usize >,
     pub stale_count: Option< u32 >,
     cache: Weak< Cache >
 }
@@ -158,8 +158,8 @@ unsafe fn get_ip( context: Context ) -> uintptr_t {
 
 extern "C" fn on_backtrace( context: Context, data: *mut c_void ) -> ReasonCode {
     unsafe {
-        let out: &mut Vec< u64 > = transmute( data );
-        out.push( get_ip( context ) as u64 );
+        let out: &mut Vec< usize > = transmute( data );
+        out.push( get_ip( context ) as usize );
     }
 
     0
@@ -238,13 +238,13 @@ pub fn grab( out: &mut Backtrace ) {
 
         if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
             address_space.unwind( |address| {
-                out.frames.push( address as u64 );
+                out.frames.push( address );
                 ::nwind::UnwindControl::Continue
             });
             out.stale_count = None;
         } else {
             let stale_count = address_space.unwind_through_fresh_frames( |address| {
-                out.frames.push( address as u64 );
+                out.frames.push( address );
                 ::nwind::UnwindControl::Continue
             });
             out.stale_count = stale_count.map( |value| value as u32 );
@@ -252,7 +252,7 @@ pub fn grab( out: &mut Backtrace ) {
     }
 
     if debug_crosscheck_unwind_results {
-        let mut expected: Vec< u64 > = Vec::with_capacity( out.frames.len() );
+        let mut expected: Vec< usize > = Vec::with_capacity( out.frames.len() );
         unsafe {
             _Unwind_Backtrace( on_backtrace, transmute( &mut expected ) );
         }
@@ -267,12 +267,12 @@ pub fn grab( out: &mut Backtrace ) {
             let address_space = AS.lock();
             info!( "Expected: " );
             for &address in &expected {
-                info!( "    {:?}", address_space.decode_symbol_once( address as usize ) );
+                info!( "    {:?}", address_space.decode_symbol_once( address ) );
             }
 
             info!( "Actual: " );
             for &address in out.frames.iter() {
-                info!( "    {:?}", address_space.decode_symbol_once( address as usize ) );
+                info!( "    {:?}", address_space.decode_symbol_once( address ) );
             }
 
             panic!( "Wrong backtrace; expected: {:?}, got: {:?}", expected, out.frames );

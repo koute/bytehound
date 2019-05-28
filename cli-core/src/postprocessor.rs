@@ -57,7 +57,8 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
                 is_backtrace = true;
                 write = false;
             },
-            Event::PartialBacktrace { .. } => {
+            Event::PartialBacktrace { .. } |
+            Event::PartialBacktrace32 { .. } => {
                 is_backtrace = true;
                 write = false;
             },

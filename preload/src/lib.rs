@@ -650,12 +650,27 @@ fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Back
         Some( value ) => FramesInvalidated::Some( value )
     };
 
-    Event::PartialBacktrace {
-        id,
-        thread,
-        frames_invalidated,
-        addresses: (backtrace.frames.as_slice()).into()
-    }.write_to_stream( Endianness::LittleEndian, serializer )?;
+    if mem::size_of::< usize >() == mem::size_of::< u32 >() {
+        let frames: &[usize] = backtrace.frames.as_slice();
+        let frames: &[u32] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u32, frames.len() ) };
+        Event::PartialBacktrace32 {
+            id,
+            thread,
+            frames_invalidated,
+            addresses: frames.into()
+        }.write_to_stream( Endianness::LittleEndian, serializer )?;
+    } else if mem::size_of::< usize >() == mem::size_of::< u64 >() {
+        let frames: &[usize] = backtrace.frames.as_slice();
+        let frames: &[u64] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u64, frames.len() ) };
+        Event::PartialBacktrace {
+            id,
+            thread,
+            frames_invalidated,
+            addresses: frames.into()
+        }.write_to_stream( Endianness::LittleEndian, serializer )?;
+    } else {
+        unreachable!();
+    }
 
     Ok( id )
 }

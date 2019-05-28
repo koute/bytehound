@@ -660,7 +660,7 @@ impl Loader {
         previous_backtrace_on_thread: &mut HashMap< u32, Vec< u64 > >,
         thread: u32,
         frames_invalidated: FramesInvalidated,
-        partial_addresses: &[u64]
+        partial_addresses: impl ExactSizeIterator< Item = u64 >
     ) -> Vec< u64 > {
         match frames_invalidated {
             FramesInvalidated::All => {
@@ -671,12 +671,12 @@ impl Loader {
                 );
 
                 addresses.clear();
-                addresses.extend_from_slice( &partial_addresses );
+                addresses.extend( partial_addresses );
                 addresses
             },
             FramesInvalidated::Some( frames_invalidated ) => {
                 let old_addresses = previous_backtrace_on_thread.entry( thread ).or_insert( Vec::new() );
-                let new_iter = partial_addresses.iter().cloned();
+                let new_iter = partial_addresses;
                 let old_iter = old_addresses.iter().cloned().skip( frames_invalidated as usize );
                 new_iter.chain( old_iter ).collect()
             }
@@ -690,7 +690,19 @@ impl Loader {
                     &mut self.previous_backtrace_on_thread,
                     thread,
                     frames_invalidated,
-                    &partial_addresses
+                    partial_addresses.iter().cloned()
+                );
+                let backtrace_id = self.add_backtrace( raw_id, addresses.as_slice().into(), callback );
+                mem::replace( self.previous_backtrace_on_thread.get_mut( &thread ).unwrap(), addresses );
+
+                backtrace_id
+            },
+            Event::PartialBacktrace32 { id: raw_id, thread, frames_invalidated, addresses: partial_addresses } => {
+                let addresses = Self::expand_partial_backtrace(
+                    &mut self.previous_backtrace_on_thread,
+                    thread,
+                    frames_invalidated,
+                    partial_addresses.iter().cloned().map( |value| value as u64 )
                 );
                 let backtrace_id = self.add_backtrace( raw_id, addresses.as_slice().into(), callback );
                 mem::replace( self.previous_backtrace_on_thread.get_mut( &thread ).unwrap(), addresses );
@@ -757,6 +769,7 @@ impl Loader {
                 }
             },
             event @ Event::PartialBacktrace { .. } |
+            event @ Event::PartialBacktrace32 { .. } |
             event @ Event::Backtrace { .. } => {
                 self.process_backtrace_event( event, |_, _| {} );
             },

@@ -182,7 +182,13 @@ pub enum Event< 'a > {
         free_size: u64,
         min_size: u64,
         max_size: u64
-    }
+    },
+    PartialBacktrace32 {
+        id: u64,
+        thread: u32,
+        frames_invalidated: FramesInvalidated,
+        addresses: Cow< 'a, [u32] >
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
