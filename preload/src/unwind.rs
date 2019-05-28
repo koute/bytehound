@@ -237,14 +237,14 @@ pub fn grab( out: &mut Backtrace ) {
         }
 
         if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
-            address_space.unwind( |frame| {
-                out.frames.push( frame.address );
+            address_space.unwind( |address| {
+                out.frames.push( address as u64 );
                 ::nwind::UnwindControl::Continue
             });
             out.stale_count = None;
         } else {
-            let stale_count = address_space.unwind_through_fresh_frames( |frame| {
-                out.frames.push( frame.address );
+            let stale_count = address_space.unwind_through_fresh_frames( |address| {
+                out.frames.push( address as u64 );
                 ::nwind::UnwindControl::Continue
             });
             out.stale_count = stale_count.map( |value| value as u32 );
@@ -267,12 +267,12 @@ pub fn grab( out: &mut Backtrace ) {
             let address_space = AS.lock();
             info!( "Expected: " );
             for &address in &expected {
-                info!( "    {:?}", address_space.decode_symbol_once( address ) );
+                info!( "    {:?}", address_space.decode_symbol_once( address as usize ) );
             }
 
             info!( "Actual: " );
             for &address in out.frames.iter() {
-                info!( "    {:?}", address_space.decode_symbol_once( address ) );
+                info!( "    {:?}", address_space.decode_symbol_once( address as usize ) );
             }
 
             panic!( "Wrong backtrace; expected: {:?}, got: {:?}", expected, out.frames );
