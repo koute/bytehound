@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use byteorder::{NativeEndian, WriteBytesExt};
 
-use crate::data::{Allocation, Data, Operation};
+use crate::data::{Allocation, BacktraceId, Data, FrameId, Operation};
 
 #[derive(Default)]
 struct Exporter {
@@ -11,7 +11,7 @@ struct Exporter {
     slot_count: usize,
     slot_by_pointer: HashMap< u64, usize >,
     slot_by_index: Vec< usize >,
-    operation_count: usize
+    used_frames: HashMap< FrameId, u64 >
 }
 
 impl Exporter {
@@ -38,6 +38,42 @@ impl Exporter {
         let slot = self.slot_by_pointer.remove( &old_allocation.pointer ).unwrap();
         self.slot_by_pointer.insert( new_allocation.pointer, slot );
         self.slot_by_index.push( slot );
+    }
+
+    fn preprocess_backtrace( &mut self, data: &Data, backtrace: BacktraceId ) {
+        for (frame_id, _) in data.get_backtrace( backtrace ) {
+            *self.used_frames.entry( frame_id ).or_insert( 0 ) += 1;
+        }
+    }
+
+    fn generate_traversal( frame_map: &HashMap< FrameId, usize >, last_backtrace: &mut Option< BacktraceId >, mut output: impl io::Write, data: &Data, backtrace_id: BacktraceId ) -> io::Result< () > {
+        let backtrace = data.get_backtrace( backtrace_id );
+        let (last_len, common_len) = if let Some( last_backtrace_id ) = *last_backtrace {
+            let last_backtrace = data.get_backtrace( last_backtrace_id );
+            let last_len = last_backtrace.len();
+            let common_len = backtrace.clone().zip( last_backtrace ).take_while( |((a, _), (b, _))| a == b ).count();
+            (last_len, common_len)
+        } else {
+            (0, 0)
+        };
+
+        let go_up_count = last_len - common_len;
+        for _ in 0..go_up_count {
+            output.write_u64::< NativeEndian >( 5 )?;
+            output.write_u64::< NativeEndian >( 0 )?;
+            output.write_u64::< NativeEndian >( 0 )?;
+            output.write_u64::< NativeEndian >( 0 )?;
+        }
+
+        for (frame_id, _) in backtrace.skip( common_len ) {
+            output.write_u64::< NativeEndian >( 4 )?;
+            output.write_u64::< NativeEndian >( *frame_map.get( &frame_id ).unwrap() as _ )?;
+            output.write_u64::< NativeEndian >( 0 )?;
+            output.write_u64::< NativeEndian >( 0 )?;
+        }
+
+        *last_backtrace = Some( backtrace_id );
+        Ok(())
     }
 
     fn generate_alloc< T: io::Write >( mut output: T, slot: usize, allocation: &Allocation ) -> io::Result< () > {
@@ -69,25 +105,32 @@ impl Exporter {
 
     fn process< T: io::Write, F: Fn( &Allocation ) -> bool >( mut self, data: &Data, filter: F, mut output: T ) -> io::Result< () > {
         for operation in data.operations() {
-            self.operation_count += 1;
             match operation {
                 Operation::Allocation { allocation, .. } => {
                     if !filter( allocation ) {
                         continue;
                     }
 
+                    self.preprocess_backtrace( data, allocation.backtrace );
                     self.preprocess_alloc( allocation );
                 },
-                Operation::Deallocation { allocation, .. } => {
+                Operation::Deallocation { allocation, deallocation, .. } => {
                     if !filter( allocation ) {
                         continue;
                     }
 
+                    if let Some( backtrace ) = deallocation.backtrace {
+                        self.preprocess_backtrace( data, backtrace );
+                    }
                     self.preprocess_dealloc( allocation );
                 },
                 Operation::Reallocation { new_allocation, old_allocation, .. } => {
                     let is_new_ok = filter( new_allocation );
                     let is_old_ok = filter( old_allocation );
+
+                    if is_new_ok || is_old_ok {
+                        self.preprocess_backtrace( data, new_allocation.backtrace );
+                    }
 
                     if is_new_ok && is_old_ok {
                         self.preprocess_realloc( new_allocation, old_allocation );
@@ -101,8 +144,13 @@ impl Exporter {
         }
 
         output.write_u64::< NativeEndian >( self.slot_count as u64 )?;
-        output.write_u64::< NativeEndian >( self.operation_count as u64 )?;
+        let mut frames: Vec< _ > = self.used_frames.drain().collect();
+        frames.sort_by_key( |&(_, count)| count );
+        frames.reverse();
+        let frame_map: HashMap< _, _ > =
+            frames.into_iter().enumerate().map( |(index, (frame_id, _))| (frame_id, index) ).collect();
 
+        let mut last_backtrace = None;
         for (operation, slot) in data.operations().zip( self.slot_by_index ) {
             match operation {
                 Operation::Allocation { allocation, .. } => {
@@ -110,18 +158,26 @@ impl Exporter {
                         continue;
                     }
 
+                    Self::generate_traversal( &frame_map, &mut last_backtrace, &mut output, data, allocation.backtrace )?;
                     Self::generate_alloc( &mut output, slot, allocation )?;
                 },
-                Operation::Deallocation { allocation, .. } => {
+                Operation::Deallocation { allocation, deallocation, .. } => {
                     if !filter( allocation ) {
                         continue;
                     }
 
+                    if let Some( backtrace ) = deallocation.backtrace {
+                        Self::generate_traversal( &frame_map, &mut last_backtrace, &mut output, data, backtrace )?;
+                    }
                     Self::generate_dealloc( &mut output, slot, allocation )?;
                 },
                 Operation::Reallocation { new_allocation, old_allocation, .. } => {
                     let is_new_ok = filter( new_allocation );
                     let is_old_ok = filter( old_allocation );
+
+                    if is_new_ok || is_old_ok {
+                        Self::generate_traversal( &frame_map, &mut last_backtrace, &mut output, data, new_allocation.backtrace )?;
+                    }
 
                     if is_new_ok && is_old_ok {
                         Self::generate_realloc( &mut output, slot, new_allocation )?;
@@ -133,6 +189,8 @@ impl Exporter {
                 }
             }
         }
+
+        output.write_u64::< NativeEndian >( 0 )?;
         Ok(())
     }
 }

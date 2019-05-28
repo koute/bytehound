@@ -1,4 +1,7 @@
 all: replay
 
-replay: replay.c
-	cc replay.c -O3 -o replay -ldl
+replay: replay.cpp generated.inc
+	c++ replay.cpp -O1 -fno-tree-tail-merge -fno-inline -fasynchronous-unwind-tables -o replay -ldl
+
+generated.inc: generate.sh
+	./generate.sh
