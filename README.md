@@ -219,6 +219,13 @@ When set to `1` the profiled process will send UDP broadcasts announcing that it
 This is used by `memory-profiler-cli gather`/`memory-profiler-gather` to automatically detect `memory-profiler` instances
 to which to connect.
 
+### `MEMORY_PROFILER_PRECISE_TIMESTAMPS`
+
+Default: `0`
+
+Decides whenever timestamps will be gathered for every event, or only for chunks for events.
+When enabled the timestamps will be more precise at a cost of extra CPU usage.
+
 ### `MEMORY_PROFILER_ZERO_MEMORY`
 
 Default: `0`
