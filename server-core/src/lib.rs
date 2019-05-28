@@ -1312,7 +1312,33 @@ impl< T > Handler< T > for StaticHandler {
 
 include!( concat!( env!( "OUT_DIR" ), "/webui_assets.rs" ) );
 
-pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_parallel: bool, interface: &str, port: u16 ) -> Result< (), Box< Error > > {
+#[derive(Debug)]
+pub enum ServerError {
+    BindFailed( io::Error ),
+    Other( io::Error )
+}
+
+impl fmt::Display for ServerError {
+    fn fmt( &self, fmt: &mut fmt::Formatter ) -> fmt::Result {
+        match *self {
+            ServerError::BindFailed( ref error ) if error.kind() == io::ErrorKind::AddrInUse => {
+                write!( fmt, "cannot server the server: address is already in use; you probably want to pick a different port with `--port`" )
+            },
+            ServerError::BindFailed( ref error ) => write!( fmt, "failed to start the server: {}", error ),
+            ServerError::Other( ref error ) => write!( fmt, "{}", error )
+        }
+    }
+}
+
+impl From< io::Error > for ServerError {
+    fn from( error: io::Error ) -> Self {
+        ServerError::Other( error )
+    }
+}
+
+impl Error for ServerError {}
+
+pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_parallel: bool, interface: &str, port: u16 ) -> Result< (), ServerError > {
     let mut state = State::new();
 
     if !load_in_parallel {
@@ -1390,8 +1416,7 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
 
                 app.register()
             })
-    }).bind( &format!( "{}:{}", interface, port ) )
-        .unwrap()
+    }).bind( &format!( "{}:{}", interface, port ) ).map_err( |err| ServerError::BindFailed( err ) )?
         .shutdown_timeout( 1 )
         .start();
 
