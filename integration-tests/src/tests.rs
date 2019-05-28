@@ -202,6 +202,7 @@ fn test_alloc_in_tls() {
         &cwd,
         "g++",
         &[
+            "-std=c++11",
             "-fasynchronous-unwind-tables",
             "-O0",
             "-pthread",
