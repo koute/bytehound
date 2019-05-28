@@ -725,7 +725,7 @@ impl Data {
         self.allocations_by_backtrace.get( id.raw() as _ )
     }
 
-    pub fn get_backtrace< 'a >( &'a self, id: BacktraceId ) -> impl SliceLikeIterator< Item = (FrameId, &'a Frame) > {
+    pub fn get_backtrace< 'a >( &'a self, id: BacktraceId ) -> impl SliceLikeIterator< Item = (FrameId, &'a Frame) > + Clone {
         self.get_frame_ids( id ).iter().rev().map( move |&frame_id| (frame_id, &self.frames[ frame_id ]) )
     }
 
