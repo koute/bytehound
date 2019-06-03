@@ -5,7 +5,7 @@ use log::{self, Record, Metadata};
 use std::os::unix::io::{IntoRawFd, FromRawFd};
 use libc;
 
-use crate::utils::{get_thread_id, stack_format_bytes, temporarily_change_umask};
+use crate::utils::{get_thread_id_raw, stack_format_bytes, temporarily_change_umask};
 use crate::spin_lock::SpinLock;
 use crate::raw_file::{RawFile, rename};
 use crate::syscall;
@@ -56,7 +56,7 @@ impl log::Log for SyscallLogger {
                 return;
             }
 
-            stack_format_bytes( format_args!( "memory-profiler({}/{}): {} - {}\n", self.pid, get_thread_id(), record.level(), record.args() ), |buffer| {
+            stack_format_bytes( format_args!( "memory-profiler({}/{}): {} - {}\n", self.pid, get_thread_id_raw(), record.level(), record.args() ), |buffer| {
                 raw_eprint( buffer );
             });
         }
@@ -207,7 +207,7 @@ impl log::Log for FileLogger {
             }
 
             if let Some( output ) = self.output.as_ref() {
-                stack_format_bytes( format_args!( "({}/{}) {} - {}\n", self.pid, get_thread_id(), record.level(), record.args() ), |buffer| {
+                stack_format_bytes( format_args!( "({}/{}) {} - {}\n", self.pid, get_thread_id_raw(), record.level(), record.args() ), |buffer| {
                     let fd = output.fd();
                     let mut fp = RawFile::borrow_raw( &fd );
                     let _ = fp.write_all( buffer );

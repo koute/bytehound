@@ -27,6 +27,14 @@ impl ArcCounter {
     unsafe fn drop_slow( &mut self ) {
         mem::drop( Box::from_raw( self.0.as_ptr() ) );
     }
+
+    pub unsafe fn add( &mut self, value: usize ) {
+        self.inner().fetch_add( value, Ordering::SeqCst );
+    }
+
+    pub unsafe fn sub( &mut self, value: usize ) {
+        self.inner().fetch_sub( value, Ordering::SeqCst );
+    }
 }
 
 impl Clone for ArcCounter {

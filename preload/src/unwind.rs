@@ -6,6 +6,7 @@ use perf_event_open::{Perf, EventSource, Event};
 
 use crate::spin_lock::SpinLock;
 use crate::opt;
+use crate::tls::Tls;
 
 type Context = *mut c_void;
 type ReasonCode = c_int;
@@ -37,12 +38,12 @@ impl CacheEntry {
     }
 }
 
-struct Cache {
+pub struct Cache {
     entries: SpinLock< Vec< CacheEntry > >
 }
 
 impl Cache {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Cache {
             entries: SpinLock::new( Vec::new() )
         }
@@ -64,22 +65,16 @@ pub struct Backtrace {
     cache: Weak< Cache >
 }
 
-thread_local! {
-    static BACKTRACE_CACHE: Arc< Cache > = Arc::new( Cache::new() );
-}
-
 impl Backtrace {
-    fn reserve_from_cache( &mut self ) {
-        let _ = BACKTRACE_CACHE.try_with( |cache_arc| {
-            let mut entries = cache_arc.entries.lock();
-            if let Some( entry ) = entries.pop() {
-                let (frames, cache) = entry.unpack();
-                self.frames = frames;
-                self.cache = cache;
-            } else {
-                self.cache = Arc::downgrade( cache_arc );
-            }
-        });
+    fn reserve_from_cache( &mut self, tls: &Tls ) {
+        let mut entries = tls.backtrace_cache.entries.lock();
+        if let Some( entry ) = entries.pop() {
+            let (frames, cache) = entry.unpack();
+            self.frames = frames;
+            self.cache = cache;
+        } else {
+            self.cache = Arc::downgrade( &tls.backtrace_cache );
+        }
     }
 
     pub fn new() -> Self {
@@ -194,8 +189,8 @@ lazy_static! {
 }
 
 #[inline(never)]
-pub fn grab( out: &mut Backtrace ) {
-    out.reserve_from_cache();
+pub fn grab( tls: &mut Tls, out: &mut Backtrace ) {
+    out.reserve_from_cache( tls );
     debug_assert!( out.frames.is_empty() );
 
     if false {

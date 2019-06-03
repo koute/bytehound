@@ -5,15 +5,10 @@ use std::mem;
 
 use crate::syscall;
 
-fn get_thread_id_raw() -> u32 {
+pub fn get_thread_id_raw() -> u32 {
     unsafe {
         syscall!( GETTID ) as u32
     }
-}
-
-pub fn get_thread_id() -> u32 {
-    thread_local!( static VALUE: u32 = get_thread_id_raw() );
-    VALUE.with( |value| *value )
 }
 
 pub fn read_file( path: &str ) -> io::Result< Vec< u8 > > {

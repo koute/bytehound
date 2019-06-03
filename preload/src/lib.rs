@@ -11,12 +11,11 @@ use std::ptr;
 use std::mem;
 use std::thread;
 use std::env;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::fs::{self, File, remove_file, read_link};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::cell::Cell;
 use std::net::{TcpListener, TcpStream, UdpSocket, IpAddr, SocketAddr};
 use std::time::Duration;
 use std::sync::Arc;
@@ -25,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::cmp::min;
 use std::ffi::CStr;
 use std::fmt::Write as FmtWrite;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use std::os::unix::io::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
@@ -45,11 +44,6 @@ use libc::{
     off_t
 };
 
-use parking_lot::{
-    RwLock,
-    RwLockReadGuard
-};
-
 use common::speedy::{Writable, Readable, Endianness};
 
 mod unwind;
@@ -64,6 +58,7 @@ mod opt;
 mod syscall;
 mod raw_file;
 mod arc_counter;
+mod tls;
 
 use common::event::{self, DataId, Event, HeaderBody, AllocBody, FramesInvalidated, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::lz4_stream::Lz4Writer;
@@ -82,13 +77,13 @@ use crate::timestamp::{Timestamp, get_timestamp};
 use crate::unwind::Backtrace;
 use crate::channel::Channel;
 use crate::utils::{
-    get_thread_id,
     read_file,
     copy,
     temporarily_change_umask
 };
-use crate::spin_lock::SpinLock;
+use crate::spin_lock::{SpinLock, SpinLockGuard};
 use crate::arc_counter::ArcCounter;
+use crate::tls::{Tls, get_tls};
 
 extern "C" {
     #[link_name = "__libc_malloc"]
@@ -157,12 +152,10 @@ lazy_static! {
     };
 }
 
-static ALLOCATION_LOCK: RwLock< () > = RwLock::new(());
 static LISTENER_PORT: AtomicUsize = AtomicUsize::new( 0 );
-static TRACING_ENABLED: AtomicBool = AtomicBool::new( true );
+static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
 
-static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = spin_lock_new!( false );
-thread_local!( static ON_APPLICATION_THREAD: Cell< bool > = Cell::new( *ON_APPLICATION_THREAD_DEFAULT.lock() ) );
+pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = spin_lock_new!( false );
 
 fn get_timestamp_if_enabled() -> Timestamp {
     if opt::precise_timestamps() {
@@ -777,7 +770,7 @@ fn write_memory_dump< U: Write >( serializer: &mut U ) -> io::Result< () > {
     info!( "Writing a memory dump..." );
     serializer.flush()?;
 
-    assert!( !on_application_thread() );
+    assert!( !get_tls().unwrap().on_application_thread );
 
     let pid = unsafe { libc::fork() };
     if pid == 0 {
@@ -928,7 +921,7 @@ fn generate_filename( pattern: &str ) -> String {
 }
 
 fn thread_main() {
-    assert!( !on_application_thread() );
+    assert!( !get_tls().unwrap().on_application_thread );
 
     info!( "Starting event thread..." );
     let mut output_writer = Lz4Writer::new( Output::new() );
@@ -1213,7 +1206,7 @@ fn thread_main() {
                     // Block any further allocations.
                     if allocation_lock_for_memory_dump.is_none() {
                         debug!( "Locking allocations to prepare for a memory dump" );
-                        allocation_lock_for_memory_dump = Some( ALLOCATION_LOCK.write() );
+                        allocation_lock_for_memory_dump = Some( AllocationLock::new() );
                     }
                 },
                 InternalEvent::SetMarker { value } => {
@@ -1244,10 +1237,6 @@ fn thread_main() {
     info!( "Event thread finished" );
 }
 
-fn on_application_thread() -> bool {
-    ON_APPLICATION_THREAD.with( |cell| cell.get() )
-}
-
 fn is_tracing_enabled() -> bool {
     TRACING_ENABLED.load( Ordering::Relaxed )
 }
@@ -1256,16 +1245,17 @@ fn send_event( event: InternalEvent ) {
     EVENT_CHANNEL.send( event );
 }
 
-#[inline(never)]
+#[inline(always)]
 fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F ) {
     EVENT_CHANNEL.chunked_send_with( 64, callback );
 }
 
-static FLAG: AtomicBool = AtomicBool::new( false );
 static RUNNING: AtomicBool = AtomicBool::new( true );
 
 extern fn on_exit() {
     info!( "Exit hook called" );
+
+    TRACING_ENABLED.store( false, Ordering::SeqCst );
 
     send_event( InternalEvent::Exit );
     let mut count = 0;
@@ -1279,14 +1269,14 @@ extern fn on_exit() {
     info!( "Exit hook finished" );
 }
 
+#[inline(never)]
 fn initialize() {
+    static FLAG: AtomicBool = AtomicBool::new( false );
     if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == true {
         return;
     }
 
-    assert!( !on_application_thread() );
-
-    let _ = ThrottleHandle::new();
+    assert!( !get_tls().unwrap().on_application_thread );
 
     static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
     static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
@@ -1325,12 +1315,21 @@ fn initialize() {
 
     info!( "Initializing..." );
 
-    if let Ok( value ) = env::var( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" ) {
-        if value == "1" {
-            info!( "Disabling tracing by default" );
-            TRACING_ENABLED.store( false, Ordering::SeqCst );
-        }
+    unsafe {
+        crate::tls::initialize_tls();
     }
+
+    let tracing_enabled =
+        if let Ok( value ) = env::var( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" ) {
+            if value == "1" {
+                info!( "Disabling tracing by default" );
+                false
+            } else {
+                true
+            }
+        } else {
+            true
+        };
 
     opt::initialize();
 
@@ -1349,7 +1348,7 @@ fn initialize() {
     let flag = Arc::new( SpinLock::new( false ) );
     let flag_clone = flag.clone();
     thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
-        assert!( !on_application_thread() );
+        assert!( !get_tls().unwrap().on_application_thread );
 
         *flag_clone.lock() = true;
         thread_main();
@@ -1372,6 +1371,7 @@ fn initialize() {
         TRACING_ENABLED.store( value, Ordering::SeqCst );
     }
 
+    TRACING_ENABLED.store( tracing_enabled, Ordering::SeqCst );
     unsafe {
         libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
         libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
@@ -1380,7 +1380,7 @@ fn initialize() {
     *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
     info!( "Initialization done!" );
 
-    ON_APPLICATION_THREAD.with( |cell| cell.set( true ) );
+    get_tls().unwrap().on_application_thread = true;
 
     env::remove_var( "LD_PRELOAD" );
 }
@@ -1410,42 +1410,107 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
 
 static THROTTLE_LIMIT: usize = 4096;
 
-thread_local! {
-    static THROTTLE_STATE: ArcCounter = ArcCounter::new();
-}
-
-struct ThrottleHandle( Option< ArcCounter > );
+struct ThrottleHandle( ArcCounter );
 impl ThrottleHandle {
-    fn new() -> Self {
-        THROTTLE_STATE.try_with( |state| {
-            while state.get() >= THROTTLE_LIMIT {
-                thread::yield_now();
-            }
+    fn new( tls: &Tls ) -> Self {
+        let state = &tls.throttle_state;
+        while state.get() >= THROTTLE_LIMIT {
+            thread::yield_now();
+        }
 
-            ThrottleHandle( Some( state.clone() ) )
-        }).ok().unwrap_or_else( || {
-            ThrottleHandle( None )
-        })
+        ThrottleHandle( state.clone() )
     }
 }
 
 struct AllocationLock {
-    _guard: RwLockReadGuard< 'static, () >
+    current_thread_id: u32,
+    throttle_for_thread_map: SpinLockGuard< 'static, Option< HashMap< u32, ArcCounter > > >
 }
 
 impl AllocationLock {
     fn new() -> Self {
-        ON_APPLICATION_THREAD.with( |cell| cell.set( false ) );
-        let guard = ALLOCATION_LOCK.read();
+        let mut throttle_for_thread_map = crate::tls::THROTTLE_FOR_THREAD.lock();
+        let current_thread_id = utils::get_thread_id_raw();
+        for (&thread_id, counter) in throttle_for_thread_map.as_mut().unwrap().iter_mut() {
+            if thread_id == current_thread_id {
+                continue;
+            }
+
+            unsafe {
+                counter.add( THROTTLE_LIMIT );
+            }
+        }
+
         AllocationLock {
-            _guard: guard
+            current_thread_id,
+            throttle_for_thread_map
         }
     }
 }
 
 impl Drop for AllocationLock {
     fn drop( &mut self ) {
-        ON_APPLICATION_THREAD.with( |cell| cell.set( true ) );
+        for (&thread_id, counter) in self.throttle_for_thread_map.as_mut().unwrap().iter_mut() {
+            if thread_id == self.current_thread_id {
+                continue;
+            }
+
+            unsafe {
+                counter.sub( THROTTLE_LIMIT );
+            }
+        }
+    }
+}
+
+struct RecursionLock< 'a > {
+    tls: &'a mut Tls
+}
+
+impl< 'a > RecursionLock< 'a > {
+    fn new( tls: &'a mut Tls ) -> Self {
+        tls.on_application_thread = false;
+        RecursionLock {
+            tls
+        }
+    }
+}
+
+impl< 'a > Drop for RecursionLock< 'a > {
+    fn drop( &mut self ) {
+        self.tls.on_application_thread = true;
+    }
+}
+
+impl< 'a > Deref for RecursionLock< 'a > {
+    type Target = Tls;
+    fn deref( &self ) -> &Self::Target {
+        self.tls
+    }
+}
+
+impl< 'a > DerefMut for RecursionLock< 'a > {
+    fn deref_mut( &mut self ) -> &mut Self::Target {
+        self.tls
+    }
+}
+
+#[inline(always)]
+fn acquire_lock() -> Option< (RecursionLock< 'static >, ThrottleHandle) > {
+    let mut is_enabled = is_tracing_enabled();
+    if !is_enabled {
+        initialize();
+        is_enabled = is_tracing_enabled();
+        if !is_enabled {
+            return None;
+        }
+    }
+
+    let tls = get_tls()?;
+    if !tls.on_application_thread {
+        None
+    } else {
+        let throttle = ThrottleHandle::new( &tls );
+        Some( (RecursionLock::new( tls ), throttle) )
     }
 }
 
@@ -1484,37 +1549,28 @@ fn get_glibc_metadata( ptr: *mut c_void, size: usize ) -> (u32, u32, u64) {
 
 #[inline(always)]
 unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
-    initialize();
-
-    if !on_application_thread() || !is_tracing_enabled() {
-        if opt::zero_memory() || is_calloc {
-            return calloc_real( size as size_t, 1 );
+    let lock = acquire_lock();
+    let ptr =
+        if is_calloc || opt::zero_memory() {
+            calloc_real( size as size_t, 1 )
         } else {
-            return malloc_real( size as size_t );
+            malloc_real( size as size_t )
         };
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut backtrace );
-
-    let ptr = if opt::zero_memory() || is_calloc {
-        calloc_real( size as size_t, 1 )
-    } else {
-        malloc_real( size as size_t )
-    };
 
     if ptr.is_null() {
         return ptr;
     }
+
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return ptr };
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut tls, &mut backtrace );
 
     let (mut flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( ptr, size );
     if is_calloc {
         flags |= event::ALLOC_FLAG_CALLOC;
     }
 
-    let thread = get_thread_id();
+    let thread = tls.thread_id;
     send_event_throttled( move || {
         InternalEvent::Alloc {
             ptr: ptr as usize,
@@ -1529,7 +1585,7 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
         }
     });
 
-    mem::drop( lock );
+    mem::drop( tls );
     ptr
 }
 
@@ -1562,20 +1618,14 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
         return ptr::null_mut();
     }
 
-    initialize();
-
-    if !on_application_thread() || !is_tracing_enabled() {
-        return realloc_real( old_ptr, size );
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut backtrace );
-
+    let lock = acquire_lock();
     let new_ptr = realloc_real( old_ptr, size );
 
-    let thread = get_thread_id();
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return new_ptr };
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut tls, &mut backtrace );
+
+    let thread = tls.thread_id;
     let timestamp = get_timestamp_if_enabled();
 
     if !new_ptr.is_null() {
@@ -1606,7 +1656,7 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
         });
     }
 
-    mem::drop( lock );
+    mem::drop( tls );
     new_ptr
 }
 
@@ -1617,21 +1667,16 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
         return;
     }
 
-    initialize();
+    let lock = acquire_lock();
+    free_real( ptr );
 
-    if !on_application_thread() || !is_tracing_enabled() {
-        free_real( ptr );
-        return;
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return };
     let mut backtrace = Backtrace::new();
     if opt::grab_backtraces_on_free() {
-        unwind::grab( &mut backtrace );
+        unwind::grab( &mut tls, &mut backtrace );
     }
 
-    let thread = get_thread_id();
+    let thread = tls.thread_id;
     send_event_throttled( || {
         InternalEvent::Free {
             ptr: ptr as usize,
@@ -1642,8 +1687,7 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
         }
     });
 
-    free_real( ptr );
-    mem::drop( lock );
+    mem::drop( tls );
 }
 
 #[cfg(not(test))]
@@ -1658,71 +1702,52 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
         return libc::EINVAL;
     }
 
-    initialize();
-
-    if !on_application_thread() || !is_tracing_enabled() {
-        let pointer = memalign_real( alignment, size );
-        *memptr = pointer;
-        if pointer.is_null() {
-            return libc::ENOMEM;
-        } else {
-            return 0;
-        }
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut backtrace );
+    let lock = acquire_lock();
 
     let pointer = memalign_real( alignment, size );
-    if !pointer.is_null() {
-        let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
-
-        let thread = get_thread_id();
-        send_event_throttled( || {
-            InternalEvent::Alloc {
-                ptr: pointer as usize,
-                size: size as usize,
-                backtrace,
-                thread,
-                flags,
-                extra_usable_space,
-                preceding_free_space,
-                timestamp: get_timestamp_if_enabled(),
-                throttle
-            }
-        });
-    }
-
-    mem::drop( lock );
-
     *memptr = pointer;
     if pointer.is_null() {
-        libc::ENOMEM
-    } else {
-        0
+        return libc::ENOMEM;
     }
+
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return 0 };
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut tls, &mut backtrace );
+
+    let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
+    let thread = tls.thread_id;
+    send_event_throttled( || {
+        InternalEvent::Alloc {
+            ptr: pointer as usize,
+            size: size as usize,
+            backtrace,
+            thread,
+            flags,
+            extra_usable_space,
+            preceding_free_space,
+            timestamp: get_timestamp_if_enabled(),
+            throttle
+        }
+    });
+
+    mem::drop( tls );
+    0
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    initialize();
-
-    if !on_application_thread() || !is_tracing_enabled() {
-        return sys_mmap( addr, length, prot, flags, fildes, off );
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut backtrace );
+    let lock = acquire_lock();
 
     let ptr = sys_mmap( addr, length, prot, flags, fildes, off );
     if ptr == libc::MAP_FAILED {
         return ptr;
     }
 
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return ptr };
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut tls, &mut backtrace );
+
+    let thread = tls.thread_id;
     send_event_throttled( || InternalEvent::Mmap {
         pointer: ptr as usize,
         length: length as usize,
@@ -1732,70 +1757,61 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
         file_descriptor: fildes as u32,
         offset: off as u64,
         backtrace,
-        thread: get_thread_id(),
+        thread,
         timestamp: get_timestamp_if_enabled(),
         throttle
     });
 
-    mem::drop( lock );
+    mem::drop( tls );
     ptr
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
-    initialize();
+    let lock = acquire_lock();
+    let result = sys_munmap( ptr, length );
 
-    if !on_application_thread() || !is_tracing_enabled() {
-        return sys_munmap( ptr, length );
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return result };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut backtrace );
+    unwind::grab( &mut tls, &mut backtrace );
 
     if !ptr.is_null() {
+        let thread = tls.thread_id;
         send_event_throttled( || InternalEvent::Munmap {
             ptr: ptr as usize,
             len: length as usize,
             backtrace,
-            thread: get_thread_id(),
+            thread,
             timestamp: get_timestamp_if_enabled(),
             throttle
         });
     }
 
-    let result = sys_munmap( ptr, length );
-    mem::drop( lock );
-
+    mem::drop( tls );
     result
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
-    initialize();
-
-    if !on_application_thread() || !is_tracing_enabled() {
-        return mallopt_real( param, value );
-    }
-
-    let lock = AllocationLock::new();
-    let throttle = ThrottleHandle::new();
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut backtrace );
-
+    let lock = acquire_lock();
     let result = mallopt_real( param, value );
+
+    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return result };
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut tls, &mut backtrace );
+
+    let thread = tls.thread_id;
     send_event_throttled( || InternalEvent::Mallopt {
         param: param as i32,
         value: value as i32,
         result: result as i32,
         backtrace,
-        thread: get_thread_id(),
+        thread,
         timestamp: get_timestamp_if_enabled(),
         throttle
     });
 
-    mem::drop( lock );
+    mem::drop( tls );
     result
 }
 
@@ -1803,7 +1819,9 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
 pub unsafe extern "C" fn fork() -> libc::pid_t {
     let pid = fork_real();
     if pid == 0 {
-        ON_APPLICATION_THREAD.with( |cell| cell.set( false ) );
+        let mut tls = get_tls();
+        let tls = tls.as_mut().unwrap();
+        tls.on_application_thread = false;
         *ON_APPLICATION_THREAD_DEFAULT.lock() = false;
     } else {
         info!( "Fork called; child PID: {}", pid );
@@ -1838,22 +1856,26 @@ pub unsafe extern "C" fn pvalloc( _size: size_t ) -> *mut c_void {
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_set_marker( value: u32 ) {
-    let _lock = AllocationLock::new();
+    let lock = acquire_lock();
     send_event( InternalEvent::SetMarker {
         value
     });
+
+    mem::drop( lock );
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_override_next_timestamp( timestamp: u64 ) {
-    let _lock = AllocationLock::new();
+    let lock = acquire_lock();
     send_event_throttled( || InternalEvent::OverrideNextTimestamp {
         timestamp: Timestamp::from_usecs( timestamp )
     });
+    mem::drop( lock );
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_stop() {
-    let _lock = AllocationLock::new();
+    let lock = acquire_lock();
     send_event( InternalEvent::Stop );
+    mem::drop( lock );
 }
