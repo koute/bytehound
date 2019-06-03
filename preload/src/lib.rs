@@ -1408,7 +1408,7 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
     syscall!( EXIT, status );
 }
 
-static THROTTLE_LIMIT: usize = 4096;
+static THROTTLE_LIMIT: usize = 8192;
 
 struct ThrottleHandle( ArcCounter );
 impl ThrottleHandle {
