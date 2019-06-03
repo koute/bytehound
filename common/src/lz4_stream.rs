@@ -3,6 +3,8 @@ use std::io::{self, Write};
 use lz4_compress;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, ByteOrder};
 
+const CHUNK_SIZE: usize = 512 * 1024;
+
 pub struct Lz4Reader< F: io::Read > {
     fp: Option< F >,
     buffer: Vec< u8 >,
@@ -125,8 +127,8 @@ impl< F: io::Write > Lz4Writer< F > {
 
 fn write_compressed< T >( mut fp: T, compression_buffer: &mut Vec< u8 >, data: &[u8] ) -> io::Result< usize > where T: io::Write {
     clear( compression_buffer );
-    compression_buffer.reserve( 512 * 1024 );
-    for chunk in data.chunks( 512 * 1024 ) {
+    compression_buffer.reserve( CHUNK_SIZE );
+    for chunk in data.chunks( CHUNK_SIZE ) {
         unsafe {
             compression_buffer.set_len( 5 );
         }
@@ -160,7 +162,7 @@ impl< F: io::Write > Drop for Lz4Writer< F > {
 
 impl< F: io::Write > io::Write for Lz4Writer< F > {
     fn write( &mut self, slice: &[u8] ) -> io::Result< usize > {
-        if slice.len() >= 512 * 1024 {
+        if slice.len() >= CHUNK_SIZE {
             self.flush()?;
 
             let mut fp = self.fp.as_mut().unwrap();
@@ -179,7 +181,7 @@ impl< F: io::Write > io::Write for Lz4Writer< F > {
         }
 
         self.buffer[ position..target ].copy_from_slice( slice );
-        if self.buffer.len() >= 512 * 1024 {
+        if self.buffer.len() >= CHUNK_SIZE {
             self.flush()?;
         }
 
