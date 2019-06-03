@@ -1284,107 +1284,109 @@ extern fn on_exit() {
 }
 
 fn initialize() {
-    if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == false {
+    if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == true {
+        return;
+    }
+
+    assert!( !on_application_thread() );
+
+    let _ = ThrottleHandle::new();
+
+    static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
+    static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
+    let log_level = if let Ok( value ) = env::var( "MEMORY_PROFILER_LOG" ) {
+        match value.as_str() {
+            "trace" => log::LevelFilter::Trace,
+            "debug" => log::LevelFilter::Debug,
+            "info" => log::LevelFilter::Info,
+            "warn" => log::LevelFilter::Warn,
+            "error" => log::LevelFilter::Error,
+            _ => log::LevelFilter::Off
+        }
+    } else {
+        log::LevelFilter::Off
+    };
+
+    let pid = unsafe { libc::getpid() };
+
+    if let Ok( value ) = env::var( "MEMORY_PROFILER_LOGFILE" ) {
+        let path = generate_filename( &value );
+        let rotate_at = env::var( "MEMORY_PROFILER_LOGFILE_ROTATE_WHEN_BIGGER_THAN" ).ok().and_then( |value| value.parse().ok() );
+
+        unsafe {
+            if let Ok(()) = FILE_LOGGER.initialize( path, rotate_at, log_level, pid ) {
+                log::set_logger( &FILE_LOGGER ).unwrap();
+            }
+        }
+    } else {
+        unsafe {
+            SYSCALL_LOGGER.initialize( log_level, pid );
+            log::set_logger( &SYSCALL_LOGGER ).unwrap();
+        }
+    }
+
+    log::set_max_level( log_level );
+
+    info!( "Initializing..." );
+
+    if let Ok( value ) = env::var( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" ) {
+        if value == "1" {
+            info!( "Disabling tracing by default" );
+            TRACING_ENABLED.store( false, Ordering::SeqCst );
+        }
+    }
+
+    opt::initialize();
+
+    let _ = *INITIAL_TIMESTAMP;
+    let _ = *UUID;
+
+    info!( "Setting atexit hook..." );
+    unsafe {
+        let result = libc::atexit( on_exit );
+        if result != 0 {
+            error!( "Cannot set the at-exit hook" );
+        }
+    }
+
+    info!( "Spawning main thread..." );
+    let flag = Arc::new( SpinLock::new( false ) );
+    let flag_clone = flag.clone();
+    thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
         assert!( !on_application_thread() );
 
-        let _ = ThrottleHandle::new();
+        *flag_clone.lock() = true;
+        thread_main();
+        RUNNING.store( false, Ordering::SeqCst );
+    }).expect( "failed to start the main memory profiler thread" );
 
-        static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
-        static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
-        let log_level = if let Ok( value ) = env::var( "MEMORY_PROFILER_LOG" ) {
-            match value.as_str() {
-                "trace" => log::LevelFilter::Trace,
-                "debug" => log::LevelFilter::Debug,
-                "info" => log::LevelFilter::Info,
-                "warn" => log::LevelFilter::Warn,
-                "error" => log::LevelFilter::Error,
-                _ => log::LevelFilter::Off
-            }
-        } else {
-            log::LevelFilter::Off
-        };
-
-        let pid = unsafe { libc::getpid() };
-
-        if let Ok( value ) = env::var( "MEMORY_PROFILER_LOGFILE" ) {
-            let path = generate_filename( &value );
-            let rotate_at = env::var( "MEMORY_PROFILER_LOGFILE_ROTATE_WHEN_BIGGER_THAN" ).ok().and_then( |value| value.parse().ok() );
-
-            unsafe {
-                if let Ok(()) = FILE_LOGGER.initialize( path, rotate_at, log_level, pid ) {
-                    log::set_logger( &FILE_LOGGER ).unwrap();
-                }
-            }
-        } else {
-            unsafe {
-                SYSCALL_LOGGER.initialize( log_level, pid );
-                log::set_logger( &SYSCALL_LOGGER ).unwrap();
-            }
-        }
-
-        log::set_max_level( log_level );
-
-        info!( "Initializing..." );
-
-        if let Ok( value ) = env::var( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" ) {
-            if value == "1" {
-                info!( "Disabling tracing by default" );
-                TRACING_ENABLED.store( false, Ordering::SeqCst );
-            }
-        }
-
-        opt::initialize();
-
-        let _ = *INITIAL_TIMESTAMP;
-        let _ = *UUID;
-
-        info!( "Setting atexit hook..." );
-        unsafe {
-            let result = libc::atexit( on_exit );
-            if result != 0 {
-                error!( "Cannot set the at-exit hook" );
-            }
-        }
-
-        info!( "Spawning main thread..." );
-        let flag = Arc::new( SpinLock::new( false ) );
-        let flag_clone = flag.clone();
-        thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
-            assert!( !on_application_thread() );
-
-            *flag_clone.lock() = true;
-            thread_main();
-            RUNNING.store( false, Ordering::SeqCst );
-        }).expect( "failed to start the main memory profiler thread" );
-
-        while *flag.lock() == false {
-            thread::yield_now();
-        }
-
-        info!( "Setting signal handler..." );
-        extern "C" fn sigusr_handler( _: libc::c_int ) {
-            let value = !TRACING_ENABLED.load( Ordering::SeqCst );
-            if value {
-                info!( "Enabling tracing in response to SIGUSR" );
-            } else {
-                info!( "Disabling tracing in response to SIGUSR" );
-            }
-
-            TRACING_ENABLED.store( value, Ordering::SeqCst );
-        }
-
-        unsafe {
-            libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
-            libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
-        }
-
-        *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
-        info!( "Initialization done!" );
-
-        ON_APPLICATION_THREAD.with( |cell| cell.set( true ) );
-
-        env::remove_var( "LD_PRELOAD" );
+    while *flag.lock() == false {
+        thread::yield_now();
     }
+
+    info!( "Setting signal handler..." );
+    extern "C" fn sigusr_handler( _: libc::c_int ) {
+        let value = !TRACING_ENABLED.load( Ordering::SeqCst );
+        if value {
+            info!( "Enabling tracing in response to SIGUSR" );
+        } else {
+            info!( "Disabling tracing in response to SIGUSR" );
+        }
+
+        TRACING_ENABLED.store( value, Ordering::SeqCst );
+    }
+
+    unsafe {
+        libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
+        libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
+    }
+
+    *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
+    info!( "Initialization done!" );
+
+    ON_APPLICATION_THREAD.with( |cell| cell.set( true ) );
+
+    env::remove_var( "LD_PRELOAD" );
 }
 
 #[cfg(target_arch = "arm")]
