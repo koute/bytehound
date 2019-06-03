@@ -632,18 +632,13 @@ fn write_environ< U: Write >( mut serializer: U ) -> io::Result< () > {
     Ok(())
 }
 
-fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Backtrace ) -> io::Result< u64 > {
+fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Backtrace, next_backtrace_id: &mut u64 ) -> io::Result< u64 > {
     if backtrace.is_empty() {
         return Ok( 0 );
     }
 
-    static LAST_BACKTRACE_ID: SpinLock< u64 > = spin_lock_new!( 1 );
-
-    let id = {
-        let mut guard = LAST_BACKTRACE_ID.lock();
-        *guard += 1;
-        *guard
-    };
+    let id = *next_backtrace_id;
+    *next_backtrace_id = id + 1;
 
     let frames_invalidated = match backtrace.stale_count {
         None => FramesInvalidated::All,
@@ -1020,6 +1015,7 @@ fn thread_main() {
         }
     }
 
+    let mut next_backtrace_id = 0;
     let mut last_flush_timestamp = get_timestamp();
     let mut coarse_timestamp = get_timestamp();
     let mut running = true;
@@ -1091,7 +1087,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) ) {
                         mem::drop( throttle );
                         let event = Event::Alloc {
                             timestamp,
@@ -1118,7 +1114,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) ) {
                         mem::drop( throttle );
                         let event = Event::Realloc {
                             timestamp, old_pointer: old_ptr as u64,
@@ -1144,7 +1140,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) ) {
                         mem::drop( throttle );
                         let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
@@ -1160,7 +1156,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) ) {
                         mem::drop( throttle );
                         let event = Event::MemoryMap {
                             timestamp,
@@ -1188,7 +1184,7 @@ fn thread_main() {
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) ) {
                         mem::drop( throttle );
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
@@ -1204,7 +1200,7 @@ fn thread_main() {
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace ) ) {
+                    if let Some( backtrace ) = save_error!( write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) ) {
                         mem::drop( throttle );
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread };
                         save_error!( event.write_to_stream( Endianness::LittleEndian, &mut *serializer ) );
