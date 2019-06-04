@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::mem;
 use std::ptr;
 
+use nwind::LocalUnwindContext;
+
 use crate::arc_counter::ArcCounter;
 use crate::unwind::Cache;
 use crate::utils::get_thread_id_raw;
@@ -14,7 +16,8 @@ pub struct Tls {
     pub thread_id: u32,
     pub on_application_thread: bool,
     pub backtrace_cache: Arc< Cache >,
-    pub throttle_state: ArcCounter
+    pub throttle_state: ArcCounter,
+    pub unwind_ctx: LocalUnwindContext
 }
 
 pub static THROTTLE_FOR_THREAD: SpinLock< Option< HashMap< u32, ArcCounter > > > = spin_lock_new!( None );
@@ -44,6 +47,7 @@ fn construct_tls( cell: *mut (*mut Tls, bool) ) -> *mut Tls {
     let on_application_thread = *ON_APPLICATION_THREAD_DEFAULT.lock();
     let backtrace_cache = Arc::new( Cache::new() );
     let throttle_state = ArcCounter::new();
+        let unwind_ctx = LocalUnwindContext::new();
 
     {
         let mut throttle_for_thread_map = THROTTLE_FOR_THREAD.lock();
@@ -54,7 +58,8 @@ fn construct_tls( cell: *mut (*mut Tls, bool) ) -> *mut Tls {
         thread_id,
         on_application_thread,
         backtrace_cache,
-        throttle_state
+        throttle_state,
+        unwind_ctx
     };
 
     // Currently Rust triggers an allocation when registering

@@ -3,6 +3,7 @@ use std::env;
 use std::sync::{Arc, Weak};
 use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
+use parking_lot::{RwLock, RwLockWriteGuard};
 
 use crate::spin_lock::SpinLock;
 use crate::opt;
@@ -161,7 +162,7 @@ extern "C" fn on_backtrace( context: Context, data: *mut c_void ) -> ReasonCode 
 }
 
 lazy_static! {
-    static ref AS: SpinLock< ::nwind::LocalAddressSpace > = {
+    static ref AS: RwLock< ::nwind::LocalAddressSpace > = {
         let opts = ::nwind::LocalAddressSpaceOptions::new()
             .should_load_symbols( cfg!(feature = "logging") && log_enabled!( ::log::Level::Debug ) );
 
@@ -174,7 +175,7 @@ lazy_static! {
             }
         }
 
-        SpinLock::new( address_space )
+        RwLock::new( address_space )
     };
 
     static ref PERF: SpinLock< Perf > = {
@@ -186,6 +187,24 @@ lazy_static! {
 
         SpinLock::new( perf )
     };
+}
+
+fn should_reload( perf: &mut Perf ) -> bool {
+    let mut reload_address_space = false;
+    for event in perf.iter() {
+        match event.get() {
+            Event::Mmap2( ref event ) if event.filename != b"//anon" && event.inode != 0 && event.protection & libc::PROT_EXEC as u32 != 0 => {
+                debug!( "New executable region mmaped: {:?}", event );
+                reload_address_space = true;
+            },
+            Event::Lost( _ ) => {
+                debug!( "Lost events; forcing a reload" );
+                reload_address_space = true;
+            },
+            _ => {}
+        }
+    }
+    reload_address_space
 }
 
 #[inline(never)]
@@ -201,50 +220,37 @@ pub fn grab( tls: &mut Tls, out: &mut Backtrace ) {
         return;
     }
 
-    let mut reload_address_space = false;
-    let perf = &*PERF;
-    if unsafe { perf.unsafe_as_ref().are_events_pending() } {
-        let mut perf = perf.lock();
-        if perf.are_events_pending() {
-            for event in perf.iter() {
-                match event.get() {
-                    Event::Mmap2( ref event ) if event.filename != b"//anon" && event.inode != 0 && event.protection & libc::PROT_EXEC as u32 != 0 => {
-                        debug!( "New executable region mmaped: {:?}", event );
-                        reload_address_space = true;
-                    },
-                    Event::Lost( _ ) => {
-                        debug!( "Lost events; forcing a reload" );
-                        reload_address_space = true;
-                    },
-                    _ => {}
-                }
+    let address_space =
+        if unsafe { PERF.unsafe_as_ref().are_events_pending() } {
+            let mut perf = PERF.lock();
+            if should_reload( &mut perf ) {
+                info!( "Reloading address space" );
+                let mut address_space = AS.write();
+                address_space.reload().unwrap();
+                RwLockWriteGuard::downgrade( address_space )
+            } else {
+                AS.read()
             }
-        }
-    }
-
-    let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && !AS.lock().is_shadow_stack_enabled();
-
-    {
-        let mut address_space = AS.lock();
-        if reload_address_space {
-            info!( "Reloading address space" );
-            address_space.reload().unwrap();
-        }
-
-        if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
-            address_space.unwind( |address| {
-                out.frames.push( address );
-                ::nwind::UnwindControl::Continue
-            });
-            out.stale_count = None;
         } else {
-            let stale_count = address_space.unwind_through_fresh_frames( |address| {
-                out.frames.push( address );
-                ::nwind::UnwindControl::Continue
-            });
-            out.stale_count = stale_count.map( |value| value as u32 );
-        }
+            AS.read()
+        };
+
+    let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && address_space.is_shadow_stack_enabled();
+    if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
+        address_space.unwind( &mut tls.unwind_ctx, |address| {
+            out.frames.push( address );
+            ::nwind::UnwindControl::Continue
+        });
+        out.stale_count = None;
+    } else {
+        let stale_count = address_space.unwind_through_fresh_frames( &mut tls.unwind_ctx, |address| {
+            out.frames.push( address );
+            ::nwind::UnwindControl::Continue
+        });
+        out.stale_count = stale_count.map( |value| value as u32 );
     }
+
+    mem::drop( address_space );
 
     if debug_crosscheck_unwind_results {
         let mut expected: Vec< usize > = Vec::with_capacity( out.frames.len() );
@@ -259,7 +265,7 @@ pub fn grab( tls: &mut Tls, out: &mut Backtrace ) {
         if out.frames[ 1.. ] != expected[ 1.. ] {
             info!( "/proc/self/maps:\n{}", String::from_utf8_lossy( &::std::fs::read( "/proc/self/maps" ).unwrap() ).trim() );
 
-            let address_space = AS.lock();
+            let address_space = AS.read();
             info!( "Expected: " );
             for &address in &expected {
                 info!( "    {:?}", address_space.decode_symbol_once( address ) );
