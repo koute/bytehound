@@ -12,6 +12,13 @@ use byteorder::{NativeEndian, ByteOrder};
 /// thus collisions are more likely, hurting the compression ratio.
 const DICTIONARY_SIZE: usize = 4096;
 
+fn hash(x: u32) -> usize {
+    let x = x.wrapping_mul(0xd18fd48b);
+    let x = x + (x >> 16);
+
+    x as usize % DICTIONARY_SIZE
+}
+
 /// A LZ4 block.
 ///
 /// This defines a single compression "unit", consisting of two parts, a number of raw literals,
@@ -91,15 +98,7 @@ impl<'a> Encoder<'a> {
     ///
     /// This is guaranteed to be below `DICTIONARY_SIZE`.
     fn get_cur_hash(&self) -> usize {
-        // Use PCG transform to generate a relatively good hash of the four bytes batch at the
-        // cursor.
-        let mut x = self.get_batch_at_cursor().wrapping_mul(0xa4d94a4f);
-        let a = x >> 16;
-        let b = x >> 30;
-        x ^= a >> b;
-        x = x.wrapping_mul(0xa4d94a4f);
-
-        x as usize % DICTIONARY_SIZE
+        hash(self.get_batch_at_cursor())
     }
 
     /// Read a 4-byte "batch" from some position.
