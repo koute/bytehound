@@ -61,6 +61,87 @@ struct Encoder<'a> {
     dict: [usize; DICTIONARY_SIZE],
 }
 
+#[cold]
+fn each_u32_window_slow(slice: &[u8], steps: usize, mut callback: impl FnMut(u32)) {
+    for offset in 0..steps {
+        let x = NativeEndian::read_u32(&slice[offset..]);
+        callback(x);
+    }
+}
+
+fn each_u32_window(slice: &[u8], mut steps: usize, mut callback: impl FnMut(u32)) {
+    if slice.len() < steps + 7 {
+        return each_u32_window_slow(slice, steps, callback);
+    }
+
+    if steps == 0 {
+        return;
+    }
+
+    unsafe {
+        let mut p = slice.as_ptr();
+        let mut x0 = (p as *const u32).read_unaligned();
+
+        loop {
+            p = p.add(4);
+            let mut x1 = (p as *const u32).read_unaligned();
+            let next_x0 = x1;
+            for _ in 0..4 {
+                callback(x0);
+                if cfg!(target_endian = "little") {
+                    x0 = x0 >> 8 | (x1 << 24);
+                    x1 = x1 << 8;
+                } else if cfg!(target_endian = "big") {
+                    x0 = x0 << 8 | (x1 >> 24);
+                    x1 = x1 >> 8;
+                } else {
+                    unreachable!();
+                }
+                steps -= 1;
+                if steps == 0 {
+                    return;
+                }
+            }
+            x0 = next_x0;
+        }
+    }
+}
+
+#[test]
+fn test_each_u32_window() {
+    let slice = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA];
+    fn run(slice: &[u8], steps: usize) -> Vec<u32> {
+        let mut output = Vec::new();
+        each_u32_window(slice, steps, |value| {
+            println!("0x{:08X}", value);
+            output.push(value)
+        });
+        output
+    }
+
+    for length in 4..slice.len() {
+        let slice = slice[..length].to_vec(); // Use `to_vec` to let MIRI check for out-of-bounds reads.
+        if cfg!(target_endian = "little") {
+            assert_eq!(run(&slice, 1), &[0x33221100]);
+            if length >= 5 {
+                assert_eq!(run(&slice, 2), &[0x33221100, 0x44332211]);
+            }
+        } else {
+            assert_eq!(run(&slice, 1), &[0x00112233]);
+            if length >= 5 {
+                assert_eq!(run(&slice, 2), &[0x00112233, 0x11223344]);
+            }
+        }
+    }
+}
+
+#[test]
+#[should_panic]
+fn test_each_u32_window_panics_on_too_short_slice() {
+    let slice = [0x00, 0x11, 0x22];
+    each_u32_window(&slice, 1, |_| {});
+}
+
 impl<'a> Encoder<'a> {
     /// Go forward by some number of bytes.
     ///
@@ -68,6 +149,28 @@ impl<'a> Encoder<'a> {
     ///
     /// This returns `false` if all the input bytes are processed.
     fn go_forward(&mut self, steps: usize) -> bool {
+        // Technically we only need to check that we have 4 extra bytes,
+        // however checking for 7 makes it possible for the compiler to
+        // remove the bounds check from `each_u32_window`, making the whole
+        // thing faster.
+        let input = self.input.get(self.cur..self.cur + steps + 7);
+        let input = match input {
+            Some(input) => input,
+            None => return self.go_forward_slow(steps)
+        };
+
+        each_u32_window(input, steps, |x| {
+            self.dict[hash(x)] = self.cur;
+            self.cur += 1;
+        });
+
+        debug_assert!(self.cur <= self.input.len());
+        true
+    }
+
+    #[inline(never)]
+    #[cold]
+    fn go_forward_slow(&mut self, steps: usize) -> bool {
         // Go over all the bytes we are skipping and update the cursor and dictionary.
         for _ in 0..steps {
             // Insert the cursor position into the dictionary.
