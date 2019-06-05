@@ -78,3 +78,9 @@ fn big_compression() {
 
     assert_eq!(&decompress(&compress(&s)).unwrap(), &s);
 }
+
+#[test]
+fn compression_output() {
+    let output = compress(b"Random data, a, aa, aaa, aaaa, aaaaa, aaaaaa, aaaaaaa, aaaaaaaa");
+    assert_eq!(output, &[208, 82, 97, 110, 100, 111, 109, 32, 100, 97, 116, 97, 44, 32, 3, 0, 1, 4, 0, 2, 5, 0, 3, 6, 0, 4, 7, 0, 5, 8, 0, 6, 9, 0, 16, 97][..]);
+}
