@@ -142,6 +142,71 @@ fn test_each_u32_window_panics_on_too_short_slice() {
     each_u32_window(&slice, 1, |_| {});
 }
 
+fn common_prefix_length(lhs: &[u8], rhs: &[u8]) -> usize {
+    let mut length = std::cmp::min(lhs.len(), rhs.len());
+    let mut count = 0;
+    unsafe {
+        let mut ap = lhs.as_ptr();
+        let mut bp = rhs.as_ptr();
+
+        while length >= 4 {
+            let a = (ap as *const u32).read_unaligned();
+            let b = (bp as *const u32).read_unaligned();
+            ap = ap.add(4);
+            bp = bp.add(4);
+            if a != b {
+                let zeros =
+                    if cfg!(target_endian = "little") {
+                        (a ^ b).trailing_zeros()
+                    } else {
+                        (a ^ b).leading_zeros()
+                    };
+                count += zeros as usize / 8;
+                return count;
+            }
+
+            length -= 4;
+            count += 4;
+        }
+
+        while length > 0 {
+            let a = *ap;
+            let b = *bp;
+            ap = ap.add(1);
+            bp = bp.add(1);
+            if a != b {
+                return count;
+            }
+
+            length -= 1;
+            count += 1;
+        }
+
+        count
+    }
+}
+
+#[test]
+fn test_common_prefix_length() {
+    assert_eq!(common_prefix_length(b"", b""), 0);
+    assert_eq!(common_prefix_length(b"1", b"2"), 0);
+    assert_eq!(common_prefix_length(b"1", b"1"), 1);
+    assert_eq!(common_prefix_length(b"123", b"123"), 3);
+    assert_eq!(common_prefix_length(b"1234", b"1234"), 4);
+    assert_eq!(common_prefix_length(b"12345", b"12345"), 5);
+    assert_eq!(common_prefix_length(b"12345", b"1234"), 4);
+    assert_eq!(common_prefix_length(b"1234", b"12345"), 4);
+    assert_eq!(common_prefix_length(b"1234", b"1235"), 3);
+    assert_eq!(common_prefix_length(b"1234", b"12XX"), 2);
+    assert_eq!(common_prefix_length(b"1234", b"1XXX"), 1);
+    assert_eq!(common_prefix_length(b"1234", b"XXXX"), 0);
+    assert_eq!(common_prefix_length(b"1234", b"12XX"), 2);
+    assert_eq!(common_prefix_length(b"1234", b"1XXX"), 1);
+    assert_eq!(common_prefix_length(b"1234", b"X234"), 0);
+    assert_eq!(common_prefix_length(b"1234", b"XX34"), 0);
+    assert_eq!(common_prefix_length(b"1234", b"XXX4"), 0);
+}
+
 impl<'a> Encoder<'a> {
     /// Go forward by some number of bytes.
     ///
@@ -241,11 +306,13 @@ impl<'a> Encoder<'a> {
            && self.cur - candidate <= 0xFFFF {
             // Calculate the "extension bytes", i.e. the duplicate bytes beyond the batch. These
             // are the number of prefix bytes shared between the match and needle.
-            let ext = self.input[self.cur + 4..]
-                .iter()
-                .zip(&self.input[candidate + 4..])
-                .take_while(|&(a, b)| a == b)
-                .count();
+            let lhs = &self.input[self.cur + 4..];
+            let rhs = &self.input[candidate + 4..];
+            let ext = common_prefix_length(lhs, rhs);
+            debug_assert_eq!(
+                ext,
+                lhs.iter().zip(rhs).take_while(|&(a, b)| a == b).count()
+            );
 
             Some(Duplicate {
                 offset: (self.cur - candidate) as u16,
