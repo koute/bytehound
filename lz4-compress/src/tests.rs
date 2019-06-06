@@ -70,9 +70,9 @@ fn compression_works() {
 
 #[test]
 fn big_compression() {
-    let mut s = Vec::with_capacity(80_000000);
+    let mut s = Vec::with_capacity(10_000000);
 
-    for n in 0..80_000000 {
+    for n in 0..10_000000 {
         s.push((n as u8).wrapping_mul(0xA).wrapping_add(33) ^ 0xA2);
     }
 
