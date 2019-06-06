@@ -173,22 +173,28 @@ fn test_basic() {
     let a2 = iter.next().unwrap(); // malloc, freed through realloc
     let a3 = iter.next().unwrap(); // realloc
     let a4 = iter.next().unwrap(); // calloc, freed
+    let a5 = iter.next().unwrap(); // posix_memalign, leaked
 
     assert!( a0.deallocation.is_none() );
     assert!( a1.deallocation.is_some() );
     assert!( a2.deallocation.is_some() );
     assert!( a3.deallocation.is_none() );
     assert!( a4.deallocation.is_none() );
+    assert!( a5.deallocation.is_none() );
+
+    assert_eq!( a5.address % 65536, 0 );
 
     assert!( a0.size < a1.size );
     assert!( a1.size < a2.size );
     assert!( a2.size < a3.size );
     assert!( a3.size < a4.size );
+    assert!( a4.size < a5.size );
 
     assert_eq!( a0.thread, a1.thread );
     assert_eq!( a1.thread, a2.thread );
     assert_eq!( a2.thread, a3.thread );
     assert_eq!( a3.thread, a4.thread );
+    assert_eq!( a4.thread, a5.thread );
 
     assert_eq!( a0.backtrace.last().unwrap().line.unwrap() + 1, a1.backtrace.last().unwrap().line.unwrap() );
 
