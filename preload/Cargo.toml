@@ -9,12 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 parking_lot = { version = "0.7", features = ["nightly"] }
-lock_api = "0.1"
 libc = "0.2"
 sc = "0.2"
 lazy_static = "1"
-fnv = "1"
-smallvec = "0.6"
 memmap = "0.7"
 log = "0.4"
 glob = "0.2"
