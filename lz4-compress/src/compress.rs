@@ -14,7 +14,7 @@ const DICTIONARY_SIZE: usize = 4096;
 
 fn hash(x: u32) -> usize {
     let x = x.wrapping_mul(0xd18fd48b);
-    let x = x + (x >> 16);
+    let x = x.wrapping_add(x >> 16);
 
     x as usize % DICTIONARY_SIZE
 }
