@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 byteorder = "1"
 ctrlc = "3"
-goblin = "0.0.21"
+goblin = "0.0.22"
 string-interner = "0.7"
 cpp_demangle = "0.2"
 chrono = "0.4"
