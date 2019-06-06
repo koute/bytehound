@@ -1402,6 +1402,7 @@ pub unsafe extern "C" fn sys_munmap( addr: *mut c_void, length: size_t ) -> c_in
     syscall!( MUNMAP, addr, length ) as c_int
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn _exit( status: c_int ) {
     on_exit();
@@ -1734,6 +1735,7 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
     0
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     let lock = acquire_lock();
@@ -1766,6 +1768,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
     ptr
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let lock = acquire_lock();
@@ -1791,6 +1794,7 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     result
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     let lock = acquire_lock();
@@ -1815,6 +1819,7 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     result
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn fork() -> libc::pid_t {
     let pid = fork_real();
