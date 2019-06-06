@@ -88,7 +88,7 @@ enum Opt {
     }
 }
 
-fn run( opt: Opt ) -> Result< (), Box< Error > > {
+fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
     match opt {
         Opt::ExportReplay { output, input } => {
             let fp = File::open( input )?;

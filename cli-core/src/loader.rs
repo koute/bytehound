@@ -82,7 +82,7 @@ pub struct Loader {
     id: DataId,
     header: HeaderBody,
     interner: RefCell< StringInterner >,
-    address_space: Box< IAddressSpace >,
+    address_space: Box< dyn IAddressSpace >,
     address_space_needs_reloading: bool,
     debug_info_index: DebugInfoIndex,
     binaries: HashMap< String, Arc< BinaryData > >,
@@ -119,7 +119,7 @@ pub struct Loader {
     string_id_map: HashMap< u32, StringId >
 }
 
-fn address_to_frame< F: FnMut( Frame ) >( address_space: &IAddressSpace, interner: &mut StringInterner, address: u64, mut callback: F ) {
+fn address_to_frame< F: FnMut( Frame ) >( address_space: &dyn IAddressSpace, interner: &mut StringInterner, address: u64, mut callback: F ) {
     address_space.decode_symbol_while( address, &mut |frame| {
         let mut output = Frame::new_unknown( CodePointer::new( address ) );
         if let Some( str ) = frame.library.take() {
@@ -183,7 +183,7 @@ fn get_basename( path: &str ) -> &str {
 
 impl Loader {
     pub fn new( header: HeaderBody, debug_info_index: DebugInfoIndex ) -> Self {
-        let address_space: Box< IAddressSpace > = match &*header.arch {
+        let address_space: Box< dyn IAddressSpace > = match &*header.arch {
             "arm" => Box::new( AddressSpace::< arch::arm::Arch >::new() ),
             "x86_64" => Box::new( AddressSpace::< arch::amd64::Arch >::new() ),
             "mips64" => Box::new( AddressSpace::< arch::mips64::Arch >::new() ),

@@ -40,7 +40,7 @@ impl fmt::Display for DataId {
 }
 
 impl FromStr for DataId {
-    type Err = Box< ::std::error::Error >;
+    type Err = Box< dyn std::error::Error >;
 
     fn from_str( string: &str ) -> Result< Self, Self::Err > {
         if string.len() != 32 {

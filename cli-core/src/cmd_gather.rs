@@ -155,7 +155,7 @@ impl Drop for ClientLifetime {
     }
 }
 
-pub fn main( target: Option< &str > ) -> Result< (), Box< Error > > {
+pub fn main( target: Option< &str > ) -> Result< (), Box< dyn Error > > {
     let clients: Arc< Mutex< HashSet< DataId > > > = Arc::new( Mutex::new( HashSet::new() ) );
     let mut locks: HashMap< IpAddr, Arc< Mutex< () > > > = HashMap::new();
     let sigint = on_ctrlc();

@@ -577,7 +577,7 @@ fn handler_timeline( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
 }
 
 fn allocations_iter< 'a >( data: &'a Data, sort_by: protocol::AllocSortBy, order: protocol::Order, filter: &Filter ) -> impl DoubleEndedIterator< Item = (AllocationId, &'a Allocation) > {
-    fn box_iter< 'a, I: 'a, U: 'a >( iter: I, order: protocol::Order ) -> Box< DoubleEndedIterator< Item = U > + 'a >
+    fn box_iter< 'a, I: 'a, U: 'a >( iter: I, order: protocol::Order ) -> Box< dyn DoubleEndedIterator< Item = U > + 'a >
         where I: DoubleEndedIterator< Item = U >
     {
         match order {
