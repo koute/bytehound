@@ -5,12 +5,6 @@ use std::mem;
 
 use crate::syscall;
 
-pub fn get_thread_id_raw() -> u32 {
-    unsafe {
-        syscall!( GETTID ) as u32
-    }
-}
-
 pub fn read_file( path: &str ) -> io::Result< Vec< u8 > > {
     let mut fp = File::open( path )?;
     let mut buffer = Vec::new();

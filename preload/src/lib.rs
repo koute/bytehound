@@ -106,7 +106,7 @@ extern "C" {
 #[global_allocator]
 static mut ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-const PAGE_SIZE: usize = 4096;
+pub(crate) const PAGE_SIZE: usize = 4096;
 
 use std::hash::Hash;
 fn get_hash< T: Hash >( value: T ) -> u64 {
@@ -775,9 +775,7 @@ fn write_memory_dump< U: Write >( serializer: &mut U ) -> io::Result< () > {
     let pid = unsafe { libc::fork() };
     if pid == 0 {
         let result = memory_dump_body( serializer );
-        unsafe {
-            syscall!( EXIT, if result.is_err() { 1 } else { 0 } );
-        }
+        syscall::exit( if result.is_err() { 1 } else { 0 } );
     } else {
         info!( "Waiting for child to finish..." );
         unsafe {
@@ -1385,28 +1383,21 @@ fn initialize() {
     env::remove_var( "LD_PRELOAD" );
 }
 
-#[cfg(target_arch = "arm")]
 #[no_mangle]
 pub unsafe extern "C" fn sys_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    syscall!( MMAP2, addr, length, prot, flags, fildes, off / (PAGE_SIZE as off_t) ) as *mut c_void
-}
-
-#[cfg(not(target_arch = "arm"))]
-#[no_mangle]
-pub unsafe extern "C" fn sys_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    syscall!( MMAP, addr, length, prot, flags, fildes, off ) as *mut c_void
+    syscall::mmap( addr, length, prot, flags, fildes, off )
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sys_munmap( addr: *mut c_void, length: size_t ) -> c_int {
-    syscall!( MUNMAP, addr, length ) as c_int
+    syscall::munmap( addr, length )
 }
 
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn _exit( status: c_int ) {
     on_exit();
-    syscall!( EXIT, status );
+    syscall::exit( status as u32 );
 }
 
 static THROTTLE_LIMIT: usize = 8192;
@@ -1431,7 +1422,7 @@ struct AllocationLock {
 impl AllocationLock {
     fn new() -> Self {
         let mut throttle_for_thread_map = crate::tls::THROTTLE_FOR_THREAD.lock();
-        let current_thread_id = utils::get_thread_id_raw();
+        let current_thread_id = syscall::gettid();
         for (&thread_id, counter) in throttle_for_thread_map.as_mut().unwrap().iter_mut() {
             if thread_id == current_thread_id {
                 continue;

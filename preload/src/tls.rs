@@ -8,8 +8,8 @@ use nwind::LocalUnwindContext;
 
 use crate::arc_counter::ArcCounter;
 use crate::unwind::Cache;
-use crate::utils::get_thread_id_raw;
 use crate::spin_lock::SpinLock;
+use crate::syscall;
 use crate::ON_APPLICATION_THREAD_DEFAULT;
 
 pub struct Tls {
@@ -43,7 +43,7 @@ fn construct_tls( cell: *mut (*mut Tls, bool) ) -> *mut Tls {
         (*cell).1 = true;
     }
 
-    let thread_id = get_thread_id_raw();
+    let thread_id = syscall::gettid();
     let on_application_thread = *ON_APPLICATION_THREAD_DEFAULT.lock();
     let backtrace_cache = Arc::new( Cache::new() );
     let throttle_state = ArcCounter::new();

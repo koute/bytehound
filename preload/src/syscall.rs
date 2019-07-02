@@ -53,3 +53,30 @@ pub fn rename( source: &CStr, destination: &CStr ) -> libc::c_int {
         syscall!( RENAMEAT, libc::AT_FDCWD, source, libc::AT_FDCWD, destination ) as _
     }
 }
+
+pub fn gettid() -> u32 {
+    unsafe {
+        syscall!( GETTID ) as u32
+    }
+}
+
+pub fn exit( status: u32 ) -> ! {
+    unsafe {
+        syscall!( EXIT, status );
+        core::hint::unreachable_unchecked();
+    }
+}
+
+#[cfg(target_arch = "arm")]
+pub unsafe fn mmap( addr: *mut libc::c_void, length: libc::size_t, prot: libc::c_int, flags: libc::c_int, fildes: libc::c_int, off: libc::off_t ) -> *mut libc::c_void {
+    syscall!( MMAP2, addr, length, prot, flags, fildes, off / (crate::PAGE_SIZE as libc::off_t) ) as *mut libc::c_void
+}
+
+#[cfg(not(target_arch = "arm"))]
+pub unsafe fn mmap( addr: *mut libc::c_void, length: libc::size_t, prot: libc::c_int, flags: libc::c_int, fildes: libc::c_int, off: libc::off_t ) -> *mut libc::c_void {
+    syscall!( MMAP, addr, length, prot, flags, fildes, off ) as *mut libc::c_void
+}
+
+pub unsafe fn munmap( addr: *mut libc::c_void, length: libc::size_t ) -> libc::c_int {
+    syscall!( MUNMAP, addr, length ) as libc::c_int
+}
