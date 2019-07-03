@@ -1,6 +1,31 @@
 use std::ffi::CStr;
 use libc;
 
+#[cfg(not(feature = "sc"))]
+macro_rules! syscall {
+    (@to_libc OPEN) => { libc::SYS_open };
+    (@to_libc OPENAT) => { libc::SYS_openat };
+    (@to_libc CLOSE) => { libc::SYS_close };
+    (@to_libc WRITE) => { libc::SYS_write };
+    (@to_libc UMASK) => { libc::SYS_umask };
+    (@to_libc FCHMOD) => { libc::SYS_fchmod };
+    (@to_libc RENAME) => { libc::SYS_rename };
+    (@to_libc RENAMEAT) => { libc::SYS_renameat };
+    (@to_libc GETTID) => { libc::SYS_gettid };
+    (@to_libc EXIT) => { libc::SYS_exit };
+    (@to_libc MMAP) => { libc::SYS_mmap };
+    (@to_libc MMAP2) => { libc::SYS_mmap2 };
+    (@to_libc MUNMAP) => { libc::SYS_munmap };
+
+    ($num:ident) => {
+        libc::syscall( syscall!( @to_libc $num ) )
+    };
+
+    ($num:ident, $($args:expr),+) => {
+        libc::syscall( syscall!( @to_libc $num ), $($args),+ )
+    };
+}
+
 pub fn open( path: &CStr, flags: libc::c_int, mode: libc::c_int ) -> libc::c_int {
     let path = path.as_ptr();
 

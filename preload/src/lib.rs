@@ -4,6 +4,7 @@ extern crate log;
 #[macro_use]
 extern crate lazy_static;
 
+#[cfg(feature = "sc")]
 #[macro_use]
 extern crate sc;
 
