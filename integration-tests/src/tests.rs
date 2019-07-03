@@ -146,6 +146,7 @@ fn test_basic() {
             assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
             let list: Vec< ResponseMetadata > = serde_json::from_str( &response.text().unwrap() ).unwrap();
             if !list.is_empty() {
+                assert_eq!( list[ 0 ].executable.split( "/" ).last().unwrap(), "basic" );
                 found = true;
                 break;
             }
