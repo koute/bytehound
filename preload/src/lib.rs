@@ -867,7 +867,7 @@ fn send_broadcast_to( target: IpAddr ) -> Result< (), io::Error > {
 
 fn send_broadcast() -> Result< (), io::Error > {
     use std::iter::once;
-    use std::net::{Ipv4Addr, IpAddr};
+    use std::net::Ipv4Addr;
 
     let wildcard: IpAddr = Ipv4Addr::new( 0, 0, 0, 0 ).into();
     let mut output = Ok(());
