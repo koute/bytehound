@@ -20,7 +20,7 @@ pub struct Tls {
     pub unwind_ctx: LocalUnwindContext
 }
 
-pub static THROTTLE_FOR_THREAD: SpinLock< Option< HashMap< u32, ArcCounter > > > = spin_lock_new!( None );
+pub static THROTTLE_FOR_THREAD: SpinLock< Option< HashMap< u32, ArcCounter > > > = SpinLock::new( None );
 
 impl Drop for Tls {
     fn drop( &mut self ) {

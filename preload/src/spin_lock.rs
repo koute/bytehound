@@ -11,19 +11,10 @@ pub struct SpinLock< T > {
 unsafe impl< T > Send for SpinLock< T > {}
 unsafe impl< T > Sync for SpinLock< T > {}
 
-macro_rules! spin_lock_new {
-    ($value:expr) => {
-        SpinLock {
-            value: ::std::cell::UnsafeCell::new( $value ),
-            flag: ::std::sync::atomic::AtomicBool::new( false )
-        }
-    }
-}
-
 pub struct SpinLockGuard< 'a, T: 'a >( &'a SpinLock< T > );
 
 impl< T > SpinLock< T > {
-    pub fn new( value: T ) -> Self {
+    pub const fn new( value: T ) -> Self {
         SpinLock {
             value: UnsafeCell::new( value ),
             flag: AtomicBool::new( false )

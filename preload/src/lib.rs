@@ -49,7 +49,6 @@ use common::speedy::{Writable, Readable, Endianness};
 
 mod unwind;
 mod timestamp;
-#[macro_use]
 mod spin_lock;
 mod channel;
 mod utils;
@@ -156,7 +155,7 @@ lazy_static! {
 static LISTENER_PORT: AtomicUsize = AtomicUsize::new( 0 );
 static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
 
-pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = spin_lock_new!( false );
+pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = SpinLock::new( false );
 
 fn get_timestamp_if_enabled() -> Timestamp {
     if opt::precise_timestamps() {
