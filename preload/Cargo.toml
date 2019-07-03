@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-parking_lot = { version = "0.8", features = ["nightly"] }
+parking_lot = { version = "0.8" }
 libc = "0.2"
 sc = { version = "0.2", optional = true }
 lazy_static = "1"
@@ -34,3 +34,4 @@ path = "../common"
 [features]
 default = []
 debug-logs = ["nwind/debug-logs", "nwind/addr2line"]
+nightly = ["parking_lot/nightly"]
