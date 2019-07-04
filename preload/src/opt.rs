@@ -3,6 +3,7 @@ use std::env;
 static mut PRECISE_TIMESTAMPS: bool = true;
 static mut GRAB_BACKTRACES_ON_FREE: bool = false;
 static mut ZERO_MEMORY: bool = false;
+static mut TRACING_ENABLED_BY_DEFAULT: bool = true;
 
 pub fn initialize() {
     let flag_precise_timestamps = env::var_os( "MEMORY_PROFILER_PRECISE_TIMESTAMPS" )
@@ -46,6 +47,20 @@ pub fn initialize() {
     unsafe {
         ZERO_MEMORY = flag_zero_memory;
     }
+
+    let tracing_enabled_by_default = env::var_os( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" )
+        .map( |value| value != "1" )
+        .unwrap_or( true );
+
+    if tracing_enabled_by_default {
+        info!( "Tracing enabled by default: yes" );
+    } else {
+        info!( "Tracing enabled by default: no" );
+    }
+
+    unsafe {
+        TRACING_ENABLED_BY_DEFAULT = tracing_enabled_by_default;
+    }
 }
 
 #[inline]
@@ -61,6 +76,11 @@ pub fn grab_backtraces_on_free() -> bool {
 #[inline]
 pub fn zero_memory() -> bool {
     unsafe { ZERO_MEMORY }
+}
+
+#[inline]
+pub fn tracing_enabled_by_default() -> bool {
+    unsafe { TRACING_ENABLED_BY_DEFAULT }
 }
 
 #[inline]

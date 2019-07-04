@@ -1278,15 +1278,7 @@ extern fn on_exit() {
     info!( "Exit hook finished" );
 }
 
-#[inline(never)]
-fn initialize() {
-    static FLAG: AtomicBool = AtomicBool::new( false );
-    if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == true {
-        return;
-    }
-
-    assert!( !get_tls().unwrap().on_application_thread );
-
+fn initialize_logger() {
     static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
     static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
     let log_level = if let Ok( value ) = env::var( "MEMORY_PROFILER_LOG" ) {
@@ -1321,26 +1313,9 @@ fn initialize() {
     }
 
     log::set_max_level( log_level );
+}
 
-    info!( "Initializing..." );
-
-    let tracing_enabled =
-        if let Ok( value ) = env::var( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" ) {
-            if value == "1" {
-                info!( "Disabling tracing by default" );
-                false
-            } else {
-                true
-            }
-        } else {
-            true
-        };
-
-    opt::initialize();
-
-    let _ = *INITIAL_TIMESTAMP;
-    let _ = *UUID;
-
+fn initialize_atexit_hook() {
     info!( "Setting atexit hook..." );
     unsafe {
         let result = libc::atexit( on_exit );
@@ -1348,7 +1323,9 @@ fn initialize() {
             error!( "Cannot set the at-exit hook" );
         }
     }
+}
 
+fn initialize_processing_thread() {
     info!( "Spawning main thread..." );
     let flag = Arc::new( SpinLock::new( false ) );
     let flag_clone = flag.clone();
@@ -1363,7 +1340,9 @@ fn initialize() {
     while *flag.lock() == false {
         thread::yield_now();
     }
+}
 
+fn initialize_signal_handlers() {
     info!( "Setting signal handler..." );
     extern "C" fn sigusr_handler( _: libc::c_int ) {
         let value = !TRACING_ENABLED.load( Ordering::SeqCst );
@@ -1375,12 +1354,34 @@ fn initialize() {
 
         TRACING_ENABLED.store( value, Ordering::SeqCst );
     }
-
-    TRACING_ENABLED.store( tracing_enabled, Ordering::SeqCst );
     unsafe {
         libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
         libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
     }
+}
+
+#[inline(never)]
+fn initialize() {
+    static FLAG: AtomicBool = AtomicBool::new( false );
+    if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == true {
+        return;
+    }
+
+    assert!( !get_tls().unwrap().on_application_thread );
+
+    initialize_logger();
+    info!( "Initializing..." );
+
+    opt::initialize();
+
+    let _ = *INITIAL_TIMESTAMP;
+    let _ = *UUID;
+
+    initialize_atexit_hook();
+    initialize_processing_thread();
+
+    TRACING_ENABLED.store( opt::tracing_enabled_by_default(), Ordering::SeqCst );
+    initialize_signal_handlers();
 
     *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
     info!( "Initialization done!" );
