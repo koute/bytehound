@@ -47,6 +47,8 @@ use libc::{
 
 use common::speedy::{Writable, Readable, Endianness};
 
+#[macro_use]
+mod thread_local;
 mod unwind;
 mod timestamp;
 mod spin_lock;
@@ -1312,10 +1314,6 @@ fn initialize() {
     log::set_max_level( log_level );
 
     info!( "Initializing..." );
-
-    unsafe {
-        crate::tls::initialize_tls();
-    }
 
     let tracing_enabled =
         if let Ok( value ) = env::var( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" ) {
