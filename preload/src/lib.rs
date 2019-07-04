@@ -337,8 +337,11 @@ fn poll_clients( poll_fds: &mut Vec< libc::pollfd >, output: &mut Lz4Writer< Out
 
 impl io::Write for Output {
     fn write( &mut self, data: &[u8] ) -> io::Result< usize > {
-        if let Some( (_, ref mut fp) ) = self.file {
-            fp.write_all( data )?
+        if let Some( (ref path, ref mut fp) ) = self.file {
+            if let Err( error ) = fp.write_all( data ) {
+                warn!( "Write to {:?} failed: {}", path, error );
+                self.file = None;
+            }
         }
 
         for mut client in self.clients.iter_mut() {
@@ -357,8 +360,11 @@ impl io::Write for Output {
     }
 
     fn flush( &mut self ) -> io::Result< () > {
-        if let Some( (_, ref mut fp) ) = self.file {
-            fp.flush()?
+        if let Some( (ref path, ref mut fp) ) = self.file {
+            if let Err( error ) = fp.flush() {
+                warn!( "Flush of {:?} failed: {}", path, error );
+                self.file = None;
+            }
         }
 
         Ok(())
