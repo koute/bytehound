@@ -907,7 +907,7 @@ fn generate_filename( pattern: &str ) -> String {
     output
 }
 
-fn initialize_output_file() -> Result< Option< (File, PathBuf) >, io::Error > {
+fn initialize_output_file() -> Option< (File, PathBuf) > {
     let output_path;
     if let Ok( path ) = env::var( "MEMORY_PROFILER_OUTPUT" ) {
         output_path = generate_filename( &path );
@@ -916,7 +916,7 @@ fn initialize_output_file() -> Result< Option< (File, PathBuf) >, io::Error > {
     };
 
     if output_path == "" {
-        return Ok( None );
+        return None;
     }
 
     let fp = {
@@ -934,7 +934,7 @@ fn initialize_output_file() -> Result< Option< (File, PathBuf) >, io::Error > {
         Ok( fp ) => fp,
         Err( error ) => {
             error!( "Couldn't open '{}' for writing: {}", output_path, error );
-            return Err( error );
+            return None;
         }
     };
 
@@ -953,7 +953,35 @@ fn initialize_output_file() -> Result< Option< (File, PathBuf) >, io::Error > {
         }
     }
 
-    Ok( Some( (fp, output_path.into()) ) )
+    Some( (fp, output_path.into()) )
+}
+
+fn write_initial_data< T >( mut fp: T ) -> Result< (), io::Error > where T: Write {
+    info!( "Writing initial header..." );
+    write_header( &mut fp )?;
+
+    info!( "Writing wall clock..." );
+    write_wallclock( &mut fp )?;
+
+    info!( "Writing uptime..." );
+    write_uptime( &mut fp )?;
+    write_included_files( &mut fp )?;
+
+    info!( "Writing environ..." );
+    write_environ( &mut fp )?;
+
+    info!( "Writing maps..." );
+    write_maps( &mut fp )?;
+    fp.flush()?;
+
+    if opt::should_write_binaries_to_output() {
+        info!( "Writing binaries..." );
+        write_binaries( &mut fp )?;
+    }
+
+    info!( "Flushing..." );
+    fp.flush()?;
+    Ok(())
 }
 
 fn thread_main() {
@@ -979,50 +1007,27 @@ fn thread_main() {
         }
     }
 
-    let mut events = Vec::new();
+    if let Some( (fp, path) ) = initialize_output_file() {
+        let mut fp = Lz4Writer::new( fp );
+        match write_initial_data( &mut fp ) {
+            Ok(()) => {
+                let fp = fp.into_inner().unwrap();
 
-    let send_broadcasts = opt::are_broadcasts_enabled();
-    if let Some( Some( (fp, path) ) ) = save_error!( initialize_output_file() ) {
-        let mut output = Output::new();
-        output.set_file( fp, path );
-        output_writer.replace_inner( output ).unwrap();
+                let mut output = Output::new();
+                output.set_file( fp, path );
+                output_writer.replace_inner( output ).unwrap();
+            },
+            Err( error ) => {
+                warn!( "Failed to write initial data: {}", error );
+            }
+        }
     }
 
     let mut listener = create_listener();
     LISTENER_PORT.store( listener.as_ref().ok().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 ) as usize, Ordering::SeqCst );
 
-    {
-        let serializer = &mut output_writer;
-
-        if !serializer.inner().is_none() {
-            info!( "Writing initial header..." );
-            save_error!( write_header( &mut *serializer ) );
-
-            info!( "Writing wall clock..." );
-            save_error!( write_wallclock( &mut *serializer ) );
-
-            info!( "Writing uptime..." );
-            save_error!( write_uptime( &mut *serializer ) );
-
-            save_error!( write_included_files( &mut *serializer ) );
-
-            info!( "Writing environ..." );
-            save_error!( write_environ( &mut *serializer ) );
-
-            info!( "Writing maps..." );
-            save_error!( write_maps( &mut *serializer ) );
-            save_error!( serializer.flush() );
-
-            if opt::should_write_binaries_to_output() {
-                info!( "Writing binaries..." );
-                save_error!( write_binaries( &mut *serializer ) );
-            }
-
-            info!( "Flushing..." );
-            save_error!( serializer.flush_and_reset_buffers() );
-        }
-    }
-
+    let mut events = Vec::new();
+    let send_broadcasts = opt::are_broadcasts_enabled();
     let mut next_backtrace_id = 0;
     let mut last_flush_timestamp = get_timestamp();
     let mut coarse_timestamp = get_timestamp();

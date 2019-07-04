@@ -123,6 +123,11 @@ impl< F: io::Write > Lz4Writer< F > {
 
         Ok(())
     }
+
+    pub fn into_inner( mut self ) -> io::Result< F > {
+        self.flush()?;
+        Ok( self.fp.take().unwrap() )
+    }
 }
 
 fn write_compressed< T >( mut fp: T, compression_buffer: &mut Vec< u8 >, data: &[u8] ) -> io::Result< usize > where T: io::Write {
