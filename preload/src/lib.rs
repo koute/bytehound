@@ -252,27 +252,8 @@ impl Output {
         }
     }
 
-    fn new_file< P: Into< PathBuf > >( path: P ) -> io::Result< Output > {
-        let path: PathBuf = path.into();
-        let fp = {
-            let _handle = temporarily_change_umask( 0o777 );
-            fs::OpenOptions::new()
-                .read( true )
-                .write( true )
-                .create( true )
-                .truncate( true )
-                .mode( 0o777 )
-                .open( &path )?
-        };
-
-        // In the unlikely case of a race condition when setting the umask.
-        let _ = fp.set_permissions( fs::Permissions::from_mode( 0o777 ) );
-
-        Ok( Output { file: Some( (path, fp) ), clients: Vec::new() } )
-    }
-
-    fn get_file( &mut self ) -> Option< &mut File > {
-        self.file.as_mut().map( |(_, file)| file )
+    fn set_file( &mut self, fp: File, path: PathBuf ) {
+        self.file = Some( (path, fp) );
     }
 
     fn is_none( &self ) -> bool {
@@ -920,6 +901,55 @@ fn generate_filename( pattern: &str ) -> String {
     output
 }
 
+fn initialize_output_file() -> Result< Option< (File, PathBuf) >, io::Error > {
+    let output_path;
+    if let Ok( path ) = env::var( "MEMORY_PROFILER_OUTPUT" ) {
+        output_path = generate_filename( &path );
+    } else {
+        output_path = generate_filename( "memory-profiling_%e_%t_%p.dat" );
+    };
+
+    if output_path == "" {
+        return Ok( None );
+    }
+
+    let fp = {
+        let _handle = temporarily_change_umask( 0o777 );
+        fs::OpenOptions::new()
+            .read( true )
+            .write( true )
+            .create( true )
+            .truncate( true )
+            .mode( 0o777 )
+            .open( &output_path )
+    };
+
+    let fp = match fp {
+        Ok( fp ) => fp,
+        Err( error ) => {
+            error!( "Couldn't open '{}' for writing: {}", output_path, error );
+            return Err( error );
+        }
+    };
+
+    // In the unlikely case of a race condition when setting the umask.
+    let _ = fp.set_permissions( fs::Permissions::from_mode( 0o777 ) );
+
+    info!( "File '{}' opened for writing", output_path );
+    if let Some( uid ) = opt::chown_output_to() {
+        let gid = unsafe { libc::getgid() };
+        let errcode = unsafe { libc::fchown( fp.as_raw_fd(), uid, gid ) };
+        if errcode != 0 {
+            let err = io::Error::last_os_error();
+            warn!( "Couldn't chown '{}' to {}: {}", output_path, uid, err );
+        } else {
+            info!( "File '{}' was chown'd to {}", output_path, uid );
+        }
+    }
+
+    Ok( Some( (fp, output_path.into()) ) )
+}
+
 fn thread_main() {
     assert!( !get_tls().unwrap().on_application_thread );
 
@@ -945,32 +975,11 @@ fn thread_main() {
 
     let mut events = Vec::new();
 
-    let output_path;
-    if let Ok( path ) = env::var( "MEMORY_PROFILER_OUTPUT" ) {
-        output_path = generate_filename( &path );
-    } else {
-        output_path = generate_filename( "memory-profiling_%e_%t_%p.dat" );
-    };
-
     let send_broadcasts = opt::are_broadcasts_enabled();
-    if output_path != "" {
-        if let Some( mut output ) = save_error!( Output::new_file( &output_path ) ) {
-            info!( "File '{}' opened for writing", output_path );
-            if let Some( uid ) = opt::chown_output_to() {
-                let gid = unsafe { libc::getgid() };
-                let errcode = unsafe { libc::fchown( output.get_file().unwrap().as_raw_fd(), uid, gid ) };
-                if errcode != 0 {
-                    let err = io::Error::last_os_error();
-                    warn!( "Couldn't chown '{}' to {}: {}", output_path, uid, err );
-                } else {
-                    info!( "File '{}' was chown'd to {}", output_path, uid );
-                }
-            }
-
-            output_writer.replace_inner( output ).unwrap();
-        } else {
-            error!( "Couldn't open '{}' for writing", output_path );
-        }
+    if let Some( Some( (fp, path) ) ) = save_error!( initialize_output_file() ) {
+        let mut output = Output::new();
+        output.set_file( fp, path );
+        output_writer.replace_inner( output ).unwrap();
     }
 
     let mut listener = create_listener();
