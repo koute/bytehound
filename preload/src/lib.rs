@@ -22,17 +22,14 @@ use std::time::Duration;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::path::{Path, PathBuf};
-use std::cmp::min;
-use std::ffi::CStr;
 use std::fmt::Write as FmtWrite;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use std::os::unix::io::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 
 use std::io::{
     self,
-    Read,
     Write,
     Seek,
     SeekFrom
@@ -61,8 +58,10 @@ mod syscall;
 mod raw_file;
 mod arc_counter;
 mod tls;
+mod writers;
+mod writer_memory;
 
-use common::event::{self, DataId, Event, HeaderBody, AllocBody, FramesInvalidated, HEADER_FLAG_IS_LITTLE_ENDIAN};
+use common::event::{self, DataId, Event, HeaderBody, AllocBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::lz4_stream::Lz4Writer;
 use common::request::{
     PROTOCOL_VERSION,
@@ -72,10 +71,7 @@ use common::request::{
 };
 use common::get_local_ips;
 
-use nwind::proc_maps::Region;
-use nwind::proc_maps::parse as parse_maps;
-
-use crate::timestamp::{Timestamp, get_timestamp};
+use crate::timestamp::{Timestamp, get_timestamp, get_wall_clock};
 use crate::unwind::Backtrace;
 use crate::channel::Channel;
 use crate::utils::{
@@ -405,8 +401,8 @@ impl Client {
         if !opt::should_write_binaries_to_output() {
             info!( "Streaming the binaries which were suppressed in the original output file..." );
             let mut serializer = Lz4Writer::new( &mut *self );
-            write_header( &mut serializer )?;
-            write_binaries( &mut serializer )?;
+            writers::write_header( &mut serializer )?;
+            writers::write_binaries( &mut serializer )?;
             serializer.flush()?;
         }
 
@@ -441,9 +437,9 @@ impl Client {
 
         {
             let mut serializer = Lz4Writer::new( &mut *self );
-            write_header( &mut serializer )?;
-            write_maps( &mut serializer )?;
-            write_binaries( &mut serializer )?;
+            writers::write_header( &mut serializer )?;
+            writers::write_maps( &mut serializer )?;
+            writers::write_binaries( &mut serializer )?;
             serializer.flush()?;
         }
 
@@ -460,70 +456,7 @@ impl Drop for Client {
     }
 }
 
-fn read_maps() -> io::Result< Vec< Region > > {
-    let maps = read_file( "/proc/self/maps" )?;
-    let maps_str = String::from_utf8_lossy( &maps );
-    let regions = parse_maps( &maps_str );
-    Ok( regions )
-}
-
-fn mmap_file< P: AsRef< Path >, R, F: FnOnce( &[u8] ) -> R >( path: P, callback: F ) -> io::Result< R > {
-    let fp = File::open( &path )?;
-    let mmap = unsafe { memmap::Mmap::map( &fp ) }?;
-    let slice = mmap.deref();
-    Ok( callback( slice ) )
-}
-
-fn write_file< U: Write >( mut serializer: &mut U, path: &str, bytes: &[u8] ) -> io::Result< () > {
-    Event::File {
-        timestamp: get_timestamp(),
-        path: path.into(),
-        contents: bytes.into()
-    }.write_to_stream( Endianness::LittleEndian, &mut serializer )
-}
-
-fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > {
-    let regions = read_maps()?;
-    let mut files = HashSet::new();
-    for region in regions {
-        if region.is_shared || !region.is_executable || region.name.is_empty() {
-            continue;
-        }
-
-        if region.name == "[heap]" || region.name == "[stack]" || region.name == "[vdso]" {
-            continue;
-        }
-
-        if files.contains( &region.name ) {
-            continue;
-        }
-
-        files.insert( region.name );
-    }
-
-    serializer.flush()?;
-    for filename in files {
-        debug!( "Writing '{}'...", filename );
-        match mmap_file( &filename, |bytes| write_file( &mut serializer, &filename, bytes ) ) {
-            Ok( result ) => {
-                result?
-            },
-            Err( error ) => {
-                debug!( "Failed to mmap '{}': {}", filename, error );
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn write_maps< U: Write >( serializer: &mut U ) -> io::Result< Vec< u8 > > {
-    let maps = read_file( "/proc/self/maps" )?;
-    Event::File { timestamp: get_timestamp(), path: "/proc/self/maps".into(), contents: maps.clone().into() }.write_to_stream( Endianness::LittleEndian, serializer )?;
-    Ok( maps )
-}
-
-fn new_header_body() -> io::Result< HeaderBody > {
+pub(crate) fn new_header_body() -> io::Result< HeaderBody > {
     let id = *UUID;
     let (timestamp, wall_clock_secs, wall_clock_nsecs) = get_wall_clock();
 
@@ -564,259 +497,6 @@ fn broadcast_header() -> BroadcastHeader {
         arch: arch::TARGET_ARCH.to_string(),
         protocol_version: PROTOCOL_VERSION
     }
-}
-
-fn write_header< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    Event::Header( new_header_body()? ).write_to_stream( Endianness::LittleEndian, serializer )
-}
-
-fn get_wall_clock() -> (Timestamp, u64, u64) {
-    let timestamp = get_timestamp();
-    let mut timespec = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0
-    };
-
-    unsafe {
-        libc::clock_gettime( libc::CLOCK_REALTIME, &mut timespec );
-    }
-
-    (timestamp, timespec.tv_sec as u64, timespec.tv_nsec as u64)
-}
-
-fn write_wallclock< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    let (timestamp, sec, nsec) = get_wall_clock();
-    Event::WallClock { timestamp, sec, nsec }.write_to_stream( Endianness::LittleEndian, serializer )
-}
-
-fn write_uptime< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    let uptime = fs::read( "/proc/uptime" )?;
-    write_file( serializer, "/proc/uptime", &uptime )
-}
-
-extern "C" {
-    static environ: *const *const libc::c_char;
-}
-
-fn write_environ< U: Write >( mut serializer: U ) -> io::Result< () > {
-    unsafe {
-        let mut ptr = environ;
-        while !(*ptr).is_null() {
-            let string = CStr::from_ptr( *ptr );
-            Event::Environ {
-                entry: string.to_bytes().into()
-            }.write_to_stream( Endianness::LittleEndian, &mut serializer )?;
-
-            ptr = ptr.offset( 1 );
-        }
-    }
-
-    Ok(())
-}
-
-fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Backtrace, next_backtrace_id: &mut u64 ) -> io::Result< u64 > {
-    if backtrace.is_empty() {
-        return Ok( 0 );
-    }
-
-    let id = *next_backtrace_id;
-    *next_backtrace_id = id + 1;
-
-    let frames_invalidated = match backtrace.stale_count {
-        None => FramesInvalidated::All,
-        Some( value ) => FramesInvalidated::Some( value )
-    };
-
-    if mem::size_of::< usize >() == mem::size_of::< u32 >() {
-        let frames: &[usize] = backtrace.frames.as_slice();
-        let frames: &[u32] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u32, frames.len() ) };
-        Event::PartialBacktrace32 {
-            id,
-            thread,
-            frames_invalidated,
-            addresses: frames.into()
-        }.write_to_stream( Endianness::LittleEndian, serializer )?;
-    } else if mem::size_of::< usize >() == mem::size_of::< u64 >() {
-        let frames: &[usize] = backtrace.frames.as_slice();
-        let frames: &[u64] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u64, frames.len() ) };
-        Event::PartialBacktrace {
-            id,
-            thread,
-            frames_invalidated,
-            addresses: frames.into()
-        }.write_to_stream( Endianness::LittleEndian, serializer )?;
-    } else {
-        unreachable!();
-    }
-
-    Ok( id )
-}
-
-fn is_accessible< U: Read + Seek >( mut fp: U, address: u64 ) -> bool {
-    if let Err( _ ) = fp.seek( SeekFrom::Start( address ) ) {
-        return false;
-    }
-
-    let mut dummy: [u8; 1] = [0];
-    match fp.read( &mut dummy ) {
-        Ok( 1 ) => true,
-        _ => false
-    }
-}
-
-fn memory_dump_body< U: Write >( mut serializer: &mut U ) -> io::Result< () > {
-    let mut buffer = Vec::new();
-    buffer.resize( 1024 * 128, 0 );
-    let mut buffer = buffer.into_boxed_slice();
-    let maps = write_maps( serializer )?;
-    let maps = String::from_utf8_lossy( &maps );
-    let maps = parse_maps( &maps );
-    let mut fp = File::open( "/proc/self/mem" )?;
-    let page_size = PAGE_SIZE as u64;
-
-
-    for region in maps {
-        if !region.is_write && region.inode != 0 {
-            continue;
-        }
-
-        let mut end = {
-            let total_length = (region.end - region.start) / page_size;
-
-            let mut start = 0;
-            let mut end = total_length;
-            loop {
-                if start == end {
-                    break;
-                }
-
-                let current = start + (end - start) / 2;
-                let accessible = is_accessible( &mut fp, region.start + current * page_size + page_size - 1 );
-                if !accessible {
-                    end = current;
-                } else {
-                    start = current + 1;
-                }
-            }
-
-            region.start + end * page_size
-        };
-
-        loop {
-            let chunk_size = min( buffer.len() as u64, end - region.start );
-            if chunk_size == 0 {
-                break;
-            }
-
-            let address = end - chunk_size;
-            fp.seek( SeekFrom::Start( address ) )?;
-            fp.read_exact( &mut buffer[ 0..chunk_size as usize ] )?;
-            let data = &buffer[ 0..chunk_size as usize ];
-            Event::MemoryDump {
-                address,
-                length: chunk_size as u64,
-                data: data.into()
-            }.write_to_stream( Endianness::LittleEndian, &mut serializer )?;
-
-            end -= chunk_size;
-        }
-
-/*
-        let mut page: [u8; 4096] = [0; 4096];
-        while address > region.start {
-            fp.seek( SeekFrom::Start( address - page_size ) )?;
-            fp.read_exact( &mut page )?;
-
-            if page.iter().all( |&byte| byte == 0 ) {
-                address -= page_size;
-            } else {
-                break;
-            }
-        }
-
-        fp.seek( SeekFrom::Start( region.start ) )?;
-        let mut current = region.start;
-
-        while current < address {
-            let chunk_size = min( buffer.len(), (address - current) as usize );
-            fp.read_exact( &mut buffer[ 0..chunk_size ] )?;
-            let data = &buffer[ 0..chunk_size ];
-            Event::MemoryDump {
-                address: current,
-                length: chunk_size as u64,
-                data
-            }.write_to_stream( LittleEndian, serializer )?;
-            current += chunk_size as u64;
-        }
-*/
-    }
-
-    serializer.flush()?;
-    Ok(())
-}
-
-fn write_memory_dump< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    info!( "Writing a memory dump..." );
-    serializer.flush()?;
-
-    assert!( !get_tls().unwrap().on_application_thread );
-
-    let pid = unsafe { libc::fork() };
-    if pid == 0 {
-        let result = memory_dump_body( serializer );
-        syscall::exit( if result.is_err() { 1 } else { 0 } );
-    } else {
-        info!( "Waiting for child to finish..." );
-        unsafe {
-            libc::waitpid( pid, ptr::null_mut(), 0 );
-        }
-    }
-
-    info!( "Memory dump finished" );
-    Ok(())
-}
-
-fn write_included_files< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    let pattern = match env::var( "MEMORY_PROFILER_INCLUDE_FILE" ) {
-        Ok( pattern ) => pattern,
-        Err( _ ) => return Ok(())
-    };
-
-    info!( "Will write any files matching the pattern: {:?}", pattern );
-    match glob::glob( &pattern ) {
-        Ok( paths ) => {
-            let mut any = false;
-            for path in paths {
-                any = true;
-                let path = match path {
-                    Ok( path ) => path,
-                    Err( _ ) => continue
-                };
-
-                info!( "Writing file: {:?}...", path );
-                match mmap_file( &path, |bytes| write_file( serializer, &path.to_string_lossy(), bytes ) ) {
-                    Ok( result ) => {
-                        result?;
-                    },
-                    Err( error ) => {
-                        warn!( "Failed to read {:?}: {}", path, error );
-                        continue;
-                    }
-                }
-
-                serializer.flush()?;
-            }
-
-            if !any {
-                info!( "No files matched the pattern!" );
-            }
-        },
-        Err( error ) => {
-            error!( "Glob of {:?} failed: {}", pattern, error );
-        }
-    }
-
-    Ok(())
 }
 
 fn create_listener() -> io::Result< TcpListener > {
@@ -956,34 +636,6 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
     Some( (fp, output_path.into()) )
 }
 
-fn write_initial_data< T >( mut fp: T ) -> Result< (), io::Error > where T: Write {
-    info!( "Writing initial header..." );
-    write_header( &mut fp )?;
-
-    info!( "Writing wall clock..." );
-    write_wallclock( &mut fp )?;
-
-    info!( "Writing uptime..." );
-    write_uptime( &mut fp )?;
-    write_included_files( &mut fp )?;
-
-    info!( "Writing environ..." );
-    write_environ( &mut fp )?;
-
-    info!( "Writing maps..." );
-    write_maps( &mut fp )?;
-    fp.flush()?;
-
-    if opt::should_write_binaries_to_output() {
-        info!( "Writing binaries..." );
-        write_binaries( &mut fp )?;
-    }
-
-    info!( "Flushing..." );
-    fp.flush()?;
-    Ok(())
-}
-
 fn thread_main() {
     assert!( !get_tls().unwrap().on_application_thread );
 
@@ -992,7 +644,7 @@ fn thread_main() {
 
     if let Some( (fp, path) ) = initialize_output_file() {
         let mut fp = Lz4Writer::new( fp );
-        match write_initial_data( &mut fp ) {
+        match writers::write_initial_data( &mut fp ) {
             Ok(()) => {
                 let fp = fp.into_inner().unwrap();
 
@@ -1057,7 +709,7 @@ fn thread_main() {
         if events.is_empty() {
             if let Some( _lock ) = allocation_lock_for_memory_dump.take() {
                 if !output_writer.inner().is_none() {
-                    let _ = write_memory_dump( &mut output_writer );
+                    let _ = writer_memory::write_memory_dump( &mut output_writer );
                 }
             }
         }
@@ -1076,7 +728,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::Alloc {
                             timestamp,
@@ -1103,7 +755,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::Realloc {
                             timestamp, old_pointer: old_ptr as u64,
@@ -1129,7 +781,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread };
                         let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
@@ -1145,7 +797,7 @@ fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::MemoryMap {
                             timestamp,
@@ -1173,7 +825,7 @@ fn thread_main() {
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread };
                         let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
@@ -1189,7 +841,7 @@ fn thread_main() {
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread };
                         let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
