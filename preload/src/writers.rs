@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::env;
 use std::ffi::CStr;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -154,9 +153,9 @@ pub fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: 
 }
 
 fn write_included_files< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    let pattern = match env::var( "MEMORY_PROFILER_INCLUDE_FILE" ) {
-        Ok( pattern ) => pattern,
-        Err( _ ) => return Ok(())
+    let pattern = match opt::get().include_file {
+        Some( ref pattern ) => pattern,
+        None => return Ok(())
     };
 
     info!( "Will write any files matching the pattern: {:?}", pattern );
@@ -214,7 +213,7 @@ pub fn write_initial_data< T >( mut fp: T ) -> Result< (), io::Error > where T: 
     write_maps( &mut fp )?;
     fp.flush()?;
 
-    if opt::should_write_binaries_to_output() {
+    if opt::get().write_binaries_to_output {
         info!( "Writing binaries..." );
         write_binaries( &mut fp )?;
     }

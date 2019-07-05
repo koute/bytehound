@@ -156,7 +156,7 @@ static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
 pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = SpinLock::new( false );
 
 fn get_timestamp_if_enabled() -> Timestamp {
-    if opt::precise_timestamps() {
+    if opt::get().precise_timestamps {
         get_timestamp()
     } else {
         Timestamp::min()
@@ -398,7 +398,7 @@ impl Client {
     }
 
     fn stream_initial_data( &mut self, path: &Path, file: &mut File ) -> io::Result< () > {
-        if !opt::should_write_binaries_to_output() {
+        if !opt::get().write_binaries_to_output {
             info!( "Streaming the binaries which were suppressed in the original output file..." );
             let mut serializer = Lz4Writer::new( &mut *self );
             writers::write_header( &mut serializer )?;
@@ -501,7 +501,7 @@ fn broadcast_header() -> BroadcastHeader {
 
 fn create_listener() -> io::Result< TcpListener > {
     let mut listener: io::Result< TcpListener >;
-    let mut port = opt::base_broadcast_port();
+    let mut port = opt::get().base_broadcast_port;
     loop {
         listener = TcpListener::bind( format!( "0.0.0.0:{}", port ) );
         if listener.is_ok() {
@@ -588,13 +588,7 @@ fn generate_filename( pattern: &str ) -> String {
 }
 
 fn initialize_output_file() -> Option< (File, PathBuf) > {
-    let output_path;
-    if let Ok( path ) = env::var( "MEMORY_PROFILER_OUTPUT" ) {
-        output_path = generate_filename( &path );
-    } else {
-        output_path = generate_filename( "memory-profiling_%e_%t_%p.dat" );
-    };
-
+    let output_path = generate_filename( &opt::get().output_path_pattern );
     if output_path == "" {
         return None;
     }
@@ -622,7 +616,7 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
     let _ = fp.set_permissions( fs::Permissions::from_mode( 0o777 ) );
 
     info!( "File '{}' opened for writing", output_path );
-    if let Some( uid ) = opt::chown_output_to() {
+    if let Some( uid ) = opt::get().chown_output_to {
         let gid = unsafe { libc::getgid() };
         let errcode = unsafe { libc::fchown( fp.as_raw_fd(), uid, gid ) };
         if errcode != 0 {
@@ -662,7 +656,7 @@ fn thread_main() {
     LISTENER_PORT.store( listener.as_ref().ok().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 ) as usize, Ordering::SeqCst );
 
     let mut events = Vec::new();
-    let send_broadcasts = opt::are_broadcasts_enabled();
+    let send_broadcasts = opt::get().enable_broadcasts;
     let mut next_backtrace_id = 0;
     let mut last_flush_timestamp = get_timestamp();
     let mut coarse_timestamp = get_timestamp();
@@ -1011,7 +1005,9 @@ fn initialize() {
     initialize_logger();
     info!( "Initializing..." );
 
-    opt::initialize();
+    unsafe {
+        opt::initialize();
+    }
 
     let _ = *INITIAL_TIMESTAMP;
     let _ = *UUID;
@@ -1019,7 +1015,7 @@ fn initialize() {
     initialize_atexit_hook();
     initialize_processing_thread();
 
-    TRACING_ENABLED.store( opt::tracing_enabled_by_default(), Ordering::SeqCst );
+    TRACING_ENABLED.store( !opt::get().disabled_by_default, Ordering::SeqCst );
     initialize_signal_handlers();
 
     *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
@@ -1190,7 +1186,7 @@ fn get_glibc_metadata( ptr: *mut c_void, size: usize ) -> (u32, u32, u64) {
 unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
     let lock = acquire_lock();
     let ptr =
-        if is_calloc || opt::zero_memory() {
+        if is_calloc || opt::get().zero_memory {
             calloc_real( size as size_t, 1 )
         } else {
             malloc_real( size as size_t )
@@ -1311,7 +1307,7 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
 
     let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return };
     let mut backtrace = Backtrace::new();
-    if opt::grab_backtraces_on_free() {
+    if opt::get().grab_backtraces_on_free {
         unwind::grab( &mut tls, &mut backtrace );
     }
 

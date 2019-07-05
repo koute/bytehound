@@ -1,114 +1,130 @@
+use std::borrow::Cow;
 use std::env;
+use std::ffi::OsStr;
 
-static mut PRECISE_TIMESTAMPS: bool = true;
-static mut GRAB_BACKTRACES_ON_FREE: bool = false;
-static mut ZERO_MEMORY: bool = false;
-static mut TRACING_ENABLED_BY_DEFAULT: bool = true;
+pub struct Opts {
+    is_initialized: bool,
 
-pub fn initialize() {
-    let flag_precise_timestamps = env::var_os( "MEMORY_PROFILER_PRECISE_TIMESTAMPS" )
-        .map( |value| value == "1" )
-        .unwrap_or( false );
+    pub base_broadcast_port: u16,
+    pub chown_output_to: Option< u32 >,
+    pub disabled_by_default: bool,
+    pub enable_broadcasts: bool,
+    pub enable_shadow_stack: bool,
+    pub grab_backtraces_on_free: bool,
+    pub include_file: Option< String >,
+    pub output_path_pattern: Cow< 'static, str >,
+    pub precise_timestamps: bool,
+    pub write_binaries_to_output: bool,
+    pub zero_memory: bool
+}
 
-    if flag_precise_timestamps {
-        info!( "Timestamp granularity: precise" );
-    } else {
-        info!( "Timestamp granularity: coarse" );
-    }
+static mut OPTS: Opts = Opts {
+    is_initialized: false,
 
-    unsafe {
-        PRECISE_TIMESTAMPS = flag_precise_timestamps;
-    }
+    base_broadcast_port: 8100,
+    chown_output_to: None,
+    disabled_by_default: false,
+    enable_broadcasts: false,
+    enable_shadow_stack: true,
+    grab_backtraces_on_free: false,
+    include_file: None,
+    output_path_pattern: Cow::Borrowed( "memory-profiling_%e_%t_%p.dat" ),
+    precise_timestamps: false,
+    write_binaries_to_output: true,
+    zero_memory: false
+};
 
-    let flag_backtraces_on_free = env::var_os( "MEMORY_PROFILER_GRAB_BACKTRACES_ON_FREE" )
-        .map( |value| value == "1" )
-        .unwrap_or( false );
+trait ParseVar: Sized {
+    fn parse_var( value: &OsStr ) -> Option< Self >;
+}
 
-    if flag_backtraces_on_free {
-        info!( "Grab backtraces on `free`: yes" );
-    } else {
-        info!( "Grab backtraces on `free`: no" );
-    }
-
-    unsafe {
-        GRAB_BACKTRACES_ON_FREE = flag_backtraces_on_free;
-    }
-
-    let flag_zero_memory = env::var_os( "MEMORY_PROFILER_ZERO_MEMORY" )
-        .map( |value| value == "1" )
-        .unwrap_or( false );
-
-    if flag_zero_memory {
-        info!( "Will always return zero'd memory: yes" );
-    } else {
-        info!( "Will always return zero'd memory: no" );
-    }
-
-    unsafe {
-        ZERO_MEMORY = flag_zero_memory;
-    }
-
-    let tracing_enabled_by_default = env::var_os( "MEMORY_PROFILER_DISABLE_BY_DEFAULT" )
-        .map( |value| value != "1" )
-        .unwrap_or( true );
-
-    if tracing_enabled_by_default {
-        info!( "Tracing enabled by default: yes" );
-    } else {
-        info!( "Tracing enabled by default: no" );
-    }
-
-    unsafe {
-        TRACING_ENABLED_BY_DEFAULT = tracing_enabled_by_default;
+impl ParseVar for bool {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        Some( value == "1" || value == "true" )
     }
 }
 
-#[inline]
-pub fn precise_timestamps() -> bool {
-    unsafe { PRECISE_TIMESTAMPS }
+impl ParseVar for u16 {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        value.to_str()?.parse().ok()
+    }
+}
+
+impl ParseVar for u32 {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        value.to_str()?.parse().ok()
+    }
+}
+
+impl ParseVar for String {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        value.to_str().map( |value| value.into() )
+    }
+}
+
+impl< 'a > ParseVar for Cow< 'a, str > {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        let value = String::parse_var( value )?;
+        Some( value.into() )
+    }
+}
+
+impl< T > ParseVar for Option< T > where T: ParseVar {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        if let Some( value ) = T::parse_var( value ) {
+            Some( Some( value ) )
+        } else {
+            None
+        }
+    }
+}
+
+macro_rules! opts {
+    ($($name:expr => $var:expr),+) => {{
+        $(
+            let var = $var;
+            let name = $name;
+            *var = env::var_os( $name )
+                .and_then( |value| ParseVar::parse_var( &value ) )
+                .unwrap_or( (*var).clone() );
+
+            info!( "    {:40} = {:?}", name, *var );
+        )+
+    }}
+}
+
+pub unsafe fn initialize() {
+    info!( "Options:" );
+
+    let opts = &mut OPTS;
+    opts! {
+        "MEMORY_PROFILER_BASE_BROADCAST_PORT"       => &mut opts.base_broadcast_port,
+        "MEMORY_PROFILER_CHOWN_OUTPUT_TO"           => &mut opts.chown_output_to,
+        "MEMORY_PROFILER_DISABLE_BY_DEFAULT"        => &mut opts.disabled_by_default,
+        "MEMORY_PROFILER_ENABLE_BROADCAST"          => &mut opts.enable_broadcasts,
+        "MEMORY_PROFILER_GRAB_BACKTRACES_ON_FREE"   => &mut opts.grab_backtraces_on_free,
+        "MEMORY_PROFILER_INCLUDE_FILE"              => &mut opts.include_file,
+        "MEMORY_PROFILER_OUTPUT"                    => &mut opts.output_path_pattern,
+        "MEMORY_PROFILER_PRECISE_TIMESTAMPS"        => &mut opts.precise_timestamps,
+        "MEMORY_PROFILER_USE_SHADOW_STACK"          => &mut opts.enable_shadow_stack,
+        "MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT"  => &mut opts.write_binaries_to_output,
+        "MEMORY_PROFILER_ZERO_MEMORY"               => &mut opts.zero_memory
+    }
+
+    opts.is_initialized = true;
 }
 
 #[inline]
-pub fn grab_backtraces_on_free() -> bool {
-    unsafe { GRAB_BACKTRACES_ON_FREE }
-}
+pub fn get() -> &'static Opts {
+    let opts = unsafe { &OPTS };
+    debug_assert!( opts.is_initialized );
 
-#[inline]
-pub fn zero_memory() -> bool {
-    unsafe { ZERO_MEMORY }
-}
-
-#[inline]
-pub fn tracing_enabled_by_default() -> bool {
-    unsafe { TRACING_ENABLED_BY_DEFAULT }
+    opts
 }
 
 #[inline]
 pub fn crosscheck_unwind_results_with_libunwind() -> bool {
     false
-}
-
-pub fn chown_output_to() -> Option< u32 > {
-    lazy_static! {
-        static ref VALUE: Option< u32 > = {
-            env::var( "MEMORY_PROFILER_CHOWN_OUTPUT_TO" ).ok()
-                .and_then( |uid| uid.parse::< u32 >().ok() )
-        };
-    }
-
-    *VALUE
-}
-
-pub fn should_write_binaries_to_output() -> bool {
-    lazy_static! {
-        static ref VALUE: bool = {
-            env::var_os( "MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT" )
-                .map( |value| value == "1" )
-                .unwrap_or( true )
-        };
-    }
-
-    *VALUE
 }
 
 pub fn emit_partial_backtraces() -> bool {
@@ -129,41 +145,6 @@ pub fn emit_partial_backtraces() -> bool {
             }
 
             value
-        };
-    }
-
-    *VALUE
-}
-
-pub fn are_broadcasts_enabled() -> bool {
-    lazy_static! {
-        static ref VALUE: bool = {
-            let flag = env::var_os( "MEMORY_PROFILER_ENABLE_BROADCAST" )
-                .map( |value| value == "1" )
-                .unwrap_or( false );
-
-            if flag {
-                info!( "Will send broadcasts" );
-            } else {
-                info!( "Will NOT send broadcasts" );
-            }
-
-            flag
-        };
-    }
-
-    *VALUE
-}
-
-pub fn base_broadcast_port() -> u16 {
-    lazy_static! {
-        static ref VALUE: u16 = {
-            let port = env::var( "MEMORY_PROFILER_BASE_BROADCAST_PORT" ).ok()
-                .and_then( |port| port.parse::< u16 >().ok() )
-                .unwrap_or( 8100 );
-
-            info!( "Will use {} as a base broadcast port", port );
-            port
         };
     }
 

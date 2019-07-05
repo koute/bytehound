@@ -1,5 +1,4 @@
 use std::mem::{self, transmute};
-use std::env;
 use std::sync::{Arc, Weak};
 use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
@@ -167,14 +166,7 @@ lazy_static! {
             .should_load_symbols( cfg!(feature = "logging") && log_enabled!( ::log::Level::Debug ) );
 
         let mut address_space = ::nwind::LocalAddressSpace::new_with_opts( opts ).unwrap();
-        if let Ok( value ) = env::var( "MEMORY_PROFILER_USE_SHADOW_STACK" ) {
-            if value == "0" {
-                address_space.use_shadow_stack( false );
-            } else if value == "1" {
-                address_space.use_shadow_stack( true );
-            }
-        }
-
+        address_space.use_shadow_stack( opt::get().enable_shadow_stack );
         RwLock::new( address_space )
     };
 
