@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use log::{self, Record, Metadata};
+use log::{self, Level, Record, Metadata};
 use std::os::unix::io::{IntoRawFd, FromRawFd};
 use libc;
 
@@ -9,6 +9,16 @@ use crate::utils::{stack_format_bytes, temporarily_change_umask};
 use crate::spin_lock::SpinLock;
 use crate::raw_file::{RawFile, rename};
 use crate::syscall;
+
+fn level_to_str( level: Level ) -> &'static str {
+    match level {
+        Level::Error => "ERR",
+        Level::Warn => "WRN",
+        Level::Info => "INF",
+        Level::Debug => "DBG",
+        Level::Trace => "TRC"
+    }
+}
 
 pub struct SyscallLogger {
     level: log::LevelFilter,
@@ -56,7 +66,7 @@ impl log::Log for SyscallLogger {
                 return;
             }
 
-            stack_format_bytes( format_args!( "memory-profiler({}/{}): {} - {}\n", self.pid, syscall::gettid(), record.level(), record.args() ), |buffer| {
+            stack_format_bytes( format_args!( "memory-profiler: {:04x} {:04x} {} {}\n", self.pid, syscall::gettid(), level_to_str( record.level() ), record.args() ), |buffer| {
                 raw_eprint( buffer );
             });
         }
@@ -207,7 +217,7 @@ impl log::Log for FileLogger {
             }
 
             if let Some( output ) = self.output.as_ref() {
-                stack_format_bytes( format_args!( "({}/{}) {} - {}\n", self.pid, syscall::gettid(), record.level(), record.args() ), |buffer| {
+                stack_format_bytes( format_args!( "{:04x} {:04x} {} {}\n", self.pid, syscall::gettid(), level_to_str( record.level() ), record.args() ), |buffer| {
                     let fd = output.fd();
                     let mut fp = RawFile::borrow_raw( &fd );
                     let _ = fp.write_all( buffer );
