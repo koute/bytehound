@@ -501,7 +501,7 @@ fn broadcast_header() -> BroadcastHeader {
 
 fn create_listener() -> io::Result< TcpListener > {
     let mut listener: io::Result< TcpListener >;
-    let mut port = opt::get().base_broadcast_port;
+    let mut port = opt::get().base_server_port;
     loop {
         listener = TcpListener::bind( format!( "0.0.0.0:{}", port ) );
         if listener.is_ok() {

@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 pub struct Opts {
     is_initialized: bool,
 
-    pub base_broadcast_port: u16,
+    pub base_server_port: u16,
     pub chown_output_to: Option< u32 >,
     pub disabled_by_default: bool,
     pub enable_broadcasts: bool,
@@ -23,7 +23,7 @@ pub struct Opts {
 static mut OPTS: Opts = Opts {
     is_initialized: false,
 
-    base_broadcast_port: 8100,
+    base_server_port: 8100,
     chown_output_to: None,
     disabled_by_default: false,
     enable_broadcasts: false,
@@ -102,7 +102,7 @@ pub unsafe fn initialize() {
 
     let opts = &mut OPTS;
     opts! {
-        "MEMORY_PROFILER_BASE_BROADCAST_PORT"       => &mut opts.base_broadcast_port,
+        "MEMORY_PROFILER_BASE_SERVER_PORT"          => &mut opts.base_server_port,
         "MEMORY_PROFILER_CHOWN_OUTPUT_TO"           => &mut opts.chown_output_to,
         "MEMORY_PROFILER_DISABLE_BY_DEFAULT"        => &mut opts.disabled_by_default,
         "MEMORY_PROFILER_ENABLE_BROADCAST"          => &mut opts.enable_broadcasts,
