@@ -976,7 +976,6 @@ fn initialize_processing_thread() {
 }
 
 fn initialize_signal_handlers() {
-    info!( "Setting signal handler..." );
     extern "C" fn sigusr_handler( _: libc::c_int ) {
         let value = !TRACING_ENABLED.load( Ordering::SeqCst );
         if value {
@@ -987,9 +986,19 @@ fn initialize_signal_handlers() {
 
         TRACING_ENABLED.store( value, Ordering::SeqCst );
     }
-    unsafe {
-        libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
-        libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
+
+    if opt::get().register_sigusr1 {
+        info!( "Registering SIGUSR1 handler..." );
+        unsafe {
+            libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
+        }
+    }
+
+    if opt::get().register_sigusr2 {
+        info!( "Registering SIGUSR2 handler..." );
+        unsafe {
+            libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
+        }
     }
 }
 

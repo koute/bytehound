@@ -14,6 +14,8 @@ pub struct Opts {
     pub include_file: Option< String >,
     pub output_path_pattern: Cow< 'static, str >,
     pub precise_timestamps: bool,
+    pub register_sigusr1: bool,
+    pub register_sigusr2: bool,
     pub write_binaries_to_output: bool,
     pub zero_memory: bool
 }
@@ -30,6 +32,8 @@ static mut OPTS: Opts = Opts {
     include_file: None,
     output_path_pattern: Cow::Borrowed( "memory-profiling_%e_%t_%p.dat" ),
     precise_timestamps: false,
+    register_sigusr1: true,
+    register_sigusr2: true,
     write_binaries_to_output: true,
     zero_memory: false
 };
@@ -106,6 +110,8 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_INCLUDE_FILE"              => &mut opts.include_file,
         "MEMORY_PROFILER_OUTPUT"                    => &mut opts.output_path_pattern,
         "MEMORY_PROFILER_PRECISE_TIMESTAMPS"        => &mut opts.precise_timestamps,
+        "MEMORY_PROFILER_REGISTER_SIGUSR1"          => &mut opts.register_sigusr1,
+        "MEMORY_PROFILER_REGISTER_SIGUSR2"          => &mut opts.register_sigusr2,
         "MEMORY_PROFILER_USE_SHADOW_STACK"          => &mut opts.enable_shadow_stack,
         "MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT"  => &mut opts.write_binaries_to_output,
         "MEMORY_PROFILER_ZERO_MEMORY"               => &mut opts.zero_memory
