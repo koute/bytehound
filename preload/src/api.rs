@@ -62,7 +62,6 @@ pub unsafe extern "C" fn sys_munmap( addr: *mut c_void, length: size_t ) -> c_in
     syscall::munmap( addr, length )
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn _exit( status: c_int ) {
     on_exit();
@@ -144,13 +143,11 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
     ptr
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn malloc( size: size_t ) -> *mut c_void {
     allocate( size, false )
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn calloc( count: size_t, element_size: size_t ) -> *mut c_void {
     let size = match (count as usize).checked_mul( element_size as usize ) {
@@ -161,7 +158,6 @@ pub unsafe extern "C" fn calloc( count: size_t, element_size: size_t ) -> *mut c
     allocate( size, true )
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
     if old_ptr.is_null() {
@@ -215,7 +211,6 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
     new_ptr
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn free( ptr: *mut c_void ) {
     if ptr.is_null() {
@@ -245,7 +240,6 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
     mem::drop( tls );
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: size_t, size: size_t ) -> c_int {
     if memptr.is_null() {
@@ -289,7 +283,6 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
     0
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     let lock = acquire_lock();
@@ -322,7 +315,6 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
     ptr
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let lock = acquire_lock();
@@ -348,7 +340,6 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     result
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     let lock = acquire_lock();
@@ -373,7 +364,6 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     result
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn fork() -> libc::pid_t {
     let pid = fork_real();
@@ -389,25 +379,21 @@ pub unsafe extern "C" fn fork() -> libc::pid_t {
     pid
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn memalign( _alignment: size_t, _size: size_t ) -> *mut c_void {
     unimplemented!( "'memalign' is unimplemented!" );
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
     unimplemented!( "'aligned_alloc' is unimplemented!" );
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn valloc( _size: size_t ) -> *mut c_void {
     unimplemented!( "'valloc' is unimplemented!" );
 }
 
-#[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn pvalloc( _size: size_t ) -> *mut c_void {
     unimplemented!( "'pvalloc' is unimplemented!" );
