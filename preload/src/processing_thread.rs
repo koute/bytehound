@@ -27,7 +27,8 @@ use common::request::{
 };
 use common::get_local_ips;
 
-use crate::{CMDLINE, EXECUTABLE, PID, AllocationLock};
+use crate::{CMDLINE, EXECUTABLE, PID};
+use crate::allocation_lock::AllocationLock;
 use crate::arch;
 use crate::event::{InternalEvent, send_event, timed_recv_all_events};
 use crate::opt;

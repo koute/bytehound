@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use common::Timestamp;
 
+use crate::allocation_lock::ThrottleHandle;
 use crate::channel::Channel;
 use crate::unwind::Backtrace;
-use crate::ThrottleHandle;
 
 pub(crate) enum InternalEvent {
     Alloc {
