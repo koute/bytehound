@@ -131,6 +131,7 @@ pub(crate) fn initialize() {
 
     initialize_logger();
     info!( "Initializing..." );
+    info!( "Version: {}", env!( "CARGO_PKG_VERSION" ) );
 
     unsafe {
         opt::initialize();
