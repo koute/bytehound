@@ -8,7 +8,7 @@ use crate::spin_lock::SpinLockGuard;
 use crate::syscall;
 use crate::tls::{Tls, get_tls};
 
-static THROTTLE_LIMIT: usize = 8192;
+const THROTTLE_LIMIT: usize = 8192;
 
 fn is_tracing_enabled() -> bool {
     crate::TRACING_ENABLED.load( Ordering::Relaxed )
