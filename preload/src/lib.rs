@@ -20,7 +20,6 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::net::{TcpListener, TcpStream, UdpSocket, IpAddr, SocketAddr};
 use std::time::Duration;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::path::{Path, PathBuf};
 use std::fmt::Write as FmtWrite;
 use std::collections::HashMap;
@@ -130,7 +129,6 @@ lazy_static! {
     };
 }
 
-static LISTENER_PORT: AtomicUsize = AtomicUsize::new( 0 );
 static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
 
 pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = SpinLock::new( false );
@@ -386,14 +384,14 @@ struct Client {
 }
 
 impl Client {
-    fn new( id: DataId, initial_timestamp: Timestamp, stream: TcpStream ) -> io::Result< Self > {
+    fn new( id: DataId, initial_timestamp: Timestamp, listener_port: u16, stream: TcpStream ) -> io::Result< Self > {
         let mut client = Client {
             stream,
             running: true,
             streaming: false
         };
 
-        Response::Start( broadcast_header( id, initial_timestamp ) ).write_to_stream( Endianness::LittleEndian, &mut client.stream )?;
+        Response::Start( broadcast_header( id, initial_timestamp, listener_port ) ).write_to_stream( Endianness::LittleEndian, &mut client.stream )?;
         Ok( client )
     }
 
@@ -479,7 +477,7 @@ pub(crate) fn new_header_body( id: DataId, initial_timestamp: Timestamp ) -> io:
     })
 }
 
-fn broadcast_header( id: DataId, initial_timestamp: Timestamp ) -> BroadcastHeader {
+fn broadcast_header( id: DataId, initial_timestamp: Timestamp, listener_port: u16 ) -> BroadcastHeader {
     let (timestamp, wall_clock_secs, wall_clock_nsecs) = get_wall_clock();
 
     BroadcastHeader {
@@ -489,7 +487,7 @@ fn broadcast_header( id: DataId, initial_timestamp: Timestamp ) -> BroadcastHead
         wall_clock_secs,
         wall_clock_nsecs,
         pid: *PID,
-        listener_port: LISTENER_PORT.load( Ordering::SeqCst ) as u16,
+        listener_port,
         cmdline: CMDLINE.clone(),
         executable: EXECUTABLE.clone(),
         arch: arch::TARGET_ARCH.to_string(),
@@ -520,25 +518,25 @@ fn create_listener() -> io::Result< TcpListener > {
 }
 
 
-fn send_broadcast_to( id: DataId, initial_timestamp: Timestamp, target: IpAddr ) -> Result< (), io::Error > {
+fn send_broadcast_to( id: DataId, initial_timestamp: Timestamp, listener_port: u16, target: IpAddr ) -> Result< (), io::Error > {
     let socket = UdpSocket::bind( SocketAddr::new( target, 0 ) )?;
     socket.set_broadcast( true )?;
 
     let mut message = Vec::new();
-    broadcast_header( id, initial_timestamp ).write_to_stream( Endianness::LittleEndian, &mut message ).unwrap();
+    broadcast_header( id, initial_timestamp, listener_port ).write_to_stream( Endianness::LittleEndian, &mut message ).unwrap();
 
     socket.send_to( &message, "255.255.255.255:43512" )?;
     Ok(())
 }
 
-fn send_broadcast( id: DataId, initial_timestamp: Timestamp ) -> Result< (), io::Error > {
+fn send_broadcast( id: DataId, initial_timestamp: Timestamp, listener_port: u16 ) -> Result< (), io::Error > {
     use std::iter::once;
     use std::net::Ipv4Addr;
 
     let wildcard: IpAddr = Ipv4Addr::new( 0, 0, 0, 0 ).into();
     let mut output = Ok(());
     for ip in get_local_ips().into_iter().chain( once( wildcard ) ) {
-        let result = send_broadcast_to( id, initial_timestamp, ip );
+        let result = send_broadcast_to( id, initial_timestamp, listener_port, ip );
         if result.is_err() {
             output = result;
         }
@@ -655,7 +653,7 @@ fn thread_main() {
     }
 
     let mut listener = create_listener();
-    LISTENER_PORT.store( listener.as_ref().ok().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 ) as usize, Ordering::SeqCst );
+    let listener_port = listener.as_ref().ok().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 );
 
     let mut events = Vec::new();
     let send_broadcasts = opt::get().enable_broadcasts;
@@ -675,13 +673,13 @@ fn thread_main() {
         if (coarse_timestamp - last_broadcast).as_secs() >= 1 {
             last_broadcast = coarse_timestamp;
             if send_broadcasts {
-                let _ = send_broadcast( uuid, initial_timestamp );
+                let _ = send_broadcast( uuid, initial_timestamp, listener_port );
             }
 
             if let Ok( ref mut listener ) = listener {
                 match listener.accept() {
                     Ok( (stream, _) ) => {
-                        match Client::new( uuid, initial_timestamp, stream ) {
+                        match Client::new( uuid, initial_timestamp, listener_port, stream ) {
                             Ok( client ) => {
                                 output_writer.inner_mut_without_flush().clients.push( client );
                             },
