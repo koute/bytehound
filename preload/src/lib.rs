@@ -8,10 +8,8 @@ extern crate lazy_static;
 #[macro_use]
 extern crate sc;
 
-use std::ptr;
 use std::mem;
 use std::thread;
-use std::env;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -19,9 +17,7 @@ use std::fs::{self, File, remove_file, read_link};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::net::{TcpListener, TcpStream, UdpSocket, IpAddr, SocketAddr};
 use std::time::Duration;
-use std::sync::Arc;
 use std::path::{Path, PathBuf};
-use std::fmt::Write as FmtWrite;
 use std::collections::HashMap;
 
 use std::os::unix::io::AsRawFd;
@@ -54,6 +50,7 @@ mod writers;
 mod writer_memory;
 mod api;
 mod event;
+mod init;
 
 use common::event::{DataId, Event, HeaderBody, AllocBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::lz4_stream::Lz4Writer;
@@ -68,6 +65,7 @@ use common::get_local_ips;
 use crate::event::{InternalEvent, send_event, timed_recv_all_events};
 use crate::timestamp::{Timestamp, get_timestamp, get_wall_clock};
 use crate::utils::{
+    generate_filename,
     read_file,
     copy,
     temporarily_change_umask
@@ -91,20 +89,20 @@ fn get_hash< T: Hash >( value: T ) -> u64 {
 }
 
 lazy_static! {
-    static ref PID: u32 = {
+    pub(crate) static ref PID: u32 = {
         let pid = unsafe { libc::getpid() } as u32;
         pid
     };
     static ref CMDLINE: Vec< u8 > = {
         read_file( "/proc/self/cmdline" ).unwrap()
     };
-    static ref EXECUTABLE: Vec< u8 > = {
+    pub(crate) static ref EXECUTABLE: Vec< u8 > = {
         let executable: Vec< u8 > = read_link( "/proc/self/exe" ).unwrap().as_os_str().as_bytes().into();
         executable
     };
 }
 
-static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
+pub(crate) static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
 
 pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = SpinLock::new( false );
 
@@ -440,44 +438,6 @@ fn send_broadcast( id: DataId, initial_timestamp: Timestamp, listener_port: u16 
     output
 }
 
-fn generate_filename( pattern: &str ) -> String {
-    let mut output = String::new();
-    let mut seen_percent = false;
-    for ch in pattern.chars() {
-        if !seen_percent && ch == '%' {
-            seen_percent = true;
-            continue;
-        }
-
-        if seen_percent {
-            seen_percent = false;
-            match ch {
-                '%' => {
-                    output.push( ch );
-                },
-                'p' => {
-                    let pid = *PID;
-                    write!( &mut output, "{}", pid ).unwrap();
-                },
-                't' => {
-                    let timestamp = unsafe { libc::time( ptr::null_mut() ) };
-                    write!( &mut output, "{}", timestamp ).unwrap();
-                },
-                'e' => {
-                    let executable = String::from_utf8_lossy( &*EXECUTABLE );
-                    let executable = &executable[ executable.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 ).. ];
-                    write!( &mut output, "{}", executable ).unwrap();
-                },
-                _ => {}
-            }
-        } else {
-            output.push( ch );
-        }
-    }
-
-    output
-}
-
 fn initialize_output_file() -> Option< (File, PathBuf) > {
     let output_path = generate_filename( &opt::get().output_path_pattern );
     if output_path == "" {
@@ -521,7 +481,7 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
     Some( (fp, output_path.into()) )
 }
 
-fn thread_main() {
+pub(crate) fn thread_main() {
     assert!( !get_tls().unwrap().on_application_thread );
 
     info!( "Starting event thread..." );
@@ -778,145 +738,7 @@ fn is_tracing_enabled() -> bool {
     TRACING_ENABLED.load( Ordering::Relaxed )
 }
 
-static RUNNING: AtomicBool = AtomicBool::new( true );
-
-pub(crate) extern fn on_exit() {
-    info!( "Exit hook called" );
-
-    TRACING_ENABLED.store( false, Ordering::SeqCst );
-
-    send_event( InternalEvent::Exit );
-    let mut count = 0;
-    while RUNNING.load( Ordering::SeqCst ) == true && count < 2000 {
-        unsafe {
-            libc::usleep( 25 * 1000 );
-            count += 1;
-        }
-    }
-
-    info!( "Exit hook finished" );
-}
-
-fn initialize_logger() {
-    static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
-    static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
-    let log_level = if let Ok( value ) = env::var( "MEMORY_PROFILER_LOG" ) {
-        match value.as_str() {
-            "trace" => log::LevelFilter::Trace,
-            "debug" => log::LevelFilter::Debug,
-            "info" => log::LevelFilter::Info,
-            "warn" => log::LevelFilter::Warn,
-            "error" => log::LevelFilter::Error,
-            _ => log::LevelFilter::Off
-        }
-    } else {
-        log::LevelFilter::Off
-    };
-
-    let pid = unsafe { libc::getpid() };
-
-    if let Ok( value ) = env::var( "MEMORY_PROFILER_LOGFILE" ) {
-        let path = generate_filename( &value );
-        let rotate_at = env::var( "MEMORY_PROFILER_LOGFILE_ROTATE_WHEN_BIGGER_THAN" ).ok().and_then( |value| value.parse().ok() );
-
-        unsafe {
-            if let Ok(()) = FILE_LOGGER.initialize( path, rotate_at, log_level, pid ) {
-                log::set_logger( &FILE_LOGGER ).unwrap();
-            }
-        }
-    } else {
-        unsafe {
-            SYSCALL_LOGGER.initialize( log_level, pid );
-            log::set_logger( &SYSCALL_LOGGER ).unwrap();
-        }
-    }
-
-    log::set_max_level( log_level );
-}
-
-fn initialize_atexit_hook() {
-    info!( "Setting atexit hook..." );
-    unsafe {
-        let result = libc::atexit( on_exit );
-        if result != 0 {
-            error!( "Cannot set the at-exit hook" );
-        }
-    }
-}
-
-fn initialize_processing_thread() {
-    info!( "Spawning main thread..." );
-    let flag = Arc::new( SpinLock::new( false ) );
-    let flag_clone = flag.clone();
-    thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
-        assert!( !get_tls().unwrap().on_application_thread );
-
-        *flag_clone.lock() = true;
-        thread_main();
-        RUNNING.store( false, Ordering::SeqCst );
-    }).expect( "failed to start the main memory profiler thread" );
-
-    while *flag.lock() == false {
-        thread::yield_now();
-    }
-}
-
-fn initialize_signal_handlers() {
-    extern "C" fn sigusr_handler( _: libc::c_int ) {
-        let value = !TRACING_ENABLED.load( Ordering::SeqCst );
-        if value {
-            info!( "Enabling tracing in response to SIGUSR" );
-        } else {
-            info!( "Disabling tracing in response to SIGUSR" );
-        }
-
-        TRACING_ENABLED.store( value, Ordering::SeqCst );
-    }
-
-    if opt::get().register_sigusr1 {
-        info!( "Registering SIGUSR1 handler..." );
-        unsafe {
-            libc::signal( libc::SIGUSR1, sigusr_handler as libc::sighandler_t );
-        }
-    }
-
-    if opt::get().register_sigusr2 {
-        info!( "Registering SIGUSR2 handler..." );
-        unsafe {
-            libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
-        }
-    }
-}
-
-#[inline(never)]
-fn initialize() {
-    static FLAG: AtomicBool = AtomicBool::new( false );
-    if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == true {
-        return;
-    }
-
-    assert!( !get_tls().unwrap().on_application_thread );
-
-    initialize_logger();
-    info!( "Initializing..." );
-
-    unsafe {
-        opt::initialize();
-    }
-
-    initialize_atexit_hook();
-    initialize_processing_thread();
-
-    TRACING_ENABLED.store( !opt::get().disabled_by_default, Ordering::SeqCst );
-    initialize_signal_handlers();
-
-    *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
-    info!( "Initialization done!" );
-
-    get_tls().unwrap().on_application_thread = true;
-
-    env::remove_var( "LD_PRELOAD" );
-}
+pub(crate) static RUNNING: AtomicBool = AtomicBool::new( true );
 
 static THROTTLE_LIMIT: usize = 8192;
 
@@ -1008,7 +830,7 @@ impl< 'a > DerefMut for RecursionLock< 'a > {
 pub(crate) fn acquire_lock() -> Option< (RecursionLock< 'static >, ThrottleHandle) > {
     let mut is_enabled = is_tracing_enabled();
     if !is_enabled {
-        initialize();
+        crate::init::initialize();
         is_enabled = is_tracing_enabled();
         if !is_enabled {
             return None;

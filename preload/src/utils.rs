@@ -2,7 +2,10 @@ use std::io::{self, Read, Write};
 use std::fs::File;
 use std::fmt;
 use std::mem;
+use std::ptr;
+use std::fmt::Write as _;
 
+use crate::{EXECUTABLE, PID};
 use crate::syscall;
 
 pub fn read_file( path: &str ) -> io::Result< Vec< u8 > > {
@@ -76,4 +79,42 @@ pub fn stack_null_terminate< R, F >( input: &[u8], callback: F ) -> R
         let _ = out.write_all( input );
         let _ = out.write_all( &[0] );
     }, callback )
+}
+
+pub fn generate_filename( pattern: &str ) -> String {
+    let mut output = String::new();
+    let mut seen_percent = false;
+    for ch in pattern.chars() {
+        if !seen_percent && ch == '%' {
+            seen_percent = true;
+            continue;
+        }
+
+        if seen_percent {
+            seen_percent = false;
+            match ch {
+                '%' => {
+                    output.push( ch );
+                },
+                'p' => {
+                    let pid = *PID;
+                    write!( &mut output, "{}", pid ).unwrap();
+                },
+                't' => {
+                    let timestamp = unsafe { libc::time( ptr::null_mut() ) };
+                    write!( &mut output, "{}", timestamp ).unwrap();
+                },
+                'e' => {
+                    let executable = String::from_utf8_lossy( &*EXECUTABLE );
+                    let executable = &executable[ executable.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 ).. ];
+                    write!( &mut output, "{}", executable ).unwrap();
+                },
+                _ => {}
+            }
+        } else {
+            output.push( ch );
+        }
+    }
+
+    output
 }

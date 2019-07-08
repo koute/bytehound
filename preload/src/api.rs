@@ -14,7 +14,7 @@ use common::Timestamp;
 use crate::ON_APPLICATION_THREAD_DEFAULT;
 use crate::InternalEvent;
 use crate::event::{send_event, send_event_throttled};
-use crate::on_exit;
+use crate::init::on_exit;
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
