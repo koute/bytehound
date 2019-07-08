@@ -53,7 +53,7 @@ fn stack_format< R, F, G >( format_callback: F, use_callback: G ) -> R
 
 #[test]
 fn test_stack_format() {
-    stack_format( |mut out| {
+    stack_format( |out| {
         let _ = write!( out, "foo = {}", "bar" );
         let _ = write!( out, ";" );
     }, |output| {
