@@ -53,6 +53,7 @@ mod tls;
 mod writers;
 mod writer_memory;
 mod api;
+mod event;
 
 use common::event::{DataId, Event, HeaderBody, AllocBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::lz4_stream::Lz4Writer;
@@ -64,9 +65,8 @@ use common::request::{
 };
 use common::get_local_ips;
 
+use crate::event::{InternalEvent, send_event, timed_recv_all_events};
 use crate::timestamp::{Timestamp, get_timestamp, get_wall_clock};
-use crate::unwind::Backtrace;
-use crate::channel::Channel;
 use crate::utils::{
     read_file,
     copy,
@@ -91,7 +91,6 @@ fn get_hash< T: Hash >( value: T ) -> u64 {
 }
 
 lazy_static! {
-    static ref EVENT_CHANNEL: Channel< InternalEvent > = Channel::new();
     static ref PID: u32 = {
         let pid = unsafe { libc::getpid() } as u32;
         pid
@@ -127,78 +126,6 @@ fn generate_data_id() -> DataId {
     let b = get_hash( cmdline ) ^ get_hash( executable ) ^ get_hash( timespec.tv_nsec );
 
     DataId::new( a, b )
-}
-
-pub(crate) enum InternalEvent {
-    Alloc {
-        ptr: usize,
-        size: usize,
-        backtrace: Backtrace,
-        thread: u32,
-        flags: u32,
-        extra_usable_space: u32,
-        preceding_free_space: u64,
-        timestamp: Timestamp,
-        throttle: ThrottleHandle
-    },
-    Realloc {
-        old_ptr: usize,
-        new_ptr: usize,
-        size: usize,
-        backtrace: Backtrace,
-        thread: u32,
-        flags: u32,
-        extra_usable_space: u32,
-        preceding_free_space: u64,
-        timestamp: Timestamp,
-        throttle: ThrottleHandle
-    },
-    Free {
-        ptr: usize,
-        backtrace: Backtrace,
-        thread: u32,
-        timestamp: Timestamp,
-        throttle: ThrottleHandle
-    },
-    Exit,
-    GrabMemoryDump,
-    SetMarker {
-        value: u32
-    },
-    Mmap {
-        pointer: usize,
-        requested_address: usize,
-        length: usize,
-        mmap_protection: u32,
-        mmap_flags: u32,
-        offset: u64,
-        backtrace: Backtrace,
-        thread: u32,
-        file_descriptor: u32,
-        timestamp: Timestamp,
-        throttle: ThrottleHandle
-    },
-    Munmap {
-        ptr: usize,
-        len: usize,
-        backtrace: Backtrace,
-        thread: u32,
-        timestamp: Timestamp,
-        throttle: ThrottleHandle
-    },
-    Mallopt {
-        param: i32,
-        value: i32,
-        result: i32,
-        backtrace: Backtrace,
-        thread: u32,
-        timestamp: Timestamp,
-        throttle: ThrottleHandle
-    },
-    OverrideNextTimestamp {
-        timestamp: Timestamp
-    },
-    Stop
 }
 
 struct Output {
@@ -635,7 +562,7 @@ fn thread_main() {
     let mut stopped = false;
     let mut poll_fds = Vec::new();
     'main_loop: loop {
-        EVENT_CHANNEL.timed_recv_all( &mut events, Duration::from_millis( 250 ) );
+        timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
         coarse_timestamp = get_timestamp();
         if (coarse_timestamp - last_broadcast).as_secs() >= 1 {
@@ -851,15 +778,6 @@ fn is_tracing_enabled() -> bool {
     TRACING_ENABLED.load( Ordering::Relaxed )
 }
 
-pub(crate) fn send_event( event: InternalEvent ) {
-    EVENT_CHANNEL.send( event );
-}
-
-#[inline(always)]
-pub(crate) fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F ) {
-    EVENT_CHANNEL.chunked_send_with( 64, callback );
-}
-
 static RUNNING: AtomicBool = AtomicBool::new( true );
 
 pub(crate) extern fn on_exit() {
@@ -1002,7 +920,7 @@ fn initialize() {
 
 static THROTTLE_LIMIT: usize = 8192;
 
-struct ThrottleHandle( ArcCounter );
+pub(crate) struct ThrottleHandle( ArcCounter );
 impl ThrottleHandle {
     fn new( tls: &Tls ) -> Self {
         let state = &tls.throttle_state;
