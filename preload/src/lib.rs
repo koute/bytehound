@@ -1108,8 +1108,8 @@ pub(crate) fn acquire_lock() -> Option< (RecursionLock< 'static >, ThrottleHandl
 
 #[cfg(not(test))]
 pub use crate::api::{
-    sys_mmap,
-    sys_munmap,
+    memory_profiler_raw_mmap,
+    memory_profiler_raw_munmap,
 
     _exit,
     fork,

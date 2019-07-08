@@ -53,12 +53,12 @@ fn get_timestamp_if_enabled() -> Timestamp {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sys_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     syscall::mmap( addr, length, prot, flags, fildes, off )
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sys_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+pub unsafe extern "C" fn memory_profiler_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
     syscall::munmap( addr, length )
 }
 

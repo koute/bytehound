@@ -15,11 +15,11 @@
 #endif
 #endif
 
-void * sys_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
-int sys_munmap(void *addr, size_t len);
+void * memory_profiler_raw_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
+int memory_profiler_raw_munmap(void *addr, size_t len);
 
-#define mmap sys_mmap
-#define munmap sys_munmap
+#define mmap memory_profiler_raw_mmap
+#define munmap memory_profiler_raw_munmap
 
 /******************************************************************************/
 /* Data. */
