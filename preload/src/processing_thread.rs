@@ -309,28 +309,33 @@ fn broadcast_header( id: DataId, initial_timestamp: Timestamp, listener_port: u1
     }
 }
 
-fn create_listener() -> io::Result< TcpListener > {
-    let mut listener: io::Result< TcpListener >;
-    let mut port = opt::get().base_server_port;
-    loop {
-        listener = TcpListener::bind( format!( "0.0.0.0:{}", port ) );
-        if listener.is_ok() {
-            info!( "Created a TCP listener on port {}", port );
-            break;
-        }
+fn create_listener() -> Option< TcpListener > {
+    let base_port = opt::get().base_server_port;
+    let mut port = base_port;
 
-        port += 1;
-        if port > port + 100 {
-            error!( "Failed to create a TCP listener" );
-            break;
+    let listener = loop {
+        match TcpListener::bind( format!( "0.0.0.0:{}", port ) ) {
+            Ok( listener ) => {
+                info!( "Created a TCP listener on port {}", port );
+                break listener;
+            },
+            Err( error ) => {
+                port += 1;
+                if port > base_port + 100 {
+                    error!( "Failed to create a TCP listener: {}", error );
+                    return None;
+                }
+            }
         }
+    };
+
+    if let Err( error ) = listener.set_nonblocking( true ) {
+        error!( "Failed to set the TCP listener as non-blocking: {}", error );
+        return None;
     }
 
-    let listener = listener?;
-    listener.set_nonblocking( true )?;
-    Ok( listener )
+    Some( listener )
 }
-
 
 fn send_broadcast_to( id: DataId, initial_timestamp: Timestamp, listener_port: u16, target: IpAddr ) -> Result< (), io::Error > {
     let socket = UdpSocket::bind( SocketAddr::new( target, 0 ) )?;
@@ -429,7 +434,7 @@ pub(crate) fn thread_main() {
     }
 
     let mut listener = create_listener();
-    let listener_port = listener.as_ref().ok().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 );
+    let listener_port = listener.as_ref().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 );
 
     let mut events = Vec::new();
     let send_broadcasts = opt::get().enable_broadcasts;
@@ -452,7 +457,7 @@ pub(crate) fn thread_main() {
                 let _ = send_broadcast( uuid, initial_timestamp, listener_port );
             }
 
-            if let Ok( ref mut listener ) = listener {
+            if let Some( ref mut listener ) = listener {
                 match listener.accept() {
                     Ok( (stream, _) ) => {
                         match Client::new( uuid, initial_timestamp, listener_port, stream ) {
