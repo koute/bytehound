@@ -287,7 +287,7 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     let lock = acquire_lock();
 
-    let ptr = sys_mmap( addr, length, prot, flags, fildes, off );
+    let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
     if ptr == libc::MAP_FAILED {
         return ptr;
     }
@@ -318,7 +318,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
 #[no_mangle]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let lock = acquire_lock();
-    let result = sys_munmap( ptr, length );
+    let result = syscall::munmap( ptr, length );
 
     let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return result };
     let mut backtrace = Backtrace::new();
