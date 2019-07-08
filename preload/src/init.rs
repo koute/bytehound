@@ -7,8 +7,8 @@ use crate::{RUNNING, TRACING_ENABLED, ON_APPLICATION_THREAD_DEFAULT};
 use crate::event::{InternalEvent, send_event};
 use crate::logger;
 use crate::opt;
+use crate::processing_thread::thread_main;
 use crate::spin_lock::SpinLock;
-use crate::thread_main;
 use crate::tls::get_tls;
 use crate::utils::generate_filename;
 

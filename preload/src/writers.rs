@@ -9,10 +9,12 @@ use std::path::Path;
 use nwind::proc_maps::Region;
 use nwind::proc_maps::parse as parse_maps;
 
-use common::event::{DataId, Event, FramesInvalidated};
+use common::event::{DataId, Event, FramesInvalidated, HeaderBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::speedy::{Endianness, Writable};
 use common::Timestamp;
 
+use crate::{CMDLINE, EXECUTABLE, PID};
+use crate::arch;
 use crate::opt;
 use crate::timestamp::{get_timestamp, get_wall_clock};
 use crate::unwind::Backtrace;
@@ -40,8 +42,31 @@ fn write_file< U: Write >( mut serializer: &mut U, path: &str, bytes: &[u8] ) ->
     }.write_to_stream( Endianness::LittleEndian, &mut serializer )
 }
 
+fn new_header_body( id: DataId, initial_timestamp: Timestamp ) -> io::Result< HeaderBody > {
+    let (timestamp, wall_clock_secs, wall_clock_nsecs) = get_wall_clock();
+
+    let mut flags = 0;
+    if arch::IS_LITTLE_ENDIAN {
+        flags |= HEADER_FLAG_IS_LITTLE_ENDIAN;
+    }
+
+    Ok( HeaderBody {
+        id,
+        initial_timestamp,
+        timestamp,
+        wall_clock_secs,
+        wall_clock_nsecs,
+        pid: *PID,
+        cmdline: CMDLINE.clone(),
+        executable: EXECUTABLE.clone(),
+        arch: arch::TARGET_ARCH.to_string(),
+        flags,
+        pointer_size: mem::size_of::< usize >() as u8
+    })
+}
+
 pub fn write_header< U: Write >( id: DataId, initial_timestamp: Timestamp, serializer: &mut U ) -> io::Result< () > {
-    Event::Header( crate::new_header_body( id, initial_timestamp )? ).write_to_stream( Endianness::LittleEndian, serializer )
+    Event::Header( new_header_body( id, initial_timestamp )? ).write_to_stream( Endianness::LittleEndian, serializer )
 }
 
 pub fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > {
