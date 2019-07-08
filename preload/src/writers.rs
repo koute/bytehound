@@ -9,7 +9,7 @@ use std::path::Path;
 use nwind::proc_maps::Region;
 use nwind::proc_maps::parse as parse_maps;
 
-use common::event::{Event, FramesInvalidated};
+use common::event::{DataId, Event, FramesInvalidated};
 use common::speedy::{Endianness, Writable};
 
 use crate::opt;
@@ -39,8 +39,8 @@ fn write_file< U: Write >( mut serializer: &mut U, path: &str, bytes: &[u8] ) ->
     }.write_to_stream( Endianness::LittleEndian, &mut serializer )
 }
 
-pub fn write_header< U: Write >( serializer: &mut U ) -> io::Result< () > {
-    Event::Header( crate::new_header_body()? ).write_to_stream( Endianness::LittleEndian, serializer )
+pub fn write_header< U: Write >( id: DataId, serializer: &mut U ) -> io::Result< () > {
+    Event::Header( crate::new_header_body( id )? ).write_to_stream( Endianness::LittleEndian, serializer )
 }
 
 pub fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > {
@@ -195,9 +195,9 @@ fn write_included_files< U: Write >( serializer: &mut U ) -> io::Result< () > {
     Ok(())
 }
 
-pub fn write_initial_data< T >( mut fp: T ) -> Result< (), io::Error > where T: Write {
+pub fn write_initial_data< T >( id: DataId, mut fp: T ) -> Result< (), io::Error > where T: Write {
     info!( "Writing initial header..." );
-    write_header( &mut fp )?;
+    write_header( id, &mut fp )?;
 
     info!( "Writing wall clock..." );
     write_wallclock( &mut fp )?;

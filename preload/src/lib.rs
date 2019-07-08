@@ -118,25 +118,6 @@ fn get_hash< T: Hash >( value: T ) -> u64 {
 lazy_static! {
     static ref EVENT_CHANNEL: Channel< InternalEvent > = Channel::new();
     static ref INITIAL_TIMESTAMP: Timestamp = get_timestamp();
-    static ref UUID: DataId = {
-        let pid = *PID;
-        let cmdline = &*CMDLINE;
-        let executable = &*EXECUTABLE;
-
-        let mut timespec = libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0
-        };
-
-        unsafe {
-            libc::clock_gettime( libc::CLOCK_REALTIME, &mut timespec );
-        }
-
-        let a = get_hash( &pid as *const _ as usize ) ^ get_hash( pid ) ^ get_hash( timespec.tv_sec );
-        let b = get_hash( cmdline ) ^ get_hash( executable ) ^ get_hash( timespec.tv_nsec );
-
-        DataId::new( a, b )
-    };
     static ref PID: u32 = {
         let pid = unsafe { libc::getpid() } as u32;
         pid
@@ -154,6 +135,26 @@ static LISTENER_PORT: AtomicUsize = AtomicUsize::new( 0 );
 static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
 
 pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = SpinLock::new( false );
+
+fn generate_data_id() -> DataId {
+    let pid = *PID;
+    let cmdline = &*CMDLINE;
+    let executable = &*EXECUTABLE;
+
+    let mut timespec = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0
+    };
+
+    unsafe {
+        libc::clock_gettime( libc::CLOCK_REALTIME, &mut timespec );
+    }
+
+    let a = get_hash( &pid as *const _ as usize ) ^ get_hash( pid ) ^ get_hash( timespec.tv_sec );
+    let b = get_hash( cmdline ) ^ get_hash( executable ) ^ get_hash( timespec.tv_nsec );
+
+    DataId::new( a, b )
+}
 
 fn get_timestamp_if_enabled() -> Timestamp {
     if opt::get().precise_timestamps {
@@ -257,7 +258,7 @@ impl Output {
     }
 }
 
-fn poll_clients( poll_fds: &mut Vec< libc::pollfd >, output: &mut Lz4Writer< Output > ) {
+fn poll_clients( id: DataId, poll_fds: &mut Vec< libc::pollfd >, output: &mut Lz4Writer< Output > ) {
     poll_fds.clear();
 
     for client in output.inner().clients.iter() {
@@ -307,7 +308,7 @@ fn poll_clients( poll_fds: &mut Vec< libc::pollfd >, output: &mut Lz4Writer< Out
             Request::StartStreaming => {
                 let output = &mut output.inner_mut().unwrap();
                 let client = &mut output.clients[ index ];
-                if let Err( error ) = client.start_streaming( &mut output.file ) {
+                if let Err( error ) = client.start_streaming( id, &mut output.file ) {
                     info!( "Failed to start streaming to a client: {}", error );
                     client.running = false;
                 } else {
@@ -386,22 +387,22 @@ struct Client {
 }
 
 impl Client {
-    fn new( stream: TcpStream ) -> io::Result< Self > {
+    fn new( id: DataId, stream: TcpStream ) -> io::Result< Self > {
         let mut client = Client {
             stream,
             running: true,
             streaming: false
         };
 
-        Response::Start( broadcast_header() ).write_to_stream( Endianness::LittleEndian, &mut client.stream )?;
+        Response::Start( broadcast_header( id ) ).write_to_stream( Endianness::LittleEndian, &mut client.stream )?;
         Ok( client )
     }
 
-    fn stream_initial_data( &mut self, path: &Path, file: &mut File ) -> io::Result< () > {
+    fn stream_initial_data( &mut self, id: DataId, path: &Path, file: &mut File ) -> io::Result< () > {
         if !opt::get().write_binaries_to_output {
             info!( "Streaming the binaries which were suppressed in the original output file..." );
             let mut serializer = Lz4Writer::new( &mut *self );
-            writers::write_header( &mut serializer )?;
+            writers::write_header( id, &mut serializer )?;
             writers::write_binaries( &mut serializer )?;
             serializer.flush()?;
         }
@@ -420,12 +421,12 @@ impl Client {
         Ok(())
     }
 
-    fn start_streaming( &mut self, output: &mut Option< (PathBuf, File) > ) -> io::Result< () > {
+    fn start_streaming( &mut self, id: DataId, output: &mut Option< (PathBuf, File) > ) -> io::Result< () > {
         // First client which connects to us gets streamed all of the data
         // which we've gathered up until this point.
 
         if let Some( (path, mut fp) ) = output.take() {
-            match self.stream_initial_data( &path, &mut fp ) {
+            match self.stream_initial_data( id, &path, &mut fp ) {
                 Ok(()) => return Ok(()),
                 Err( error ) => {
                     fp.seek( SeekFrom::End( 0 ) )?;
@@ -437,7 +438,7 @@ impl Client {
 
         {
             let mut serializer = Lz4Writer::new( &mut *self );
-            writers::write_header( &mut serializer )?;
+            writers::write_header( id, &mut serializer )?;
             writers::write_maps( &mut serializer )?;
             writers::write_binaries( &mut serializer )?;
             serializer.flush()?;
@@ -456,8 +457,7 @@ impl Drop for Client {
     }
 }
 
-pub(crate) fn new_header_body() -> io::Result< HeaderBody > {
-    let id = *UUID;
+pub(crate) fn new_header_body( id: DataId ) -> io::Result< HeaderBody > {
     let (timestamp, wall_clock_secs, wall_clock_nsecs) = get_wall_clock();
 
     let mut flags = 0;
@@ -480,8 +480,7 @@ pub(crate) fn new_header_body() -> io::Result< HeaderBody > {
     })
 }
 
-fn broadcast_header() -> BroadcastHeader {
-    let id = *UUID;
+fn broadcast_header( id: DataId ) -> BroadcastHeader {
     let (timestamp, wall_clock_secs, wall_clock_nsecs) = get_wall_clock();
 
     BroadcastHeader {
@@ -522,25 +521,25 @@ fn create_listener() -> io::Result< TcpListener > {
 }
 
 
-fn send_broadcast_to( target: IpAddr ) -> Result< (), io::Error > {
+fn send_broadcast_to( id: DataId, target: IpAddr ) -> Result< (), io::Error > {
     let socket = UdpSocket::bind( SocketAddr::new( target, 0 ) )?;
     socket.set_broadcast( true )?;
 
     let mut message = Vec::new();
-    broadcast_header().write_to_stream( Endianness::LittleEndian, &mut message ).unwrap();
+    broadcast_header( id ).write_to_stream( Endianness::LittleEndian, &mut message ).unwrap();
 
     socket.send_to( &message, "255.255.255.255:43512" )?;
     Ok(())
 }
 
-fn send_broadcast() -> Result< (), io::Error > {
+fn send_broadcast( id: DataId ) -> Result< (), io::Error > {
     use std::iter::once;
     use std::net::Ipv4Addr;
 
     let wildcard: IpAddr = Ipv4Addr::new( 0, 0, 0, 0 ).into();
     let mut output = Ok(());
     for ip in get_local_ips().into_iter().chain( once( wildcard ) ) {
-        let result = send_broadcast_to( ip );
+        let result = send_broadcast_to( id, ip );
         if result.is_err() {
             output = result;
         }
@@ -634,11 +633,14 @@ fn thread_main() {
     assert!( !get_tls().unwrap().on_application_thread );
 
     info!( "Starting event thread..." );
-    let mut output_writer = Lz4Writer::new( Output::new() );
 
+    let uuid = generate_data_id();
+    info!( "Data ID: {}", uuid );
+
+    let mut output_writer = Lz4Writer::new( Output::new() );
     if let Some( (fp, path) ) = initialize_output_file() {
         let mut fp = Lz4Writer::new( fp );
-        match writers::write_initial_data( &mut fp ) {
+        match writers::write_initial_data( uuid, &mut fp ) {
             Ok(()) => {
                 let fp = fp.into_inner().unwrap();
 
@@ -673,13 +675,13 @@ fn thread_main() {
         if (coarse_timestamp - last_broadcast).as_secs() >= 1 {
             last_broadcast = coarse_timestamp;
             if send_broadcasts {
-                let _ = send_broadcast();
+                let _ = send_broadcast( uuid );
             }
 
             if let Ok( ref mut listener ) = listener {
                 match listener.accept() {
                     Ok( (stream, _) ) => {
-                        match Client::new( stream ) {
+                        match Client::new( uuid, stream ) {
                             Ok( client ) => {
                                 output_writer.inner_mut_without_flush().clients.push( client );
                             },
@@ -693,7 +695,7 @@ fn thread_main() {
                 }
             }
 
-            poll_clients( &mut poll_fds, &mut output_writer );
+            poll_clients( uuid, &mut poll_fds, &mut output_writer );
         }
 
         if events.is_empty() && !running {
@@ -1019,7 +1021,6 @@ fn initialize() {
     }
 
     let _ = *INITIAL_TIMESTAMP;
-    let _ = *UUID;
 
     initialize_atexit_hook();
     initialize_processing_thread();
