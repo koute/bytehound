@@ -433,11 +433,16 @@ pub(crate) fn thread_main() {
         }
     }
 
-    let mut listener = create_listener();
-    let listener_port = listener.as_ref().and_then( |listener| listener.local_addr().ok() ).map( |addr| addr.port() ).unwrap_or( 0 );
+    let mut listener = None;
+
+    if opt::get().enable_server {
+        if let Some( listener_instance ) = create_listener() {
+            let listener_port = listener_instance.local_addr().expect( "couldn't grab the local address of the listener" ).port();
+            listener = Some( (listener_instance, listener_port) );
+        }
+    }
 
     let mut events = Vec::new();
-    let send_broadcasts = opt::get().enable_broadcasts;
     let mut next_backtrace_id = 0;
     let mut last_flush_timestamp = get_timestamp();
     let mut coarse_timestamp = get_timestamp();
@@ -451,13 +456,13 @@ pub(crate) fn thread_main() {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
         coarse_timestamp = get_timestamp();
-        if (coarse_timestamp - last_broadcast).as_secs() >= 1 {
-            last_broadcast = coarse_timestamp;
-            if send_broadcasts {
-                let _ = send_broadcast( uuid, initial_timestamp, listener_port );
-            }
+        if let Some( (ref mut listener, listener_port) ) = listener {
+            if (coarse_timestamp - last_broadcast).as_secs() >= 1 {
+                last_broadcast = coarse_timestamp;
+                if opt::get().enable_broadcasts {
+                    let _ = send_broadcast( uuid, initial_timestamp, listener_port );
+                }
 
-            if let Some( ref mut listener ) = listener {
                 match listener.accept() {
                     Ok( (stream, _) ) => {
                         match Client::new( uuid, initial_timestamp, listener_port, stream ) {
@@ -472,9 +477,9 @@ pub(crate) fn thread_main() {
                     Err( ref error ) if error.kind() == io::ErrorKind::WouldBlock => {},
                     Err( _ ) => {}
                 }
-            }
 
-            poll_clients( uuid, initial_timestamp, &mut poll_fds, &mut output_writer );
+                poll_clients( uuid, initial_timestamp, &mut poll_fds, &mut output_writer );
+            }
         }
 
         if events.is_empty() && !running {
