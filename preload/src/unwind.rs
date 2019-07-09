@@ -4,9 +4,9 @@ use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
+use crate::global::Tls;
 use crate::spin_lock::SpinLock;
 use crate::opt;
-use crate::tls::Tls;
 
 type Context = *mut c_void;
 type ReasonCode = c_int;
@@ -200,7 +200,7 @@ fn should_reload( perf: &mut Perf ) -> bool {
 }
 
 #[inline(never)]
-pub fn grab( tls: &mut Tls, out: &mut Backtrace ) {
+pub fn grab( tls: &Tls, out: &mut Backtrace ) {
     out.reserve_from_cache( tls );
     debug_assert!( out.frames.is_empty() );
 
@@ -228,14 +228,15 @@ pub fn grab( tls: &mut Tls, out: &mut Backtrace ) {
         };
 
     let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && address_space.is_shadow_stack_enabled();
+    let unwind_ctx = unsafe { tls.unwind_ctx() };
     if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
-        address_space.unwind( &mut tls.unwind_ctx, |address| {
+        address_space.unwind( unwind_ctx, |address| {
             out.frames.push( address );
             ::nwind::UnwindControl::Continue
         });
         out.stale_count = None;
     } else {
-        let stale_count = address_space.unwind_through_fresh_frames( &mut tls.unwind_ctx, |address| {
+        let stale_count = address_space.unwind_through_fresh_frames( unwind_ctx, |address| {
             out.frames.push( address );
             ::nwind::UnwindControl::Continue
         });

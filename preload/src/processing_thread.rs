@@ -28,12 +28,11 @@ use common::request::{
 use common::get_local_ips;
 
 use crate::{CMDLINE, EXECUTABLE, PID};
-use crate::allocation_lock::AllocationLock;
 use crate::arch;
 use crate::event::{InternalEvent, send_event, timed_recv_all_events};
+use crate::global::{AllocationLock, get_tls};
 use crate::opt;
 use crate::timestamp::{Timestamp, get_timestamp, get_wall_clock};
-use crate::tls::get_tls;
 use crate::utils::{
     generate_filename,
     copy,
@@ -408,7 +407,7 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
 }
 
 pub(crate) fn thread_main() {
-    assert!( !get_tls().unwrap().on_application_thread );
+    assert!( !get_tls().unwrap().is_enabled() );
 
     info!( "Starting event thread..." );
 
@@ -455,6 +454,7 @@ pub(crate) fn thread_main() {
     'main_loop: loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
+        crate::global::try_disable_if_requested();
         coarse_timestamp = get_timestamp();
         if let Some( (ref mut listener, listener_port) ) = listener {
             if (coarse_timestamp - last_broadcast).as_secs() >= 1 {

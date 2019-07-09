@@ -39,6 +39,10 @@ impl< T > SpinLock< T > {
     pub unsafe fn unsafe_as_ref( &self ) -> &T {
         &*self.value.get()
     }
+
+    pub unsafe fn force_unlock( &self ) {
+        self.flag.store( false, Ordering::SeqCst );
+    }
 }
 
 impl< 'a, T > SpinLockGuard< 'a, T > {

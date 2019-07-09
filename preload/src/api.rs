@@ -11,15 +11,12 @@ use libc::{
 use common::event;
 use common::Timestamp;
 
-use crate::ON_APPLICATION_THREAD_DEFAULT;
 use crate::InternalEvent;
-use crate::allocation_lock::acquire_lock;
 use crate::event::{send_event, send_event_throttled};
-use crate::init::on_exit;
+use crate::global::{acquire_lock, on_exit};
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
-use crate::tls::get_tls;
 use crate::unwind::{self, Backtrace};
 
 extern "C" {
@@ -364,10 +361,7 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
 pub unsafe extern "C" fn fork() -> libc::pid_t {
     let pid = fork_real();
     if pid == 0 {
-        let mut tls = get_tls();
-        let tls = tls.as_mut().unwrap();
-        tls.on_application_thread = false;
-        *ON_APPLICATION_THREAD_DEFAULT.lock() = false;
+        crate::global::on_fork();
     } else {
         info!( "Fork called; child PID: {}", pid );
     }

@@ -1,33 +1,9 @@
 use std::env;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 
-use crate::{RUNNING, TRACING_ENABLED, ON_APPLICATION_THREAD_DEFAULT};
-use crate::event::{InternalEvent, send_event};
+use crate::global::on_exit;
 use crate::logger;
 use crate::opt;
-use crate::processing_thread::thread_main;
-use crate::spin_lock::SpinLock;
-use crate::tls::get_tls;
 use crate::utils::generate_filename;
-
-pub(crate) extern fn on_exit() {
-    info!( "Exit hook called" );
-
-    TRACING_ENABLED.store( false, Ordering::SeqCst );
-
-    send_event( InternalEvent::Exit );
-    let mut count = 0;
-    while RUNNING.load( Ordering::SeqCst ) == true && count < 2000 {
-        unsafe {
-            libc::usleep( 25 * 1000 );
-            count += 1;
-        }
-    }
-
-    info!( "Exit hook finished" );
-}
 
 fn initialize_logger() {
     static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
@@ -76,33 +52,16 @@ fn initialize_atexit_hook() {
     }
 }
 
-fn initialize_processing_thread() {
-    info!( "Spawning main thread..." );
-    let flag = Arc::new( SpinLock::new( false ) );
-    let flag_clone = flag.clone();
-    thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
-        assert!( !get_tls().unwrap().on_application_thread );
-
-        *flag_clone.lock() = true;
-        thread_main();
-        RUNNING.store( false, Ordering::SeqCst );
-    }).expect( "failed to start the main memory profiler thread" );
-
-    while *flag.lock() == false {
-        thread::yield_now();
-    }
-}
-
 fn initialize_signal_handlers() {
-    extern "C" fn sigusr_handler( _: libc::c_int ) {
-        let value = !TRACING_ENABLED.load( Ordering::SeqCst );
-        if value {
-            info!( "Enabling tracing in response to SIGUSR" );
-        } else {
-            info!( "Disabling tracing in response to SIGUSR" );
-        }
+    extern "C" fn sigusr_handler( signal: libc::c_int ) {
+        let signal_name = match signal {
+            libc::SIGUSR1 => "SIGUSR1",
+            libc::SIGUSR2 => "SIGUSR2",
+            _ => "???"
+        };
 
-        TRACING_ENABLED.store( value, Ordering::SeqCst );
+        info!( "Signal handler triggered with signal: {} ({})", signal_name, signal );
+        crate::global::toggle();
     }
 
     if opt::get().register_sigusr1 {
@@ -120,17 +79,8 @@ fn initialize_signal_handlers() {
     }
 }
 
-#[inline(never)]
-pub(crate) fn initialize() {
-    static FLAG: AtomicBool = AtomicBool::new( false );
-    if FLAG.compare_and_swap( false, true, Ordering::SeqCst ) == true {
-        return;
-    }
-
-    assert!( !get_tls().unwrap().on_application_thread );
-
+pub fn startup() {
     initialize_logger();
-    info!( "Initializing..." );
     info!( "Version: {}", env!( "CARGO_PKG_VERSION" ) );
 
     unsafe {
@@ -138,15 +88,12 @@ pub(crate) fn initialize() {
     }
 
     initialize_atexit_hook();
-    initialize_processing_thread();
+    if !opt::get().disabled_by_default {
+        crate::global::toggle();
+    }
 
-    TRACING_ENABLED.store( !opt::get().disabled_by_default, Ordering::SeqCst );
     initialize_signal_handlers();
 
-    *ON_APPLICATION_THREAD_DEFAULT.lock() = true;
-    info!( "Initialization done!" );
-
-    get_tls().unwrap().on_application_thread = true;
-
     env::remove_var( "LD_PRELOAD" );
+    info!( "Startup initialization finished" );
 }

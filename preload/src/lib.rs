@@ -8,7 +8,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate sc;
 
-use std::sync::atomic::AtomicBool;
 use std::fs::read_link;
 
 use std::os::unix::ffi::OsStrExt;
@@ -26,17 +25,15 @@ mod opt;
 mod syscall;
 mod raw_file;
 mod arc_counter;
-mod tls;
 mod writers;
 mod writer_memory;
 mod api;
 mod event;
 mod init;
 mod processing_thread;
-mod allocation_lock;
+mod global;
 
 use crate::event::InternalEvent;
-use crate::spin_lock::SpinLock;
 use crate::utils::read_file;
 
 #[global_allocator]
@@ -57,10 +54,6 @@ lazy_static! {
         executable
     };
 }
-
-pub(crate) static TRACING_ENABLED: AtomicBool = AtomicBool::new( false );
-pub(crate) static ON_APPLICATION_THREAD_DEFAULT: SpinLock< bool > = SpinLock::new( false );
-pub(crate) static RUNNING: AtomicBool = AtomicBool::new( true );
 
 #[cfg(not(test))]
 pub use crate::api::{
