@@ -9,6 +9,9 @@ use {
         Deserialize
     },
     std::{
+        ffi::{
+            OsString
+        },
         path::{
             Path,
             PathBuf
@@ -107,6 +110,63 @@ struct ResponseAllocations {
     pub total_count: u64
 }
 
+struct Analysis {
+    response: ResponseAllocations
+}
+
+fn is_from_source( alloc: &Allocation, expected: &str ) -> bool {
+    alloc.backtrace.iter().any( |frame| {
+        frame.source.as_ref().map( |source| {
+            source.ends_with( expected )
+        }).unwrap_or( false )
+    })
+}
+
+impl Analysis {
+    fn allocations_from_source< 'a >( &'a self, source: &'a str ) -> impl Iterator< Item = &Allocation > + 'a {
+        self.response.allocations.iter().filter( move |alloc| is_from_source( alloc, source ) )
+    }
+}
+
+fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
+    let cwd = repository_root().join( "target" );
+
+    let path = path.as_ref();
+    assert_file_exists( path );
+
+    let _child = run_in_the_background(
+        &cwd,
+        cli_path(),
+        &[OsString::from( "server" ), path.as_os_str().to_owned()],
+        &[("RUST_LOG", "server_core=debug,cli_core=debug,actix_net=info")]
+    );
+
+    let start = Instant::now();
+    let mut found = false;
+    while start.elapsed() < Duration::from_secs( 10 ) {
+        thread::sleep( Duration::from_millis( 100 ) );
+        if let Some( mut response ) = reqwest::get( "http://localhost:8080/list" ).ok() {
+            assert_eq!( response.status(), StatusCode::OK );
+            assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
+            let list: Vec< ResponseMetadata > = serde_json::from_str( &response.text().unwrap() ).unwrap();
+            if !list.is_empty() {
+                assert_eq!( list[ 0 ].executable.split( "/" ).last().unwrap(), name );
+                found = true;
+                break;
+            }
+        }
+    }
+
+    assert!( found );
+
+    let mut response = reqwest::get( "http://localhost:8080/data/last/allocations" ).unwrap();
+    assert_eq!( response.status(), StatusCode::OK );
+    assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
+    let response: ResponseAllocations = serde_json::from_str( &response.text().unwrap() ).unwrap();
+
+    Analysis { response }
+}
+
 #[test]
 fn test_basic() {
     let cwd = repository_root().join( "target" );
@@ -135,47 +195,9 @@ fn test_basic() {
         ]
     ).assert_success();
 
-    assert_file_exists( cwd.join( "memory-profiling-basic.dat" ) );
+    let analysis = analyze( "basic", cwd.join( "memory-profiling-basic.dat" ) );
+    let mut iter = analysis.allocations_from_source( "basic.c" );
 
-    let _child = run_in_the_background(
-        &cwd,
-        cli_path(),
-        &["server", "memory-profiling-basic.dat"],
-        &[("RUST_LOG", "server_core=debug,cli_core=debug,actix_net=info")]
-    );
-
-    let start = Instant::now();
-    let mut found = false;
-    while start.elapsed() < Duration::from_secs( 10 ) {
-        thread::sleep( Duration::from_millis( 100 ) );
-        if let Some( mut response ) = reqwest::get( "http://localhost:8080/list" ).ok() {
-            assert_eq!( response.status(), StatusCode::OK );
-            assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
-            let list: Vec< ResponseMetadata > = serde_json::from_str( &response.text().unwrap() ).unwrap();
-            if !list.is_empty() {
-                assert_eq!( list[ 0 ].executable.split( "/" ).last().unwrap(), "basic" );
-                found = true;
-                break;
-            }
-        }
-    }
-
-    assert!( found );
-
-    let mut response = reqwest::get( "http://localhost:8080/data/last/allocations" ).unwrap();
-    assert_eq!( response.status(), StatusCode::OK );
-    assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
-    let response: ResponseAllocations = serde_json::from_str( &response.text().unwrap() ).unwrap();
-
-    fn is_from_source( alloc: &Allocation, expected: &str ) -> bool {
-        alloc.backtrace.iter().any( |frame| {
-            frame.source.as_ref().map( |source| {
-                source.ends_with( expected )
-            }).unwrap_or( false )
-        })
-    }
-
-    let mut iter = response.allocations.into_iter().filter( |alloc| is_from_source( &alloc, "basic.c" ) );
     let a0 = iter.next().unwrap(); // malloc, leaked
     let a1 = iter.next().unwrap(); // malloc, freed
     let a2 = iter.next().unwrap(); // malloc, freed through realloc
