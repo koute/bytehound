@@ -176,22 +176,56 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     Analysis { response }
 }
 
+fn get_basename( path: &str ) -> &str {
+    let index_slash = path.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 );
+    let index_dot = path.rfind( "." ).unwrap();
+    &path[ index_slash..index_dot ]
+}
+
+fn compile( source: &str ) {
+    let cwd = repository_root().join( "target" );
+    let basename = get_basename( source );
+    let source_path = PathBuf::from( "../integration-tests/test-programs" ).join( source );
+    let source_path = source_path.into_os_string().into_string().unwrap();
+    if source.ends_with( ".c" ) {
+        run(
+            &cwd,
+            "gcc",
+            &[
+                "-fasynchronous-unwind-tables",
+                "-O0",
+                "-pthread",
+                "-ggdb3",
+                &source_path,
+                "-o",
+                basename
+            ],
+            EMPTY_ENV
+        ).assert_success();
+    } else {
+        run(
+            &cwd,
+            "g++",
+            &[
+                "-std=c++11",
+                "-fasynchronous-unwind-tables",
+                "-O0",
+                "-pthread",
+                "-ggdb3",
+                &source_path,
+                "-o",
+                basename
+            ],
+            EMPTY_ENV
+        ).assert_success();
+    }
+}
+
 #[test]
 fn test_basic() {
     let cwd = repository_root().join( "target" );
-    run(
-        &cwd,
-        "gcc",
-        &[
-            "-fasynchronous-unwind-tables",
-            "-O0",
-            "-ggdb3",
-            "../integration-tests/test-programs/basic.c",
-            "-o",
-            "basic"
-        ],
-        EMPTY_ENV
-    ).assert_success();
+
+    compile( "basic.c" );
 
     run(
         &cwd,
@@ -243,21 +277,8 @@ fn test_basic() {
 #[test]
 fn test_alloc_in_tls() {
     let cwd = repository_root().join( "target" );
-    run(
-        &cwd,
-        "g++",
-        &[
-            "-std=c++11",
-            "-fasynchronous-unwind-tables",
-            "-O0",
-            "-pthread",
-            "-ggdb3",
-            "../integration-tests/test-programs/alloc-in-tls.cpp",
-            "-o",
-            "alloc-in-tls"
-        ],
-        EMPTY_ENV
-    ).assert_success();
+
+    compile( "alloc-in-tls.cpp" );
 
     run(
         &cwd,
