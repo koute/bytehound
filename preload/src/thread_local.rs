@@ -1,5 +1,36 @@
+#[must_use]
+pub struct TlsPointer< T > {
+    #[doc(hidden)]
+    pub _hidden_ptr: *mut T
+}
+
+impl< T > TlsPointer< T > {
+    #[inline]
+    pub fn get_ptr( &self ) -> *mut T {
+        self._hidden_ptr
+    }
+}
+
+pub trait TlsCtor< T > where T: Sized {
+    fn thread_local_new< F >( self, callback: F ) -> TlsPointer< T > where F: FnOnce( T ) -> TlsPointer< T >;
+}
+
+impl< G, T > TlsCtor< T > for G where G: FnOnce() -> T, T: Sized {
+    fn thread_local_new< F >( self, callback: F ) -> TlsPointer< T > where F: FnOnce( T ) -> TlsPointer< T > {
+        let value = (self)();
+        let marker = callback( value );
+        marker
+    }
+}
+
 macro_rules! thread_local_reentrant {
     (static $name:ident: $ty:ty = $ctor:expr;) => {
+        thread_local_reentrant! {
+            static $name: $ty [|| { $ctor }];
+        }
+    };
+
+    (static $name:ident: $ty:ty [$ctor:expr];) => {
         struct $name;
 
         impl $name {
@@ -45,7 +76,7 @@ macro_rules! thread_local_reentrant {
                 }
             }
 
-            fn new() -> $ty {
+            fn constructor() -> impl $crate::thread_local::TlsCtor< $ty > {
                 $ctor
             }
 
@@ -59,8 +90,17 @@ macro_rules! thread_local_reentrant {
 
                 (*cell).1 = true;
 
-                let tls: $ty = Self::new();
-                let tls = Box::into_raw( Box::new( tls ) );
+                let mut tls: *mut $ty = std::ptr::null_mut();
+                let callback = {
+                    let tls_ref = &mut tls;
+                    move |value: $ty| {
+                        let ptr = Box::into_raw( Box::new( value ) );
+                        *tls_ref = ptr;
+                        $crate::thread_local::TlsPointer { _hidden_ptr: ptr }
+                    }
+                };
+
+                let _ = $crate::thread_local::TlsCtor::thread_local_new( Self::constructor(), callback );
                 *cell = (tls, true);
 
                 // Currently Rust triggers an allocation when registering
@@ -106,7 +146,7 @@ macro_rules! thread_local_reentrant {
 }
 
 #[test]
-fn test_thread_local_reentrant() {
+fn test_thread_local_reentrant_basic() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static CTOR_COUNTER: AtomicUsize = AtomicUsize::new( 0 );
@@ -165,4 +205,39 @@ fn test_thread_local_reentrant() {
         assert_eq!( CTOR_COUNTER.load( Ordering::SeqCst ), 2 );
         assert_eq!( DTOR_COUNTER.load( Ordering::SeqCst ), 1 );
     }
+}
+
+#[test]
+fn test_thread_local_reentrant_custom_constructor() {
+    struct Constructor;
+    struct Tls {
+        value: u32
+    }
+
+    impl TlsCtor< Tls > for Constructor {
+        fn thread_local_new< F >( self, callback: F ) -> TlsPointer< Tls >
+            where F: FnOnce( Tls ) -> TlsPointer< Tls >
+        {
+            let tls = Tls {
+                value: 10
+            };
+
+            let tls = callback( tls );
+            {
+                let tls = unsafe { &mut *(tls.get_ptr() as *mut Tls) };
+
+                assert_eq!( tls.value, 10 );
+                tls.value = 20;
+            }
+
+            tls
+        }
+    }
+
+    thread_local_reentrant! {
+        static TLS: Tls [Constructor];
+    }
+
+    let tls = unsafe { TLS.get() }.unwrap();
+    assert_eq!( tls.value, 20 );
 }
