@@ -61,6 +61,7 @@ pub use crate::api::{
     memory_profiler_raw_munmap,
 
     _exit,
+    _Exit,
     fork,
 
     malloc,

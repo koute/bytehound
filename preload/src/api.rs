@@ -61,6 +61,11 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
     syscall::exit( status as u32 );
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn _Exit( status: c_int ) {
+    _exit( status );
+}
+
 // `libc` on mips64 doesn't export this
 extern "C" {
     fn malloc_usable_size( ptr: *mut libc::c_void) -> libc::size_t;
