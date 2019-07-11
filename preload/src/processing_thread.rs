@@ -451,6 +451,7 @@ pub(crate) fn thread_main() {
     let mut running = true;
     let mut allocation_lock_for_memory_dump = None;
     let mut last_broadcast = coarse_timestamp;
+    let mut last_server_poll = coarse_timestamp;
     let mut timestamp_override = None;
     let mut stopped = false;
     let mut poll_fds = Vec::new();
@@ -465,7 +466,10 @@ pub(crate) fn thread_main() {
                 if opt::get().enable_broadcasts {
                     let _ = send_broadcast( uuid, initial_timestamp, listener_port );
                 }
+            }
 
+            if (coarse_timestamp - last_server_poll).as_msecs() >= 250 {
+                last_server_poll = coarse_timestamp;
                 match listener.accept() {
                     Ok( (stream, _) ) => {
                         match Client::new( uuid, initial_timestamp, listener_port, stream ) {
