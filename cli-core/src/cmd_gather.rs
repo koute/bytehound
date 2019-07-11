@@ -74,6 +74,10 @@ fn client_loop( socket: TcpStream, mut fp: File, sigint: Sigint, mut ip_lock: Op
                 let ip_lock = ip_lock.take();
                 mem::drop( ip_lock );
             },
+            Ok( Response::Finished ) => {
+                info!( "Received an explicit finish from {}", address );
+                return Ok(());
+            },
             Ok( _ ) => {},
             Err( ref error ) if error.kind() == ErrorKind::UnexpectedEof => {
                 return Ok(());

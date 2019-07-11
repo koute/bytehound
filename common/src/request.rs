@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use crate::timestamp::Timestamp;
 use crate::event::DataId;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(PartialEq, Debug, Readable, Writable)]
 pub enum Request {
@@ -16,7 +16,8 @@ pub enum Response< 'a > {
     Start( BroadcastHeader ),
     Data( Cow< 'a, [u8] > ),
     FinishedInitialStreaming,
-    Pong
+    Pong,
+    Finished
 }
 
 #[derive(PartialEq, Debug, Readable, Writable)]

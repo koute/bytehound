@@ -669,5 +669,10 @@ pub(crate) fn thread_main() {
     }
 
     let _ = output_writer.flush();
+    for client in &mut output_writer.inner_mut_without_flush().clients {
+        let _ = Response::Finished.write_to_stream( Endianness::LittleEndian, &mut client.stream );
+        let _ = client.stream.flush();
+    }
+
     info!( "Event thread finished" );
 }
