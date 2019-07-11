@@ -5,6 +5,7 @@ use std::io::{self, Read, BufRead, BufReader};
 use std::thread;
 use std::sync::{Mutex, Arc};
 use std::mem;
+use std::time::{Duration, Instant};
 
 pub static EMPTY_ARGS: &[&str] = &[];
 pub static EMPTY_ENV: &[(&str, &str)] = &[];
@@ -99,7 +100,22 @@ pub struct ChildHandle {
 
 impl ChildHandle {
     pub fn wait( mut self ) -> CommandResult {
-        let status = self.child.wait().unwrap();
+        let start = Instant::now();
+        let mut status = None;
+        while start.elapsed() < Duration::from_secs( 30 ) {
+            status = self.child.try_wait().unwrap();
+            if status.is_some() {
+                break;
+            }
+        }
+
+        let status = match status {
+            Some( status ) => status,
+            None => {
+                panic!( "Timeout while waiting for the child process to exit!" );
+            }
+        };
+
         let output = self.flush_output();
 
         CommandResult {
