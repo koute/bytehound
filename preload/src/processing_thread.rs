@@ -5,6 +5,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::net::{TcpListener, TcpStream, UdpSocket, IpAddr, SocketAddr};
 use std::time::Duration;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
 
 use std::os::unix::io::AsRawFd;
 
@@ -364,7 +365,9 @@ fn send_broadcast( id: DataId, initial_timestamp: Timestamp, listener_port: u16 
 }
 
 fn initialize_output_file() -> Option< (File, PathBuf) > {
-    let output_path = generate_filename( &opt::get().output_path_pattern );
+    static COUNTER: AtomicUsize = AtomicUsize::new( 0 );
+
+    let output_path = generate_filename( &opt::get().output_path_pattern, Some( &COUNTER ) );
     if output_path == "" {
         return None;
     }

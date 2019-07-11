@@ -3,6 +3,7 @@ use std::fs::File;
 use std::fmt;
 use std::mem;
 use std::ptr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt::Write as _;
 
 use crate::{EXECUTABLE, PID};
@@ -81,7 +82,7 @@ pub fn stack_null_terminate< R, F >( input: &[u8], callback: F ) -> R
     }, callback )
 }
 
-pub fn generate_filename( pattern: &str ) -> String {
+pub fn generate_filename( pattern: &str, counter: Option< &AtomicUsize > ) -> String {
     let mut output = String::new();
     let mut seen_percent = false;
     for ch in pattern.chars() {
@@ -108,6 +109,12 @@ pub fn generate_filename( pattern: &str ) -> String {
                     let executable = String::from_utf8_lossy( &*EXECUTABLE );
                     let executable = &executable[ executable.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 ).. ];
                     write!( &mut output, "{}", executable ).unwrap();
+                },
+                'n' => {
+                    if let Some( counter ) = counter {
+                        let value = counter.fetch_add( 1, Ordering::SeqCst );
+                        write!( &mut output, "{}", value ).unwrap();
+                    }
                 },
                 _ => {}
             }

@@ -24,7 +24,7 @@ fn initialize_logger() {
     let pid = unsafe { libc::getpid() };
 
     if let Ok( value ) = env::var( "MEMORY_PROFILER_LOGFILE" ) {
-        let path = generate_filename( &value );
+        let path = generate_filename( &value, None );
         let rotate_at = env::var( "MEMORY_PROFILER_LOGFILE_ROTATE_WHEN_BIGGER_THAN" ).ok().and_then( |value| value.parse().ok() );
 
         unsafe {
