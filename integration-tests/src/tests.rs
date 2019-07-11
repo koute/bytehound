@@ -16,6 +16,12 @@ use {
             Path,
             PathBuf
         },
+        sync::{
+            atomic::{
+                AtomicUsize,
+                Ordering
+            }
+        },
         thread,
         time::{
             Duration,
@@ -134,10 +140,13 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     let path = path.as_ref();
     assert_file_exists( path );
 
+    static PORT: AtomicUsize = AtomicUsize::new( 8080 );
+    let port = PORT.fetch_add( 1, Ordering::SeqCst );
+
     let _child = run_in_the_background(
         &cwd,
         cli_path(),
-        &[OsString::from( "server" ), path.as_os_str().to_owned()],
+        &[OsString::from( "server" ), path.as_os_str().to_owned(), OsString::from( "--port" ), OsString::from( format!( "{}", port ) )],
         &[("RUST_LOG", "server_core=debug,cli_core=debug,actix_net=info")]
     );
 
@@ -145,7 +154,7 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     let mut found = false;
     while start.elapsed() < Duration::from_secs( 10 ) {
         thread::sleep( Duration::from_millis( 100 ) );
-        if let Some( mut response ) = reqwest::get( "http://localhost:8080/list" ).ok() {
+        if let Some( mut response ) = reqwest::get( &format!( "http://localhost:{}/list", port ) ).ok() {
             assert_eq!( response.status(), StatusCode::OK );
             assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
             let list: Vec< ResponseMetadata > = serde_json::from_str( &response.text().unwrap() ).unwrap();
@@ -159,7 +168,7 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
 
     assert!( found );
 
-    let mut response = reqwest::get( "http://localhost:8080/data/last/allocations" ).unwrap();
+    let mut response = reqwest::get( &format!( "http://localhost:{}/data/last/allocations", port ) ).unwrap();
     assert_eq!( response.status(), StatusCode::OK );
     assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
     let response: ResponseAllocations = serde_json::from_str( &response.text().unwrap() ).unwrap();
