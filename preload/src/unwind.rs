@@ -48,6 +48,12 @@ impl Cache {
             entries: SpinLock::new( Vec::new() )
         }
     }
+
+    pub fn clear( &self ) {
+        let mut entries = self.entries.lock();
+        let entries: &mut Vec< _ > = &mut entries;
+        mem::replace( entries, Vec::new() );
+    }
 }
 
 impl Drop for Cache {

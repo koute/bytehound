@@ -125,6 +125,7 @@ fn spawn_processing_thread() {
 
             debug!( "Disabling thread {:04x}...", tls.thread_id );
             tls.set_enabled( false );
+            tls.backtrace_cache.clear();
         }
 
         STATE.store( STATE_DISABLED, Ordering::SeqCst );
