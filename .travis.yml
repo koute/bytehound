@@ -62,10 +62,22 @@ jobs:
     - <<: *test
       os: linux
       rust: stable
+      env: TEST_SUBSET=1
+
+    - <<: *test
+      os: linux
+      rust: stable
+      env: TEST_SUBSET=2
 
     - <<: *test
       os: linux
       rust: beta
+      env: TEST_SUBSET=1
+
+    - <<: *test
+      os: linux
+      rust: beta
+      env: TEST_SUBSET=2
 
     - <<: *deploy
       os: linux
