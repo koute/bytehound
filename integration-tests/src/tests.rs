@@ -128,6 +128,14 @@ fn is_from_source( alloc: &Allocation, expected: &str ) -> bool {
     })
 }
 
+fn is_from_function( alloc: &Allocation, expected: &str ) -> bool {
+    alloc.backtrace.iter().any( |frame| {
+        frame.raw_function.as_ref().map( |symbol| {
+            symbol == expected
+        }).unwrap_or( false )
+    })
+}
+
 impl Analysis {
     fn allocations_from_source< 'a >( &'a self, source: &'a str ) -> impl Iterator< Item = &Allocation > + 'a {
         self.response.allocations.iter().filter( move |alloc| is_from_source( alloc, source ) )
@@ -292,4 +300,321 @@ fn test_alloc_in_tls() {
     ).assert_success();
 
     assert_file_exists( cwd.join( "memory-profiling-alloc-in-tls.dat" ) );
+}
+
+#[test]
+fn test_start_stop() {
+    let cwd = repository_root().join( "target" );
+
+    compile( "start-stop.c" );
+
+    run(
+        &cwd,
+        "./start-stop",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "start-stop_%n.dat".into()),
+            ("MEMORY_PROFILER_DISABLE_BY_DEFAULT", "1".into())
+        ]
+    ).assert_success();
+
+    let analysis_1 = analyze( "start-stop", cwd.join( "start-stop_0.dat" ) );
+    let analysis_2 = analyze( "start-stop", cwd.join( "start-stop_1.dat" ) );
+
+    {
+        let mut iter = analysis_1.allocations_from_source( "start-stop.c" );
+        let a0 = iter.next().unwrap();
+        let a1 = iter.next().unwrap();
+        let a2 = iter.next().unwrap();
+
+        assert_eq!( a0.size, 10002 );
+        assert_eq!( a1.size, 20002 );
+        assert_eq!( a2.size, 10003 );
+
+        assert_eq!( a0.thread, a2.thread );
+        assert_ne!( a0.thread, a1.thread );
+
+        assert_eq!( iter.next(), None );
+    }
+
+    {
+        let mut iter = analysis_2.allocations_from_source( "start-stop.c" );
+        let a0 = iter.next().unwrap();
+        let a1 = iter.next().unwrap();
+
+        assert_eq!( a0.size, 10004 );
+        assert_eq!( a1.size, 20003 );
+
+        assert_ne!( a0.thread, a1.thread );
+
+        assert_eq!( iter.next(), None );
+    }
+}
+
+#[test]
+fn test_fork() {
+    let cwd = repository_root().join( "target" );
+
+    compile( "fork.c" );
+
+    run(
+        &cwd,
+        "./fork",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "fork_%n.dat".into())
+        ]
+    ).assert_success();
+
+    assert_file_exists( cwd.join( "fork_0.dat" ) );
+    assert_file_missing( cwd.join( "fork_1.dat" ) );
+
+    let analysis = analyze( "fork", cwd.join( "fork_0.dat" ) );
+
+    let mut iter = analysis.allocations_from_source( "fork.c" ).filter( |alloc| !is_from_function( alloc, "allocate_dtv" ) );
+    let a0 = iter.next().unwrap();
+    let a1 = iter.next().unwrap();
+    let a2 = iter.next().unwrap();
+    let a3 = iter.next().unwrap();
+    let a4 = iter.next().unwrap();
+
+    assert_eq!( a0.size, 10001 );
+    assert_eq!( a1.size, 20001 );
+    assert_eq!( a2.size, 10002 );
+    assert_eq!( a3.size, 20002 );
+    assert_eq!( a4.size, 10003 );
+
+    assert_eq!( a0.thread, a2.thread );
+    assert_eq!( a2.thread, a4.thread );
+    assert_eq!( a1.thread, a3.thread );
+    assert_ne!( a0.thread, a1.thread );
+
+    assert_eq!( iter.next(), None );
+}
+
+#[test]
+fn test_normal_exit() {
+    let cwd = repository_root().join( "target" );
+
+    compile( "exit_1.c" );
+
+    run(
+        &cwd,
+        "./exit_1",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "exit_1.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "exit_1", cwd.join( "exit_1.dat" ) );
+
+    let mut iter = analysis.allocations_from_source( "exit_1.c" );
+    let a0 = iter.next().unwrap();
+    assert_eq!( a0.size, 11001 );
+    assert_eq!( iter.next(), None );
+}
+
+#[test]
+fn test_immediate_exit_unistd() {
+    let cwd = repository_root().join( "target" );
+
+    compile( "exit_2.c" );
+
+    run(
+        &cwd,
+        "./exit_2",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "exit_2.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "exit_2", cwd.join( "exit_2.dat" ) );
+
+    let mut iter = analysis.allocations_from_source( "exit_2.c" );
+    let a0 = iter.next().unwrap();
+    assert_eq!( a0.size, 12001 );
+    assert_eq!( iter.next(), None );
+}
+
+#[test]
+fn test_immediate_exit_stdlib() {
+    let cwd = repository_root().join( "target" );
+
+    compile( "exit_3.c" );
+
+    run(
+        &cwd,
+        "./exit_3",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "exit_3.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "exit_3", cwd.join( "exit_3.dat" ) );
+
+    let mut iter = analysis.allocations_from_source( "exit_3.c" );
+    let a0 = iter.next().unwrap();
+    assert_eq!( a0.size, 13001 );
+    assert_eq!( iter.next(), None );
+}
+
+struct GatherTestHandle< 'a > {
+    pid: u32,
+    is_graceful: &'a mut bool
+}
+
+impl< 'a > GatherTestHandle< 'a > {
+    fn kill( self ) {
+        *self.is_graceful = false;
+        unsafe { libc::kill( self.pid as _, libc::SIGUSR2 ); }
+    }
+
+    fn early_return( self ) {
+        unsafe { libc::kill( self.pid as _, libc::SIGINT ); }
+    }
+
+    fn next( &self ) {
+        unsafe { libc::kill( self.pid as _, libc::SIGUSR1 ); }
+    }
+
+    fn sleep( &self ) {
+        thread::sleep( Duration::from_millis( 1000 ) );
+    }
+}
+
+fn test_gather_generic( expected_allocations: usize, callback: impl FnOnce( GatherTestHandle ) ) {
+    let cwd = repository_root().join( "target" );
+
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once( || compile( "gather.c" ) );
+
+    static PORT: AtomicUsize = AtomicUsize::new( 8100 );
+    let port = PORT.fetch_add( 1, Ordering::SeqCst );
+
+    let child = run_in_the_background(
+        &cwd,
+        "./gather",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", format!( "gather_{}.dat", port ).into()),
+            ("MEMORY_PROFILER_REGISTER_SIGUSR1", "0".into()),
+            ("MEMORY_PROFILER_REGISTER_SIGUSR2", "0".into()),
+            ("MEMORY_PROFILER_ENABLE_SERVER", "1".into()),
+            ("MEMORY_PROFILER_BASE_SERVER_PORT", format!( "{}", port ).into())
+        ]
+    );
+
+    thread::sleep( Duration::from_millis( 2000 ) );
+
+    let tmp_path = cwd.join( "tmp" ).join( format!( "test-gather-{}", port ) );
+    if tmp_path.exists() {
+        std::fs::remove_dir_all( &tmp_path ).unwrap();
+    }
+
+    std::fs::create_dir_all( &tmp_path ).unwrap();
+
+    let gather = run_in_the_background(
+        &tmp_path,
+        cli_path(),
+        &[OsString::from( "gather" ), OsString::from( format!( "127.0.0.1:{}", port ) )],
+        &[("RUST_LOG", "server_core=debug,cli_core=debug,actix_net=info")]
+    );
+
+    thread::sleep( Duration::from_millis( 1000 ) );
+
+    let mut is_graceful = true;
+    let handle = GatherTestHandle {
+        pid: child.pid(),
+        is_graceful: &mut is_graceful
+    };
+
+    callback( handle );
+
+    if is_graceful {
+        child.wait().assert_success();
+    } else {
+        child.wait().assert_failure();
+    }
+
+    gather.wait().assert_success();
+
+    let outputs = dir_entries( tmp_path ).unwrap();
+    assert_eq!( outputs.len(), 1, "Unexpected outputs: {:?}", outputs );
+
+    let analysis = analyze( "gather", outputs.into_iter().next().unwrap() );
+    let mut iter = analysis.allocations_from_source( "gather.c" );
+
+    assert!( expected_allocations >= 1 && expected_allocations <= 3 );
+    if expected_allocations >= 1 {
+        let a0 = iter.next().expect( "Expected at least one allocation; got none" );
+        assert_eq!( a0.size, 10001 );
+    }
+
+    if expected_allocations >= 2 {
+        let a1 = iter.next().expect( "Expected at least two allocations; got only one" );
+        assert_eq!( a1.size, 10002 );
+    }
+
+    if expected_allocations >= 3 {
+        let a2 = iter.next().expect( "Expected at least three allocations; got only two" );
+        assert_eq!( a2.size, 10003 );
+    }
+
+    assert_eq!( iter.next(), None, "Too many allocations" );
+}
+
+#[test]
+fn test_gather_full_graceful() {
+    test_gather_generic( 3, |handle| {
+        handle.next();
+        handle.sleep();
+        handle.next();
+        handle.early_return();
+    });
+}
+
+#[test]
+fn test_gather_initial_graceful() {
+    test_gather_generic( 1, |handle| {
+        handle.early_return();
+    });
+}
+
+#[test]
+fn test_gather_initial_killed() {
+    test_gather_generic( 1, |handle| {
+        handle.kill();
+    });
+}
+
+#[test]
+fn test_gather_partial_graceful() {
+    test_gather_generic( 2, |handle| {
+        handle.next();
+        handle.early_return();
+    });
+}
+
+#[test]
+fn test_gather_partial_killed() {
+    test_gather_generic( 1, |handle| {
+        handle.next();
+        handle.sleep();
+        handle.kill();
+    });
 }

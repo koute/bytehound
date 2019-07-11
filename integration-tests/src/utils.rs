@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Child, Stdio};
 use std::ffi::OsStr;
+use std::fs;
 use std::io::{self, Read, BufRead, BufReader};
 use std::thread;
 use std::sync::{Mutex, Arc};
@@ -124,6 +125,10 @@ impl ChildHandle {
         }
     }
 
+    pub fn pid( &self ) -> u32 {
+        self.child.id()
+    }
+
     fn flush_output( &mut self ) -> String {
         if let Some( stdout_join ) = self.stdout_join.take() {
             let _ = stdout_join.join();
@@ -189,4 +194,22 @@ pub fn assert_file_exists< P: AsRef< Path > >( path: P ) {
     if !path.exists() {
         panic!( "File {:?} doesn't exist", path );
     }
+}
+
+pub fn assert_file_missing< P: AsRef< Path > >( path: P ) {
+    let path = path.as_ref();
+    if path.exists() {
+        panic!( "File {:?} exists", path );
+    }
+}
+
+pub fn dir_entries< P: AsRef< Path > >( path: P ) -> Result< Vec< PathBuf >, io::Error > {
+    let mut output = Vec::new();
+    let path = path.as_ref();
+    for entry in fs::read_dir( path )? {
+        let entry = entry?;
+        output.push( entry.path() );
+    }
+
+    Ok( output )
 }
