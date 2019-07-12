@@ -85,6 +85,14 @@ enum Opt {
 
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
+    },
+    #[structopt(name = "repack", raw(setting = "structopt::clap::AppSettings::Hidden"))]
+    Repack {
+        #[structopt(long, short = "o", parse(from_os_str))]
+        output: PathBuf,
+
+        #[structopt(parse(from_os_str), required = false)]
+        input: PathBuf
     }
 }
 
@@ -126,6 +134,11 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
                 None => format!( "{}.tmp", input.to_str().unwrap() ).into()
             };
             cli_core::squeeze_data( ifp, ofp, tmpfile.as_ref() )?;
+        },
+        Opt::Repack { input, output } => {
+            let ifp = File::open( &input )?;
+            let ofp = File::create( output )?;
+            cli_core::repack( ifp, ofp )?;
         }
     }
 
