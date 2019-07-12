@@ -72,7 +72,9 @@ pub struct ResponseTimeline {
     pub allocated_size: Vec< u64 >,
     pub allocated_count: Vec< u64 >,
     pub leaked_size: Vec< u64 >,
-    pub leaked_count: Vec< u64 >
+    pub leaked_count: Vec< u64 >,
+    pub allocations: Vec< u32 >,
+    pub deallocations: Vec< u32 >
 }
 
 #[derive(Serialize)]

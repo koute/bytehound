@@ -160,6 +160,32 @@ export default class PageDataOverview extends React.Component {
                         fill={true}
                         xUnit="unix_timestamp"
                     />
+                    <Graph
+                        key="allocations"
+                        title="Alloc/s"
+                        data={this.state.timeline}
+                        y_accessor="allocations"
+                        y_label=""
+                        onZoom={this.onZoom.bind(this)}
+                        onRightClick={this.onRightClick.bind(this)}
+                        x0={this.state.x0}
+                        x1={this.state.x1}
+                        fill={true}
+                        xUnit="unix_timestamp"
+                    />
+                    <Graph
+                        key="deallocations"
+                        title="Dealloc/s"
+                        data={this.state.timeline}
+                        y_accessor="deallocations"
+                        y_label=""
+                        onZoom={this.onZoom.bind(this)}
+                        onRightClick={this.onRightClick.bind(this)}
+                        x0={this.state.x0}
+                        x1={this.state.x1}
+                        fill={true}
+                        xUnit="unix_timestamp"
+                    />
                 </Switcher>
             );
         }

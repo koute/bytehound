@@ -479,67 +479,54 @@ fn handler_timeline( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
     let mut allocated_count = Vec::with_capacity( maximum_len );
     let mut leaked_size = Vec::with_capacity( maximum_len );
     let mut leaked_count = Vec::with_capacity( maximum_len );
+    let mut allocations = Vec::with_capacity( maximum_len );
+    let mut deallocations = Vec::with_capacity( maximum_len );
     let mut x = (-1_i32) as u64;
-    let mut current_size = 0;
-    let mut current_count = 0;
-    let mut current_leaked_size = 0;
-    let mut current_leaked_count = 0;
 
     for op in data.operations() {
-        let (timestamp, size_delta_v, count_delta_v) = match op {
-            Operation::Allocation { allocation, .. } => {
-                current_size += allocation.size;
-                current_count += 1;
-
-                if allocation.deallocation.is_none() {
-                    current_leaked_size += allocation.size;
-                    current_leaked_count += 1;
-                }
-
-                (allocation.timestamp, allocation.size as i64, 1)
-            },
-            Operation::Deallocation { allocation, deallocation, .. } => {
-                current_size -= allocation.size;
-                current_count -= 1;
-                (deallocation.timestamp, allocation.size as i64 * -1, -1)
-            },
-            Operation::Reallocation { new_allocation, old_allocation, .. } => {
-                current_size += new_allocation.size;
-                current_size -= old_allocation.size;
-
-                if new_allocation.deallocation.is_none() {
-                    current_leaked_size += new_allocation.size;
-                    current_leaked_count += 1;
-                }
-
-                (new_allocation.timestamp, new_allocation.size as i64 - old_allocation.size as i64, 0)
-            }
+        let timestamp = match op {
+            Operation::Allocation { ref allocation, .. } => allocation.timestamp,
+            Operation::Deallocation { ref deallocation, .. } => deallocation.timestamp,
+            Operation::Reallocation { ref new_allocation, .. } => new_allocation.timestamp
         };
 
         let timestamp = timestamp.as_secs();
-        if timestamp != x {
-            if x != (-1_i32 as u64) && x + 1 != timestamp {
-                let last_allocated_size = allocated_size.last().cloned().unwrap();
-                let last_allocated_count = allocated_count.last().cloned().unwrap();
-                let last_leaked_size = leaked_size.last().cloned().unwrap();
-                let last_leaked_count = leaked_count.last().cloned().unwrap();
+        let timestamp_changed = timestamp != x;
 
-                xs.push( x + 1 );
-                size_delta.push( 0 );
-                count_delta.push( 0 );
-                allocated_size.push( last_allocated_size );
-                allocated_count.push( last_allocated_count );
-                leaked_size.push( last_leaked_size );
-                leaked_count.push( last_leaked_count );
+        if timestamp_changed {
+            let mut last_allocated_size = 0;
+            let mut last_allocated_count = 0;
+            let mut last_leaked_size = 0;
+            let mut last_leaked_count = 0;
 
-                if x + 2 != timestamp {
-                    xs.push( timestamp - 1 );
+            if x != (-1_i32 as u64) {
+                last_allocated_size = allocated_size.last().cloned().unwrap();
+                last_allocated_count = allocated_count.last().cloned().unwrap();
+                last_leaked_size = leaked_size.last().cloned().unwrap();
+                last_leaked_count = leaked_count.last().cloned().unwrap();
+
+                if x + 1 != timestamp {
+                    xs.push( x + 1 );
                     size_delta.push( 0 );
                     count_delta.push( 0 );
                     allocated_size.push( last_allocated_size );
                     allocated_count.push( last_allocated_count );
                     leaked_size.push( last_leaked_size );
                     leaked_count.push( last_leaked_count );
+                    allocations.push( 0 );
+                    deallocations.push( 0 );
+
+                    if x + 2 != timestamp {
+                        xs.push( timestamp - 1 );
+                        size_delta.push( 0 );
+                        count_delta.push( 0 );
+                        allocated_size.push( last_allocated_size );
+                        allocated_count.push( last_allocated_count );
+                        leaked_size.push( last_leaked_size );
+                        leaked_count.push( last_leaked_count );
+                        allocations.push( 0 );
+                        deallocations.push( 0 );
+                    }
                 }
             }
 
@@ -547,20 +534,53 @@ fn handler_timeline( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
             xs.push( x );
             size_delta.push( 0 );
             count_delta.push( 0 );
-            allocated_size.push( 0 );
-            allocated_count.push( 0 );
-            leaked_size.push( 0 );
-            leaked_count.push( 0 );
+            allocated_size.push( last_allocated_size );
+            allocated_count.push( last_allocated_count );
+            leaked_size.push( last_leaked_size );
+            leaked_count.push( last_leaked_count );
+            allocations.push( 0 );
+            deallocations.push( 0 );
         }
 
-        *allocated_size.last_mut().unwrap() = current_size;
-        *allocated_count.last_mut().unwrap() = current_count;
+        let allocations = allocations.last_mut().unwrap();
+        let deallocations = deallocations.last_mut().unwrap();
+        let allocated_size = allocated_size.last_mut().unwrap();
+        let allocated_count = allocated_count.last_mut().unwrap();
+        let size_delta = size_delta.last_mut().unwrap();
+        let count_delta = count_delta.last_mut().unwrap();
+        let leaked_size = leaked_size.last_mut().unwrap();
+        let leaked_count = leaked_count.last_mut().unwrap();
 
-        *leaked_size.last_mut().unwrap() = current_leaked_size;
-        *leaked_count.last_mut().unwrap() = current_leaked_count;
+        let (size_delta_v, count_delta_v) = match op {
+            Operation::Allocation { allocation, .. } => {
+                *allocations += 1;
+                if allocation.deallocation.is_none() {
+                    *leaked_size += allocation.size;
+                    *leaked_count += 1;
+                }
 
-        *size_delta.last_mut().unwrap() += size_delta_v;
-        *count_delta.last_mut().unwrap() += count_delta_v;
+                (allocation.size as i64, 1)
+            },
+            Operation::Deallocation { allocation, .. } => {
+                *deallocations += 1;
+                (allocation.size as i64 * -1, -1)
+            },
+            Operation::Reallocation { new_allocation, old_allocation, .. } => {
+                *allocations += 1;
+                *deallocations += 1;
+                if new_allocation.deallocation.is_none() {
+                    *leaked_size += new_allocation.size;
+                    *leaked_count += 1;
+                }
+
+                (new_allocation.size as i64 - old_allocation.size as i64, 0)
+            }
+        };
+
+        *allocated_size = (*allocated_size as i64 + size_delta_v) as _;
+        *allocated_count = (*allocated_count as i64 + count_delta_v) as _;
+        *size_delta = (*size_delta as i64 + size_delta_v) as _;
+        *count_delta = (*count_delta as i64 + count_delta_v) as _;
     }
 
     let timeline = protocol::ResponseTimeline {
@@ -570,7 +590,9 @@ fn handler_timeline( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
         allocated_size,
         allocated_count,
         leaked_size,
-        leaked_count
+        leaked_count,
+        allocations,
+        deallocations
     };
 
     Ok( HttpResponse::Ok().json( timeline ) )
