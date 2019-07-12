@@ -375,7 +375,10 @@ fn test_fork() {
 
     let analysis = analyze( "fork", cwd.join( "fork_0.dat" ) );
 
-    let mut iter = analysis.allocations_from_source( "fork.c" ).filter( |alloc| !is_from_function( alloc, "allocate_dtv" ) );
+    let mut iter = analysis.allocations_from_source( "fork.c" ).filter( |alloc| {
+        !is_from_function( alloc, "allocate_dtv" ) &&
+        !is_from_function( alloc, "_dl_allocate_tls" )
+    });
     let a0 = iter.next().unwrap();
     let a1 = iter.next().unwrap();
     let a2 = iter.next().unwrap();
