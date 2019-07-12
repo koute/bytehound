@@ -616,7 +616,7 @@ impl Loader {
         let mut interner = self.interner.get_mut();
 
         for &address in &addresses {
-            let address = address - 1;
+            let address = if address > 0 { address - 1 } else { 0 };
             if let Some( range ) = self.frames_by_address.get( &address ).cloned() {
                 for index in range {
                     let frame_id = backtrace_storage[ index ];
