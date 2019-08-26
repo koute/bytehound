@@ -17,21 +17,23 @@ use std::path::{Path, PathBuf};
 use std::iter::FusedIterator;
 
 use actix_web::{
+    body::{
+        Body,
+        BodyStream
+    },
+    web,
     App,
-    Body,
     HttpRequest,
     HttpResponse,
-    Result,
-    server
+    Responder,
+    Result
 };
 
 use hashbrown::HashMap;
 
-use actix_web::dev::Handler;
 use actix_web::error::{ErrorNotFound, ErrorBadRequest, ErrorInternalServerError};
 use actix_web::error::Error as ActixWebError;
-use actix_web::http::Method;
-use actix_web::middleware::cors::Cors;
+use actix_cors::Cors;
 use futures::Stream;
 use serde::Serialize;
 use itertools::Itertools;
@@ -154,12 +156,22 @@ impl State {
 
 type StateRef = Arc< State >;
 
-fn query< 'a, T: serde::Deserialize< 'a >, S >( req: &'a HttpRequest< S > ) -> Result< T > {
+trait StateGetter {
+    fn state( &self ) -> &StateRef;
+}
+
+impl StateGetter for HttpRequest {
+    fn state( &self ) -> &StateRef {
+        self.app_data::< StateRef >().unwrap()
+    }
+}
+
+fn query< 'a, T: serde::Deserialize< 'a > >( req: &'a HttpRequest ) -> Result< T > {
     serde_urlencoded::from_str::<T>( req.query_string() )
         .map_err( |e| e.into() )
 }
 
-fn get_data_id( req: &HttpRequest< StateRef > ) -> Result< DataId > {
+fn get_data_id( req: &HttpRequest ) -> Result< DataId > {
     let id = req.match_info().get( "id" ).unwrap();
     if id == "last" {
         return req.state().last_id().ok_or( ErrorNotFound( "data not found" ) );
@@ -172,7 +184,7 @@ fn get_data_id( req: &HttpRequest< StateRef > ) -> Result< DataId > {
     Ok( id )
 }
 
-fn get_data( req: &HttpRequest< StateRef > ) -> Result< &Data > {
+fn get_data( req: &HttpRequest ) -> Result< &Data > {
     let id = get_data_id( req )?;
     req.state().data.get( &id ).ok_or_else( || ErrorNotFound( "data not found" ) )
 }
@@ -187,10 +199,11 @@ impl From< PrepareFilterError > for ActixWebError {
     }
 }
 
-fn async_data_handler< F: FnOnce( &Data, byte_channel::ByteSender ) + Send + 'static >( req: &HttpRequest< StateRef >, callback: F ) -> Result< Body > {
+fn async_data_handler< F: FnOnce( &Data, byte_channel::ByteSender ) + Send + 'static >( req: &HttpRequest, callback: F ) -> Result< Body > {
     let (tx, rx) = byte_channel();
     let rx = rx.map_err( |_| ErrorInternalServerError( "internal error" ) );
-    let body = Body::Streaming( Box::new( rx ) );
+    let rx = BodyStream::new( rx );
+    let body = Body::Message( Box::new( rx ) );
 
     let data_id = get_data_id( &req )?;
     let state = req.state().clone();
@@ -286,7 +299,7 @@ impl protocol::ResponseMetadata {
     }
 }
 
-fn handler_list( req: &HttpRequest< StateRef > ) -> HttpResponse {
+fn handler_list( req: HttpRequest ) -> HttpResponse {
     let list: Vec< _ > = req.state().data.values().map( |data| {
         protocol::ResponseMetadata::new( data )
     }).collect();
@@ -462,13 +475,13 @@ fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationT
     }
 }
 
-fn handler_fragmentation_timeline( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_fragmentation_timeline( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let response = get_fragmentation_timeline( data );
     Ok( HttpResponse::Ok().json( response ) )
 }
 
-fn handler_timeline( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
 
     let maximum_len = (data.last_timestamp().as_secs() - data.initial_timestamp().as_secs()) as usize;
@@ -672,7 +685,7 @@ fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceF
     }
 }
 
-fn handler_allocations( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_allocations( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let params: protocol::RequestAllocations = query( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
@@ -813,7 +826,7 @@ impl< T > Ord for Reverse< T > where T: Ord {
     }
 }
 
-fn handler_allocation_groups( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter_params: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter_params )?;
@@ -911,7 +924,7 @@ fn handler_allocation_groups( req: &HttpRequest< StateRef > ) -> Result< HttpRes
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
 }
 
-fn handler_raw_allocations( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_raw_allocations( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let iter = data.alloc_sorted_by_timestamp( None, None );
 
@@ -978,7 +991,7 @@ fn dump_node< T: fmt::Write, K: PartialEq + Clone, V, F: Fn( &mut T, &V ) -> fmt
     Ok(())
 }
 
-fn handler_tree( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1003,7 +1016,7 @@ fn handler_tree( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
 }
 
-fn handler_mmaps( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
     let backtrace_format: protocol::BacktraceFormat = query( &req )?;
     let body = async_data_handler( &req, move |data, tx| {
         let factory = || {
@@ -1079,7 +1092,7 @@ fn handler_mmaps( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
 }
 
-fn handler_backtrace( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_backtrace( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let backtrace_id: u32 = req.match_info().get( "backtrace_id" ).unwrap().parse().unwrap();
     let backtrace_id = BacktraceId::new( backtrace_id );
@@ -1140,7 +1153,7 @@ fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a 
     }
 }
 
-fn handler_regions( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_regions( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1153,7 +1166,7 @@ fn handler_regions( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
 }
 
-fn handler_mallopts( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_mallopts( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let backtrace_format: protocol::BacktraceFormat = query( &req )?;
 
@@ -1188,7 +1201,7 @@ fn handler_mallopts( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().json( response ) )
 }
 
-fn handler_export_flamegraph_pl( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_export_flamegraph_pl( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1200,7 +1213,7 @@ fn handler_export_flamegraph_pl( req: &HttpRequest< StateRef > ) -> Result< Http
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
 }
 
-fn handler_export_flamegraph( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_export_flamegraph( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1212,7 +1225,7 @@ fn handler_export_flamegraph( req: &HttpRequest< StateRef > ) -> Result< HttpRes
     Ok( HttpResponse::Ok().content_type( "image/svg+xml" ).body( body ) )
 }
 
-fn handler_export_replay( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_export_replay( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1224,7 +1237,7 @@ fn handler_export_replay( req: &HttpRequest< StateRef > ) -> Result< HttpRespons
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
 }
 
-fn handler_export_heaptrack( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_export_heaptrack( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1236,7 +1249,7 @@ fn handler_export_heaptrack( req: &HttpRequest< StateRef > ) -> Result< HttpResp
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
 }
 
-fn handler_allocation_ascii_tree( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_allocation_ascii_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
     let filter = prepare_filter( data, &filter )?;
@@ -1251,7 +1264,7 @@ fn handler_allocation_ascii_tree( req: &HttpRequest< StateRef > ) -> Result< Htt
     Ok( HttpResponse::Ok().content_type( "text/plain; charset=utf-8" ).body( body ) )
 }
 
-fn handler_collation_json< F >( req: &HttpRequest< StateRef >, callback: F ) -> Result< HttpResponse >
+fn handler_collation_json< F >( req: HttpRequest, callback: F ) -> Result< HttpResponse >
     where F: Fn( &Data ) -> BTreeMap< String, BTreeMap< u32, CountAndSize > > + Send + 'static
 {
     use serde_json::json;
@@ -1296,15 +1309,15 @@ fn handler_collation_json< F >( req: &HttpRequest< StateRef >, callback: F ) -> 
     Ok( HttpResponse::Ok().content_type( "application/json; charset=utf-8" ).body( body ) )
 }
 
-fn handler_dynamic_constants( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_dynamic_constants( req: HttpRequest ) -> Result< HttpResponse > {
     handler_collation_json( req, |data| data.get_dynamic_constants() )
 }
 
-fn handler_dynamic_statics( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_dynamic_statics( req: HttpRequest ) -> Result< HttpResponse > {
     handler_collation_json( req, |data| data.get_dynamic_statics() )
 }
 
-fn handler_dynamic_constants_ascii_tree( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_dynamic_constants_ascii_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let body = async_data_handler( &req, move |data, mut tx| {
         let table = data.get_dynamic_constants_ascii_tree();
         let _ = writeln!( tx, "{}", table );
@@ -1313,7 +1326,7 @@ fn handler_dynamic_constants_ascii_tree( req: &HttpRequest< StateRef > ) -> Resu
     Ok( HttpResponse::Ok().content_type( "text/plain; charset=utf-8" ).body( body ) )
 }
 
-fn handler_dynamic_statics_ascii_tree( req: &HttpRequest< StateRef > ) -> Result< HttpResponse > {
+fn handler_dynamic_statics_ascii_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let body = async_data_handler( &req, move |data, mut tx| {
         let table = data.get_dynamic_statics_ascii_tree();
         let _ = writeln!( tx, "{}", table );
@@ -1322,10 +1335,12 @@ fn handler_dynamic_statics_ascii_tree( req: &HttpRequest< StateRef > ) -> Result
     Ok( HttpResponse::Ok().content_type( "text/plain; charset=utf-8" ).body( body ) )
 }
 
-struct StaticHandler( &'static str, &'static [u8] );
-impl< T > Handler< T > for StaticHandler {
-    type Result = Result< HttpResponse >;
-    fn handle( &self, _: &HttpRequest< T > ) -> Self::Result {
+struct StaticResponse( &'static str, &'static [u8] );
+impl Responder for StaticResponse {
+    type Error = actix_web::Error;
+    type Future = Result< HttpResponse >;
+
+    fn respond_to( self, _: &HttpRequest ) -> Self::Future {
         let mime = mime_guess::guess_mime_type( Path::new( self.0 ) );
         let mime = format!( "{}", mime );
         Ok( HttpResponse::Ok().content_type( mime ).body( self.1 ) )
@@ -1395,48 +1410,46 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
 
     let state = Arc::new( state );
     let sys = actix::System::new( "server" );
-    server::new( move || {
-        App::with_state( state.clone() )
+    actix_web::HttpServer::new( move || {
+        App::new().data( state.clone() )
+            .wrap( Cors::new() )
             .configure( |app| {
-                let mut app = Cors::for_app( app );
                 app
-                    .resource( "/list", |r| r.f( handler_list ) )
-                    .resource( "/data/{id}/timeline", |r| r.method( Method::GET ).f( handler_timeline ) )
-                    .resource( "/data/{id}/fragmentation_timeline", |r| r.method( Method::GET ).f( handler_fragmentation_timeline ) )
-                    .resource( "/data/{id}/allocations", |r| r.method( Method::GET ).f( handler_allocations ) )
-                    .resource( "/data/{id}/allocation_groups", |r| r.method( Method::GET ).f( handler_allocation_groups ) )
-                    .resource( "/data/{id}/raw_allocations", |r| r.method( Method::GET ).f( handler_raw_allocations ) )
-                    .resource( "/data/{id}/tree", |r| r.method( Method::GET ).f( handler_tree ) )
-                    .resource( "/data/{id}/mmaps", |r| r.method( Method::GET ).f( handler_mmaps ) )
-                    .resource( "/data/{id}/backtrace/{backtrace_id}", |r| r.method( Method::GET ).f( handler_backtrace ) )
-                    .resource( "/data/{id}/regions", |r| r.method( Method::GET ).f( handler_regions ) )
-                    .resource( "/data/{id}/mallopts", |r| r.method( Method::GET ).f( handler_mallopts ) )
-                    .resource( "/data/{id}/export/flamegraph", |r| r.method( Method::GET ).f( handler_export_flamegraph ) )
-                    .resource( "/data/{id}/export/flamegraph/{filename}", |r| r.method( Method::GET ).f( handler_export_flamegraph ) )
-                    .resource( "/data/{id}/export/flamegraph.pl", |r| r.method( Method::GET ).f( handler_export_flamegraph_pl ) )
-                    .resource( "/data/{id}/export/flamegraph.pl/{filename}", |r| r.method( Method::GET ).f( handler_export_flamegraph_pl ) )
-                    .resource( "/data/{id}/export/heaptrack", |r| r.method( Method::GET ).f( handler_export_heaptrack ) )
-                    .resource( "/data/{id}/export/heaptrack/{filename}", |r| r.method( Method::GET ).f( handler_export_heaptrack ) )
-                    .resource( "/data/{id}/export/replay", |r| r.method( Method::GET ).f( handler_export_replay ) )
-                    .resource( "/data/{id}/export/replay/{filename}", |r| r.method( Method::GET ).f( handler_export_replay ) )
-                    .resource( "/data/{id}/allocation_ascii_tree", |r| r.method( Method::GET ).f( handler_allocation_ascii_tree ) )
-                    .resource( "/data/{id}/dynamic_constants", |r| r.method( Method::GET ).f( handler_dynamic_constants ) )
-                    .resource( "/data/{id}/dynamic_constants/{filename}", |r| r.method( Method::GET ).f( handler_dynamic_constants ) )
-                    .resource( "/data/{id}/dynamic_constants_ascii_tree", |r| r.method( Method::GET ).f( handler_dynamic_constants_ascii_tree ) )
-                    .resource( "/data/{id}/dynamic_constants_ascii_tree/{filename}", |r| r.method( Method::GET ).f( handler_dynamic_constants_ascii_tree ) )
-                    .resource( "/data/{id}/dynamic_statics", |r| r.method( Method::GET ).f( handler_dynamic_statics ) )
-                    .resource( "/data/{id}/dynamic_statics/{filename}", |r| r.method( Method::GET ).f( handler_dynamic_statics ) )
-                    .resource( "/data/{id}/dynamic_statics_ascii_tree", |r| r.method( Method::GET ).f( handler_dynamic_statics_ascii_tree ) )
-                    .resource( "/data/{id}/dynamic_statics_ascii_tree/{filename}", |r| r.method( Method::GET ).f( handler_dynamic_statics_ascii_tree ) );
+                    .service( web::resource( "/list" ).route( web::get().to( handler_list ) ) )
+                    .service( web::resource( "/data/{id}/timeline" ).route( web::get().to( handler_timeline ) ) )
+                    .service( web::resource( "/data/{id}/fragmentation_timeline" ).route( web::get().to( handler_fragmentation_timeline ) ) )
+                    .service( web::resource( "/data/{id}/allocations" ).route( web::get().to( handler_allocations ) ) )
+                    .service( web::resource( "/data/{id}/allocation_groups" ).route( web::get().to( handler_allocation_groups ) ) )
+                    .service( web::resource( "/data/{id}/raw_allocations" ).route( web::get().to( handler_raw_allocations ) ) )
+                    .service( web::resource( "/data/{id}/tree" ).route( web::get().to( handler_tree ) ) )
+                    .service( web::resource( "/data/{id}/mmaps" ).route( web::get().to( handler_mmaps ) ) )
+                    .service( web::resource( "/data/{id}/backtrace/{backtrace_id}" ).route( web::get().to( handler_backtrace ) ) )
+                    .service( web::resource( "/data/{id}/regions" ).route( web::get().to( handler_regions ) ) )
+                    .service( web::resource( "/data/{id}/mallopts" ).route( web::get().to( handler_mallopts ) ) )
+                    .service( web::resource( "/data/{id}/export/flamegraph" ).route( web::get().to( handler_export_flamegraph ) ) )
+                    .service( web::resource( "/data/{id}/export/flamegraph/{filename}" ).route( web::get().to( handler_export_flamegraph ) ) )
+                    .service( web::resource( "/data/{id}/export/flamegraph.pl" ).route( web::get().to( handler_export_flamegraph_pl ) ) )
+                    .service( web::resource( "/data/{id}/export/flamegraph.pl/{filename}" ).route( web::get().to( handler_export_flamegraph_pl ) ) )
+                    .service( web::resource( "/data/{id}/export/heaptrack" ).route( web::get().to( handler_export_heaptrack ) ) )
+                    .service( web::resource( "/data/{id}/export/heaptrack/{filename}" ).route( web::get().to( handler_export_heaptrack ) ) )
+                    .service( web::resource( "/data/{id}/export/replay" ).route( web::get().to( handler_export_replay ) ) )
+                    .service( web::resource( "/data/{id}/export/replay/{filename}" ).route( web::get().to( handler_export_replay ) ) )
+                    .service( web::resource( "/data/{id}/allocation_ascii_tree" ).route( web::get().to( handler_allocation_ascii_tree ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_constants" ).route( web::get().to( handler_dynamic_constants ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_constants/{filename}" ).route( web::get().to( handler_dynamic_constants ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_constants_ascii_tree" ).route( web::get().to( handler_dynamic_constants_ascii_tree ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_constants_ascii_tree/{filename}" ).route( web::get().to( handler_dynamic_constants_ascii_tree ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_statics" ).route( web::get().to( handler_dynamic_statics ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_statics/{filename}" ).route( web::get().to( handler_dynamic_statics ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_statics_ascii_tree" ).route( web::get().to( handler_dynamic_statics_ascii_tree ) ) )
+                    .service( web::resource( "/data/{id}/dynamic_statics_ascii_tree/{filename}" ).route( web::get().to( handler_dynamic_statics_ascii_tree ) ) );
 
                 for (key, bytes) in WEBUI_ASSETS {
-                    app.resource( &format!( "/{}", key ), move |r| r.method( Method::GET ).h( StaticHandler( key, bytes ) ) );
+                    app.service( web::resource( &format!( "/{}", key ) ).route( web::get().to( move || StaticResponse( key, bytes ) ) ) );
                     if *key == "index.html" {
-                        app.resource( "/", move |r| r.method( Method::GET ).h( StaticHandler( key, bytes ) ) );
+                        app.service( web::resource( "/" ).route( web::get().to( move || StaticResponse( key, bytes ) ) ) );
                     }
                 }
-
-                app.register()
             })
     }).bind( &format!( "{}:{}", interface, port ) ).map_err( |err| ServerError::BindFailed( err ) )?
         .shutdown_timeout( 1 )
