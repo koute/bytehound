@@ -19,7 +19,7 @@ bitflags = "1"
 inferno = { version = "0.7", default-features = false }
 lazy_static = "1"
 hashbrown = "0.6"
-parking_lot = "0.8"
+parking_lot = "0.9"
 crossbeam-channel = "0.3"
 
 common = { path = "../common" }

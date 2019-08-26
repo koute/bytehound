@@ -20,7 +20,7 @@ bytes = "0.4"
 itertools = "0.8"
 lru = "0.1"
 stable_deref_trait = "1"
-parking_lot = "0.8"
+parking_lot = "0.9"
 common = { path = "../common" }
 mime_guess = "1"
 hashbrown = "0.6"
