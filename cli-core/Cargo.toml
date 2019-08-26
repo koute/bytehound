@@ -30,4 +30,4 @@ git = "https://github.com/nokia/not-perf.git"
 rev = "07242ef"
 
 [dev-dependencies]
-quickcheck = "0.8"
+quickcheck = "0.9"
