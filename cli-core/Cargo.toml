@@ -27,7 +27,7 @@ lz4-compress = { path = "../lz4-compress" }
 
 [dependencies.nwind]
 git = "https://github.com/nokia/not-perf.git"
-rev = "07242ef"
+rev = "8785cc8"
 
 [dev-dependencies]
 quickcheck = "0.9"
