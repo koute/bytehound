@@ -19,6 +19,7 @@ use crate::syscall;
 use crate::timestamp::get_timestamp;
 use crate::unwind::{self, Backtrace};
 
+#[cfg(not(feature = "jemalloc"))]
 extern "C" {
     #[link_name = "__libc_malloc"]
     fn malloc_real( size: size_t ) -> *mut c_void;
@@ -32,10 +33,33 @@ extern "C" {
     fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
     #[link_name = "__libc_mallopt"]
     fn mallopt_real( params: c_int, value: c_int ) -> c_int;
+}
 
+#[cfg(feature = "jemalloc")]
+extern "C" {
+    #[link_name = "_rjem_malloc"]
+    fn malloc_real( size: size_t ) -> *mut c_void;
+    #[link_name = "_rjem_calloc"]
+    fn calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
+    #[link_name = "_rjem_realloc"]
+    fn realloc_real( ptr: *mut c_void, size: size_t ) -> *mut c_void;
+    #[link_name = "_rjem_free"]
+    fn free_real( ptr: *mut c_void );
+    #[link_name = "_rjem_memalign"]
+    fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
+}
+
+#[cfg(feature = "jemalloc")]
+unsafe fn mallopt_real( _: c_int, _: c_int ) -> c_int {
+    1
+}
+
+extern "C" {
     #[link_name = "__libc_fork"]
     fn fork_real() -> libc::pid_t;
 }
+
+const USING_JEMALLOC: bool = cfg!( feature = "jemalloc" );
 
 fn get_timestamp_if_enabled() -> Timestamp {
     if opt::get().precise_timestamps {
@@ -66,12 +90,16 @@ pub unsafe extern "C" fn _Exit( status: c_int ) {
     _exit( status );
 }
 
-// `libc` on mips64 doesn't export this
-extern "C" {
-    fn malloc_usable_size( ptr: *mut libc::c_void) -> libc::size_t;
-}
-
 fn get_glibc_metadata( ptr: *mut c_void, size: usize ) -> (u32, u32, u64) {
+    if USING_JEMALLOC {
+        return (0, 0, 0);
+    }
+
+    // `libc` on mips64 doesn't export this
+    extern "C" {
+        fn malloc_usable_size( ptr: *mut libc::c_void) -> libc::size_t;
+    }
+
     let raw_chunk_size = unsafe { *(ptr as *mut usize).offset( -1 ) };
     let flags = raw_chunk_size & 0b111;
     let chunk_size = raw_chunk_size & !0b111;

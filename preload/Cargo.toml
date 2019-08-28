@@ -35,3 +35,4 @@ path = "../common"
 default = []
 debug-logs = ["nwind/debug-logs", "nwind/addr2line"]
 nightly = ["parking_lot/nightly"]
+jemalloc = []
