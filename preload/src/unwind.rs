@@ -2,7 +2,11 @@ use std::mem::{self, transmute};
 use std::sync::{Arc, Weak};
 use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
-use nwind::LocalAddressSpace;
+use nwind::{
+    LocalAddressSpace,
+    LocalAddressSpaceOptions,
+    UnwindControl
+};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use crate::global::Tls;
@@ -168,11 +172,11 @@ extern "C" fn on_backtrace( context: Context, data: *mut c_void ) -> ReasonCode 
 }
 
 lazy_static! {
-    static ref AS: RwLock< ::nwind::LocalAddressSpace > = {
-        let opts = ::nwind::LocalAddressSpaceOptions::new()
+    static ref AS: RwLock< LocalAddressSpace > = {
+        let opts = LocalAddressSpaceOptions::new()
             .should_load_symbols( cfg!(feature = "logging") && log_enabled!( ::log::Level::Debug ) );
 
-        let mut address_space = ::nwind::LocalAddressSpace::new_with_opts( opts ).unwrap();
+        let mut address_space = LocalAddressSpace::new_with_opts( opts ).unwrap();
         address_space.use_shadow_stack( opt::get().enable_shadow_stack );
         RwLock::new( address_space )
     };
@@ -298,13 +302,13 @@ pub fn grab( tls: &Tls, out: &mut Backtrace ) {
     if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
         address_space.unwind( unwind_ctx, |address| {
             out.frames.push( address );
-            ::nwind::UnwindControl::Continue
+            UnwindControl::Continue
         });
         out.stale_count = None;
     } else {
         let stale_count = address_space.unwind_through_fresh_frames( unwind_ctx, |address| {
             out.frames.push( address );
-            ::nwind::UnwindControl::Continue
+            UnwindControl::Continue
         });
         out.stale_count = stale_count.map( |value| value as u32 );
     }
