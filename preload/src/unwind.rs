@@ -2,6 +2,7 @@ use std::mem::{self, transmute};
 use std::sync::{Arc, Weak};
 use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
+use nwind::LocalAddressSpace;
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use crate::global::Tls;
@@ -175,34 +176,100 @@ lazy_static! {
         address_space.use_shadow_stack( opt::get().enable_shadow_stack );
         RwLock::new( address_space )
     };
-
-    static ref PERF: SpinLock< Perf > = {
-        let perf = Perf::build()
-            .any_cpu()
-            .event_source( EventSource::SwDummy )
-            .open()
-            .expect( "failed to initialize perf_event_open" );
-
-        SpinLock::new( perf )
-    };
 }
 
-fn should_reload( perf: &mut Perf ) -> bool {
-    let mut reload_address_space = false;
-    for event in perf.iter() {
-        match event.get() {
-            Event::Mmap2( ref event ) if event.filename != b"//anon" && event.inode != 0 && event.protection & libc::PROT_EXEC as u32 != 0 => {
-                debug!( "New executable region mmaped: {:?}", event );
-                reload_address_space = true;
-            },
-            Event::Lost( _ ) => {
-                debug!( "Lost events; forcing a reload" );
-                reload_address_space = true;
-            },
-            _ => {}
+static mut PERF: Option< SpinLock< Perf > > = None;
+
+pub fn prepare_to_start_unwinding() {
+    static FLAG: SpinLock< bool > = SpinLock::new( false );
+    let mut flag = FLAG.lock();
+    if *flag {
+        return;
+    }
+    *flag = true;
+
+    if !opt::get().use_perf_event_open {
+        return;
+    }
+
+    if unsafe { PERF.is_some() } {
+        return;
+    }
+
+    let perf = Perf::build()
+        .any_cpu()
+        .event_source( EventSource::SwDummy )
+        .open();
+
+    match perf {
+        Ok( perf ) => {
+            unsafe {
+                PERF = Some( SpinLock::new( perf ) );
+            }
+        },
+        Err( error ) => {
+            warn!( "Failed to initialize perf_event_open: {}", error );
         }
     }
-    reload_address_space
+}
+
+fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
+    if unsafe { perf.unsafe_as_ref().are_events_pending() } {
+        let mut perf = perf.lock();
+        let mut reload_address_space = false;
+        for event in perf.iter() {
+            match event.get() {
+                Event::Mmap2( ref event ) if event.filename != b"//anon" && event.inode != 0 && event.protection & libc::PROT_EXEC as u32 != 0 => {
+                    debug!( "New executable region mmaped: {:?}", event );
+                    reload_address_space = true;
+                },
+                Event::Lost( _ ) => {
+                    debug!( "Lost events; forcing a reload" );
+                    reload_address_space = true;
+                },
+                _ => {}
+            }
+        }
+
+        if reload_address_space {
+            let mut address_space = AS.write();
+            info!( "Reloading address space" );
+            address_space.reload().unwrap();
+            return RwLockWriteGuard::downgrade( address_space );
+        }
+    }
+
+    AS.read()
+}
+
+fn reload_if_necessary_dl_iterate_phdr( tls: &Tls ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
+    let last_state = unsafe { tls.last_dl_state() };
+    let dl_state = get_dl_state();
+    if *last_state != dl_state {
+        *last_state = dl_state;
+
+        let mut address_space = AS.write();
+        info!( "Reloading address space" );
+        address_space.reload().unwrap();
+        return RwLockWriteGuard::downgrade( address_space );
+    }
+
+    AS.read()
+}
+
+fn get_dl_state() -> (u64, u64) {
+    unsafe extern fn callback( info: *mut libc::dl_phdr_info, _: libc::size_t, data: *mut libc::c_void ) -> libc::c_int {
+        let out = &mut *(data as *mut (u64, u64));
+        out.0 = (*info).dlpi_adds;
+        out.1 = (*info).dlpi_subs;
+        1
+    }
+
+    unsafe {
+        let mut out: (u64, u64) = (0, 0);
+        libc::dl_iterate_phdr( Some( callback ), &mut out as *mut _ as *mut libc::c_void );
+        out
+    }
 }
 
 #[inline(never)]
@@ -218,20 +285,13 @@ pub fn grab( tls: &Tls, out: &mut Backtrace ) {
         return;
     }
 
-    let address_space =
-        if unsafe { PERF.unsafe_as_ref().are_events_pending() } {
-            let mut perf = PERF.lock();
-            if should_reload( &mut perf ) {
-                info!( "Reloading address space" );
-                let mut address_space = AS.write();
-                address_space.reload().unwrap();
-                RwLockWriteGuard::downgrade( address_space )
-            } else {
-                AS.read()
-            }
+    let address_space = unsafe {
+        if let Some( ref perf ) = PERF {
+            reload_if_necessary_perf_event_open( perf )
         } else {
-            AS.read()
-        };
+            reload_if_necessary_dl_iterate_phdr( tls )
+        }
+    };
 
     let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && address_space.is_shadow_stack_enabled();
     let unwind_ctx = unsafe { tls.unwind_ctx() };

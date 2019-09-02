@@ -17,6 +17,7 @@ pub struct Opts {
     pub precise_timestamps: bool,
     pub register_sigusr1: bool,
     pub register_sigusr2: bool,
+    pub use_perf_event_open: bool,
     pub write_binaries_to_output: bool,
     pub zero_memory: bool
 }
@@ -36,6 +37,7 @@ static mut OPTS: Opts = Opts {
     precise_timestamps: false,
     register_sigusr1: true,
     register_sigusr2: true,
+    use_perf_event_open: true,
     write_binaries_to_output: true,
     zero_memory: false
 };
@@ -115,6 +117,7 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_PRECISE_TIMESTAMPS"        => &mut opts.precise_timestamps,
         "MEMORY_PROFILER_REGISTER_SIGUSR1"          => &mut opts.register_sigusr1,
         "MEMORY_PROFILER_REGISTER_SIGUSR2"          => &mut opts.register_sigusr2,
+        "MEMORY_PROFILER_USE_PERF_EVENT_OPEN"       => &mut opts.use_perf_event_open,
         "MEMORY_PROFILER_USE_SHADOW_STACK"          => &mut opts.enable_shadow_stack,
         "MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT"  => &mut opts.write_binaries_to_output,
         "MEMORY_PROFILER_ZERO_MEMORY"               => &mut opts.zero_memory

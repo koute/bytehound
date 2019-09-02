@@ -12,6 +12,7 @@ use crate::event::{InternalEvent, send_event};
 use crate::spin_lock::{SpinLock, SpinLockGuard};
 use crate::syscall;
 use crate::thread_local::{TlsCtor, TlsPointer};
+use crate::unwind::prepare_to_start_unwinding;
 
 struct ThreadRegistry {
     pub enabled_for_new_threads: bool,
@@ -171,6 +172,7 @@ fn try_enable( state: usize ) -> bool {
         assert!( !thread_registry.enabled_for_new_threads );
     }
 
+    prepare_to_start_unwinding();
     spawn_processing_thread();
 
     {
@@ -335,7 +337,8 @@ pub struct Tls {
     pub enabled: AtomicBool,
     pub backtrace_cache: Arc< crate::unwind::Cache >,
     pub throttle_state: ArcCounter,
-    pub unwind_ctx: UnsafeCell< LocalUnwindContext >
+    pub unwind_ctx: UnsafeCell< LocalUnwindContext >,
+    last_dl_state: UnsafeCell< (u64, u64) >
 }
 
 impl Drop for Tls {
@@ -359,6 +362,10 @@ impl Tls {
     pub unsafe fn unwind_ctx( &self ) -> &mut LocalUnwindContext {
         &mut *self.unwind_ctx.get()
     }
+
+    pub unsafe fn last_dl_state( &self ) -> &mut (u64, u64) {
+        &mut *self.last_dl_state.get()
+    }
 }
 
 struct Constructor;
@@ -375,7 +382,8 @@ impl TlsCtor< Tls > for Constructor {
             enabled: AtomicBool::new( registry.enabled_for_new_threads ),
             backtrace_cache: Arc::new( crate::unwind::Cache::new() ),
             throttle_state: ArcCounter::new(),
-            unwind_ctx: UnsafeCell::new( LocalUnwindContext::new() )
+            unwind_ctx: UnsafeCell::new( LocalUnwindContext::new() ),
+            last_dl_state: UnsafeCell::new( (0, 0) )
         };
 
         let tls = callback( tls );
