@@ -217,6 +217,18 @@ pub fn prepare_to_start_unwinding() {
     }
 }
 
+fn reload() -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
+    let mut address_space = AS.write();
+    info!( "Reloading address space" );
+    let update = address_space.reload().unwrap();
+    crate::event::send_event( crate::event::InternalEvent::AddressSpaceUpdated {
+        maps: update.maps,
+        new_binaries: update.new_binaries
+    });
+
+    RwLockWriteGuard::downgrade( address_space )
+}
+
 fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
     if unsafe { perf.unsafe_as_ref().are_events_pending() } {
         let mut perf = perf.lock();
@@ -236,10 +248,7 @@ fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> parking_lot
         }
 
         if reload_address_space {
-            let mut address_space = AS.write();
-            info!( "Reloading address space" );
-            address_space.reload().unwrap();
-            return RwLockWriteGuard::downgrade( address_space );
+            return reload();
         }
     }
 
@@ -251,11 +260,7 @@ fn reload_if_necessary_dl_iterate_phdr( tls: &Tls ) -> parking_lot::RwLockReadGu
     let dl_state = get_dl_state();
     if *last_state != dl_state {
         *last_state = dl_state;
-
-        let mut address_space = AS.write();
-        info!( "Reloading address space" );
-        address_space.reload().unwrap();
-        return RwLockWriteGuard::downgrade( address_space );
+        return reload();
     }
 
     AS.read()

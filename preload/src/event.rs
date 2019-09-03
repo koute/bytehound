@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::sync::Arc;
 
 use common::Timestamp;
 
@@ -75,7 +76,11 @@ pub(crate) enum InternalEvent {
     OverrideNextTimestamp {
         timestamp: Timestamp
     },
-    Stop
+    Stop,
+    AddressSpaceUpdated {
+        maps: String,
+        new_binaries: Vec< Arc< nwind::BinaryData > >
+    }
 }
 
 lazy_static! {

@@ -658,6 +658,30 @@ pub(crate) fn thread_main() {
                 InternalEvent::Stop => {
                     stopped = true;
                     let _ = serializer.flush();
+                },
+                InternalEvent::AddressSpaceUpdated { maps, new_binaries } => {
+                    let timestamp = get_timestamp();
+                    if opt::get().write_binaries_to_output || serializer.inner_mut_without_flush().file.is_none() {
+                        for binary in new_binaries {
+                            debug!( "Writing new binary: {}", binary.name() );
+                            let event = Event::File {
+                                timestamp,
+                                path: binary.name().into(),
+                                contents: binary.as_bytes().into()
+                            };
+
+                            let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        }
+                    }
+
+                    debug!( "Writing new maps..." );
+                    let event = Event::File {
+                        timestamp,
+                        path: "/proc/self/maps".into(),
+                        contents: maps.as_bytes().into()
+                    };
+
+                    let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
                 }
             }
         }
