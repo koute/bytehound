@@ -1,10 +1,4 @@
 use {
-    reqwest::{
-        header::{
-            CONTENT_TYPE
-        },
-        StatusCode
-    },
     serde_derive::{
         Deserialize
     },
@@ -162,9 +156,9 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     let mut found = false;
     while start.elapsed() < Duration::from_secs( 10 ) {
         thread::sleep( Duration::from_millis( 100 ) );
-        if let Some( mut response ) = reqwest::get( &format!( "http://localhost:{}/list", port ) ).ok() {
-            assert_eq!( response.status(), StatusCode::OK );
-            assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
+        if let Some( response ) = attohttpc::get( &format!( "http://localhost:{}/list", port ) ).send().ok() {
+            assert_eq!( response.status(), attohttpc::StatusCode::OK );
+            assert_eq!( *response.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
             let list: Vec< ResponseMetadata > = serde_json::from_str( &response.text().unwrap() ).unwrap();
             if !list.is_empty() {
                 assert_eq!( list[ 0 ].executable.split( "/" ).last().unwrap(), name );
@@ -176,9 +170,9 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
 
     assert!( found );
 
-    let mut response = reqwest::get( &format!( "http://localhost:{}/data/last/allocations", port ) ).unwrap();
-    assert_eq!( response.status(), StatusCode::OK );
-    assert_eq!( *response.headers().get( CONTENT_TYPE ).unwrap(), "application/json" );
+    let response = attohttpc::get( &format!( "http://localhost:{}/data/last/allocations", port ) ).send().unwrap();
+    assert_eq!( response.status(), attohttpc::StatusCode::OK );
+    assert_eq!( *response.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
     let response: ResponseAllocations = serde_json::from_str( &response.text().unwrap() ).unwrap();
 
     Analysis { response }
