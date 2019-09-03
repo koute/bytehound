@@ -757,6 +757,8 @@ impl Loader {
                 for binary_data in binaries {
                     self.scan_for_symbols( &binary_data );
                 }
+
+                self.address_space_needs_reloading = true;
             },
             Event::File { ref path, ref contents, .. } => {
                 if !contents.starts_with( b"\x7FELF" ) {
