@@ -190,43 +190,47 @@ fn get_basename( path: &str ) -> &str {
     &path[ index_slash..index_dot ]
 }
 
-fn compile( source: &str ) {
+fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
     let cwd = repository_root().join( "target" );
     let basename = get_basename( source );
     let source_path = PathBuf::from( "../integration-tests/test-programs" ).join( source );
     let source_path = source_path.into_os_string().into_string().unwrap();
+
+    let mut args: Vec< &str > = Vec::new();
+    if !source.ends_with( ".c" ) {
+        args.push( "-std=c++11" );
+    }
+
+    args.extend( &[
+        "-fasynchronous-unwind-tables",
+        "-O0",
+        "-pthread",
+        "-ggdb3",
+        &source_path,
+        "-o",
+        basename
+    ]);
+
+    args.extend( extra_flags );
     if source.ends_with( ".c" ) {
         run(
             &cwd,
             "gcc",
-            &[
-                "-fasynchronous-unwind-tables",
-                "-O0",
-                "-pthread",
-                "-ggdb3",
-                &source_path,
-                "-o",
-                basename
-            ],
+            &args,
             EMPTY_ENV
         ).assert_success();
     } else {
         run(
             &cwd,
             "g++",
-            &[
-                "-std=c++11",
-                "-fasynchronous-unwind-tables",
-                "-O0",
-                "-pthread",
-                "-ggdb3",
-                &source_path,
-                "-o",
-                basename
-            ],
+            &args,
             EMPTY_ENV
         ).assert_success();
     }
+}
+
+fn compile( source: &str ) {
+    compile_with_flags( source, &[] );
 }
 
 #[test]
