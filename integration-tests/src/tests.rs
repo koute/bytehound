@@ -625,3 +625,29 @@ fn test_gather_partial_killed() {
         handle.kill();
     });
 }
+
+#[test]
+fn test_dlopen() {
+    let cwd = repository_root().join( "target" );
+    compile_with_flags( "dlopen.c", &[ "-ldl" ] );
+    compile_with_flags( "dlopen_so.c", &[ "-shared" ] );
+
+    run(
+        &cwd,
+        "./dlopen",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "dlopen.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "dlopen", cwd.join( "dlopen.dat" ) );
+    assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123123 ) );
+
+    let mut iter = analysis.allocations_from_source( "dlopen_so.c" );
+    let a0 = iter.next().unwrap();
+    assert_eq!( a0.size, 123123 );
+    assert_eq!( iter.next(), None );
+}
