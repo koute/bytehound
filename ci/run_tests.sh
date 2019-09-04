@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -euo pipefail
-IFS=$'\n\t'
+cd "$(dirname $(readlink -f "$0"))/.."
 
 TEST_SUBSET=${TEST_SUBSET:-0}
 
