@@ -18,5 +18,5 @@ if [[ "$TEST_SUBSET" == 0 || "$TEST_SUBSET" == 2 ]]; then
     ./ci/build_for_deployment.sh
     cargo test -p integration-tests
     cargo build -p memory-profiler
-    MEMORY_PROFILER_PRELOAD_PATH=debug cargo test -p integration-tests
+    MEMORY_PROFILER_TEST_PRELOAD_PATH=debug cargo test -p integration-tests
 fi

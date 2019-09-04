@@ -32,7 +32,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn preload_path() -> PathBuf {
-    let path = if let Ok( path ) = std::env::var( "MEMORY_PROFILER_PRELOAD_PATH" ) {
+    let path = if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_PRELOAD_PATH" ) {
         repository_root().join( "target" ).join( path ).join( "libmemory_profiler.so" )
     } else {
         repository_root().join( "target" ).join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "libmemory_profiler.so" )
