@@ -520,7 +520,13 @@ fn test_gather_generic( expected_allocations: usize, callback: impl FnOnce( Gath
         ]
     );
 
-    thread::sleep( Duration::from_millis( 2000 ) );
+    let timestamp = Instant::now();
+    while timestamp.elapsed() < Duration::from_secs( 10 ) {
+        if std::net::TcpStream::connect( format!( "127.0.0.1:{}", port ) ).is_ok() {
+            break;
+        }
+        thread::sleep( Duration::from_millis( 100 ) );
+    }
 
     let tmp_path = cwd.join( "tmp" ).join( format!( "test-gather-{}", port ) );
     if tmp_path.exists() {
