@@ -63,6 +63,10 @@ impl< T > Channel< T > {
         length
     }
 
+    pub fn flush( &self ) {
+        self.condvar.notify_all();
+    }
+
     #[allow(dead_code)]
     pub fn len( &self ) -> usize {
         self.queue.lock().len()

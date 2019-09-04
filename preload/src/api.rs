@@ -447,3 +447,13 @@ pub unsafe extern "C" fn memory_profiler_stop() {
     send_event( InternalEvent::Stop );
     mem::drop( lock );
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn memory_profiler_sync() {
+    debug!( "Sync called..." );
+    let lock = acquire_lock();
+    crate::event::flush();
+    crate::global::sync();
+    mem::drop( lock );
+    debug!( "Sync finished" );
+}

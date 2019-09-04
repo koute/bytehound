@@ -99,3 +99,7 @@ pub(crate) fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F 
 pub(crate) fn timed_recv_all_events( output: &mut Vec< InternalEvent >, duration: Duration ) {
     EVENT_CHANNEL.timed_recv_all( output, duration )
 }
+
+pub(crate) fn flush() {
+    EVENT_CHANNEL.flush();
+}

@@ -41,6 +41,8 @@ static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegist
     threads: None
 });
 
+static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () > > > = SpinLock::new( None );
+
 pub fn toggle() {
     if STATE.load( Ordering::SeqCst ) == STATE_PERMANENTLY_DISABLED {
         return;
@@ -54,6 +56,41 @@ pub fn toggle() {
     }
 
     ENABLED_BY_USER.store( value, Ordering::SeqCst );
+}
+
+fn is_busy() -> bool {
+    let state = STATE.load( Ordering::SeqCst );
+    if state == STATE_STARTING || state == STATE_STOPPING {
+        return true;
+    }
+
+    let is_enabled = ENABLED_BY_USER.load( Ordering::SeqCst );
+    let is_thread_running = THREAD_RUNNING.load( Ordering::SeqCst );
+    if !is_enabled && is_thread_running && state == STATE_ENABLED {
+        return true;
+    }
+
+    false
+}
+
+fn try_sync_processing_thread_destruction() {
+    let mut handle = PROCESSING_THREAD_HANDLE.lock();
+    let state = STATE.load( Ordering::SeqCst );
+    if state == STATE_STOPPING || state == STATE_DISABLED {
+        if let Some( handle ) = handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+pub fn sync() {
+    try_sync_processing_thread_destruction();
+
+    while is_busy() {
+        thread::sleep( std::time::Duration::from_millis( 1 ) );
+    }
+
+    try_sync_processing_thread_destruction();
 }
 
 pub extern fn on_exit() {
@@ -98,9 +135,11 @@ pub unsafe extern fn on_fork() {
 
 fn spawn_processing_thread() {
     info!( "Spawning event processing thread..." );
+
+    let mut thread_handle = PROCESSING_THREAD_HANDLE.lock();
     assert!( !THREAD_RUNNING.load( Ordering::SeqCst ) );
 
-    thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
+    let new_handle = thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
         {
             let tls = unsafe { TLS.get().unwrap() };
             tls.is_internal = true;
@@ -142,6 +181,8 @@ fn spawn_processing_thread() {
     while THREAD_RUNNING.load( Ordering::SeqCst ) == false {
         thread::yield_now();
     }
+
+    *thread_handle = Some( new_handle );
 }
 
 #[inline(never)]
