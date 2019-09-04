@@ -11,6 +11,8 @@ volatile int thread_finished_1 = 0;
 volatile int thread_finished_2 = 0;
 volatile int thread_ready = 0;
 
+void memory_profiler_sync() __attribute__((weak));
+
 void * thread_main( void * arg ) {
     malloc( 20001 );
 
@@ -58,7 +60,7 @@ int main() {
 
     fprintf( stderr, "stop\n" );
     kill( pid, SIGUSR1 );
-    usleep( 2000000 );
+    memory_profiler_sync();
     fprintf( stderr, "start\n" );
     kill( pid, SIGUSR1 );
 
