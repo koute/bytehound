@@ -4,7 +4,8 @@ use {
     },
     std::{
         ffi::{
-            OsString
+            OsString,
+            OsStr
         },
         path::{
             Path,
@@ -31,11 +32,52 @@ fn repository_root() -> PathBuf {
     Path::new( env!( "CARGO_MANIFEST_DIR" ) ).join( ".." ).canonicalize().unwrap()
 }
 
+fn target() -> Option< String > {
+    std::env::var( "MEMORY_PROFILER_TEST_TARGET" ).ok()
+}
+
+fn build_root() -> PathBuf {
+    if let Some( path ) = std::env::var_os( "CARGO_TARGET_DIR" ) {
+        let path: PathBuf = path.into();
+        if path.is_absolute() {
+            path.canonicalize().unwrap()
+        } else {
+            repository_root().join( path ).canonicalize().unwrap()
+        }
+    } else {
+        repository_root().join( "target" )
+    }
+}
+
 fn preload_path() -> PathBuf {
     let path = if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_PRELOAD_PATH" ) {
-        repository_root().join( "target" ).join( path ).join( "libmemory_profiler.so" )
+        build_root().join( path ).join( "libmemory_profiler.so" )
     } else {
-        repository_root().join( "target" ).join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "libmemory_profiler.so" )
+        let target = match target() {
+            Some( target ) => target,
+            None => "x86_64-unknown-linux-gnu".to_owned()
+        };
+
+        let mut potential_paths = vec![
+            build_root().join( &target ).join( "debug" ).join( "libmemory_profiler.so" ),
+            build_root().join( &target ).join( "release" ).join( "libmemory_profiler.so" )
+        ];
+
+        if target == env!( "TARGET" ) {
+            potential_paths.push( build_root().join( "debug" ).join( "libmemory_profiler.so" ) );
+            potential_paths.push( build_root().join( "release" ).join( "libmemory_profiler.so" ) );
+        }
+
+        potential_paths.retain( |path| path.exists() );
+        if potential_paths.is_empty() {
+            panic!( "No libmemory_profiler.so found!" );
+        }
+
+        if potential_paths.len() > 1 {
+            panic!( "Multiple libmemory_profiler.so found; specify the one which you want to use for tests with MEMORY_PROFILER_TEST_PRELOAD_PATH!" );
+        }
+
+        potential_paths.pop().unwrap()
     };
 
     assert!( path.exists(), "{:?} doesn't exist", path );
@@ -44,6 +86,28 @@ fn preload_path() -> PathBuf {
 
 fn cli_path() -> PathBuf {
     repository_root().join( "target" ).join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "memory-profiler-cli" )
+}
+
+fn target_toolchain_prefix() -> &'static str {
+    let target = match target() {
+        Some( target ) => target,
+        None => return "".into()
+    };
+
+    match target.as_str() {
+        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu-",
+        "armv7-unknown-linux-gnueabihf" => "arm-linux-gnueabihf-",
+        "mips64-unknown-linux-gnuabi64" => "mips64-linux-gnuabi64-",
+        target => panic!( "Unknown target: '{}'", target )
+    }
+}
+
+fn compiler_cc() -> String {
+    format!( "{}gcc", target_toolchain_prefix() )
+}
+
+fn compiler_cxx() -> String {
+    format!( "{}g++", target_toolchain_prefix() )
 }
 
 #[derive(Deserialize)]
@@ -136,8 +200,20 @@ impl Analysis {
     }
 }
 
+fn workdir() -> PathBuf {
+    let path = repository_root().join( "target" );
+    let workdir = if let Some( target ) = target() {
+        path.join( target )
+    } else {
+        path
+    };
+
+    std::fs::create_dir_all( &workdir ).unwrap();
+    workdir
+}
+
 fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     let path = path.as_ref();
     assert_file_exists( path );
@@ -185,9 +261,9 @@ fn get_basename( path: &str ) -> &str {
 }
 
 fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
     let basename = get_basename( source );
-    let source_path = PathBuf::from( "../integration-tests/test-programs" ).join( source );
+    let source_path = repository_root().join( "integration-tests" ).join( "test-programs" ).join( source );
     let source_path = source_path.into_os_string().into_string().unwrap();
 
     let mut args: Vec< &str > = Vec::new();
@@ -209,14 +285,14 @@ fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
     if source.ends_with( ".c" ) {
         run(
             &cwd,
-            "gcc",
+            compiler_cc(),
             &args,
             EMPTY_ENV
         ).assert_success();
     } else {
         run(
             &cwd,
-            "g++",
+            compiler_cxx(),
             &args,
             EMPTY_ENV
         ).assert_success();
@@ -227,13 +303,48 @@ fn compile( source: &str ) {
     compile_with_flags( source, &[] );
 }
 
+fn map_to_target( executable: impl AsRef< OsStr >, args: &[impl AsRef< OsStr >] ) -> (OsString, Vec< OsString >) {
+    let mut executable = executable.as_ref().to_owned();
+    let mut args: Vec< OsString > =
+        args.iter().map( |arg| arg.as_ref().to_owned() ).collect();
+
+    if let Some( runner ) = std::env::var_os( "MEMORY_PROFILER_TEST_RUNNER" ) {
+        args = std::iter::once( executable ).chain( args.into_iter() ).collect();
+        executable = runner;
+    }
+
+    (executable, args)
+}
+
+pub fn run_on_target< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: &[(P, Q)] ) -> CommandResult
+    where C: AsRef< Path >,
+          E: AsRef< OsStr >,
+          S: AsRef< OsStr >,
+          P: AsRef< OsStr >,
+          Q: AsRef< OsStr >
+{
+    let (executable, args) = map_to_target( executable, args );
+    run( cwd, executable, &args, envs )
+}
+
+pub fn run_in_the_background_on_target< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: &[(P, Q)] ) -> ChildHandle
+    where C: AsRef< Path >,
+          E: AsRef< OsStr >,
+          S: AsRef< OsStr >,
+          P: AsRef< OsStr >,
+          Q: AsRef< OsStr >
+{
+    let (executable, args) = map_to_target( executable, args );
+    run_in_the_background( cwd, executable, &args, envs )
+}
+
 #[test]
 fn test_basic() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "basic.c" );
 
-    run(
+    run_on_target(
         &cwd,
         "./basic",
         EMPTY_ARGS,
@@ -282,11 +393,11 @@ fn test_basic() {
 
 #[test]
 fn test_alloc_in_tls() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "alloc-in-tls.cpp" );
 
-    run(
+    run_on_target(
         &cwd,
         "./alloc-in-tls",
         EMPTY_ARGS,
@@ -302,11 +413,11 @@ fn test_alloc_in_tls() {
 
 #[test]
 fn test_start_stop() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "start-stop.c" );
 
-    run(
+    run_on_target(
         &cwd,
         "./start-stop",
         EMPTY_ARGS,
@@ -353,11 +464,11 @@ fn test_start_stop() {
 
 #[test]
 fn test_fork() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "fork.c" );
 
-    run(
+    run_on_target(
         &cwd,
         "./fork",
         EMPTY_ARGS,
@@ -399,11 +510,11 @@ fn test_fork() {
 
 #[test]
 fn test_normal_exit() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "exit_1.c" );
 
-    run(
+    run_on_target(
         &cwd,
         "./exit_1",
         EMPTY_ARGS,
@@ -424,11 +535,11 @@ fn test_normal_exit() {
 
 #[test]
 fn test_immediate_exit_unistd() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "exit_2.c" );
 
-    run(
+    run_on_target(
         &cwd,
         "./exit_2",
         EMPTY_ARGS,
@@ -449,11 +560,11 @@ fn test_immediate_exit_unistd() {
 
 #[test]
 fn test_immediate_exit_stdlib() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     compile( "exit_3.c" );
 
-    run(
+    run_on_target(
         &cwd,
         "./exit_3",
         EMPTY_ARGS,
@@ -497,7 +608,7 @@ impl< 'a > GatherTestHandle< 'a > {
 }
 
 fn test_gather_generic( expected_allocations: usize, callback: impl FnOnce( GatherTestHandle ) ) {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
 
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once( || compile( "gather.c" ) );
@@ -505,7 +616,7 @@ fn test_gather_generic( expected_allocations: usize, callback: impl FnOnce( Gath
     static PORT: AtomicUsize = AtomicUsize::new( 8100 );
     let port = PORT.fetch_add( 1, Ordering::SeqCst );
 
-    let child = run_in_the_background(
+    let child = run_in_the_background_on_target(
         &cwd,
         "./gather",
         EMPTY_ARGS,
@@ -628,11 +739,11 @@ fn test_gather_partial_killed() {
 
 #[test]
 fn test_dlopen() {
-    let cwd = repository_root().join( "target" );
+    let cwd = workdir();
     compile_with_flags( "dlopen.c", &[ "-ldl" ] );
     compile_with_flags( "dlopen_so.c", &[ "-shared" ] );
 
-    run(
+    run_on_target(
         &cwd,
         "./dlopen",
         EMPTY_ARGS,
