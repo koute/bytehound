@@ -1,0 +1,23 @@
+#!/bin/bash
+
+INFO=$(file $1)
+
+echo "$INFO" | grep -q "ARM aarch64"
+if [[ "$?" -eq "0" ]]; then
+    export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu
+    exec qemu-aarch64 "$@"
+fi
+
+echo "$INFO" | grep -q "ARM, EABI"
+if [[ "$?" -eq "0" ]]; then
+    export QEMU_LD_PREFIX=/usr/arm-linux-gnueabihf
+    exec qemu-arm "$@"
+fi
+
+echo "$INFO" | grep -q "MIPS64"
+if [[ "$?" -eq "0" ]]; then
+    export QEMU_LD_PREFIX=/usr/mips64-linux-gnuabi64
+    exec qemu-mips64 "$@"
+fi
+
+exit 1

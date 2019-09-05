@@ -1,0 +1,39 @@
+FROM ubuntu:disco
+MAINTAINER Jan Bujak (jan.bujak@nokia.com)
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates file gcc g++ git locales make qemu-user
+
+RUN locale-gen en_US.UTF-8 && \
+    update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
+
+RUN useradd -ms /bin/bash user
+
+COPY static/run-if-enabled /usr/local/bin
+COPY static/runner /usr/local/bin
+
+RUN chmod +x /usr/local/bin/run-if-enabled
+RUN chmod +x /usr/local/bin/runner
+
+ARG TARGET_LIST="aarch64-unknown-linux-gnu mips64-unknown-linux-gnuabi64 armv7-unknown-linux-gnueabihf"
+RUN run-if-enabled aarch64-unknown-linux-gnu "apt-get install -y --no-install-recommends g++-aarch64-linux-gnu libc6-dev-arm64-cross"
+RUN run-if-enabled armv7-unknown-linux-gnueabihf "apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf libc6-dev-armhf-cross"
+RUN run-if-enabled mips64-unknown-linux-gnuabi64 "apt-get install -y --no-install-recommends g++-mips64-linux-gnuabi64 libc6-dev-mips64-cross"
+
+USER user
+WORKDIR /home/user
+ENV USER=user \
+    PATH=/home/user/.cargo/bin:$PATH
+
+RUN mkdir -p \
+    /home/user/.cargo/bin \
+    /home/user/.cargo/git \
+    /home/user/.cargo/registry
+
+COPY static/cargo.config /home/user/.cargo/config
+
+USER user
+ENV RUST_BACKTRACE=1

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -euo pipefail
+
+set +e
+echo "$TARGET_LIST" | grep -q "$1"
+R=$?
+set -e
+
+if [[ "$R" == "0" ]]; then
+    /bin/bash -c "set -euo pipefail ; $2"
+    exit $?
+fi
+
+exit 0
