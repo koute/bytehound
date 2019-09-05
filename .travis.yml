@@ -1,6 +1,9 @@
 language: rust
 dist: trusty
 
+services:
+  - docker
+
 before_install:
   - nvm install 9
   - curl https://yarnpkg.com/install.sh > /tmp/install-yarn.sh
@@ -48,6 +51,21 @@ jobs:
       os: linux
       rust: nightly-2019-04-30
       env: TEST_SUBSET=2
+
+    - <<: *test
+      os: linux
+      rust: nightly-2019-04-30
+      env: TEST_SUBSET=3 TEST_TARGET=aarch64-unknown-linux-gnu
+
+    - <<: *test
+      os: linux
+      rust: nightly-2019-04-30
+      env: TEST_SUBSET=3 TEST_TARGET=armv7-unknown-linux-gnueabihf
+
+    - <<: *test
+      os: linux
+      rust: nightly-2019-04-30
+      env: TEST_SUBSET=3 TEST_TARGET=mips64-unknown-linux-gnuabi64
 
     - <<: *test
       os: linux
