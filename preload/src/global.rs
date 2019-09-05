@@ -58,6 +58,22 @@ pub fn toggle() {
     ENABLED_BY_USER.store( value, Ordering::SeqCst );
 }
 
+pub fn enable() -> bool {
+    if STATE.load( Ordering::SeqCst ) == STATE_PERMANENTLY_DISABLED {
+        return false;
+    }
+
+    ENABLED_BY_USER.compare_and_swap( false, true, Ordering::SeqCst ) == false
+}
+
+pub fn disable() -> bool {
+    if STATE.load( Ordering::SeqCst ) == STATE_PERMANENTLY_DISABLED {
+        return false;
+    }
+
+    ENABLED_BY_USER.compare_and_swap( true, false, Ordering::SeqCst ) == true
+}
+
 fn is_busy() -> bool {
     let state = STATE.load( Ordering::SeqCst );
     if state == STATE_STARTING || state == STATE_STOPPING {

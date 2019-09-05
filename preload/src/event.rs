@@ -76,7 +76,6 @@ pub(crate) enum InternalEvent {
     OverrideNextTimestamp {
         timestamp: Timestamp
     },
-    Stop,
     AddressSpaceUpdated {
         maps: String,
         new_binaries: Vec< Arc< nwind::BinaryData > >

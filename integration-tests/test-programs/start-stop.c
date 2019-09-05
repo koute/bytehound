@@ -11,7 +11,32 @@ volatile int thread_finished_1 = 0;
 volatile int thread_finished_2 = 0;
 volatile int thread_ready = 0;
 
+void memory_profiler_start() __attribute__((weak));
+void memory_profiler_stop() __attribute__((weak));
 void memory_profiler_sync() __attribute__((weak));
+
+#if defined( VARIANT_SIGUSR1 )
+
+void start( pid_t pid ) {
+    kill( pid, SIGUSR1 );
+}
+
+void stop( pid_t pid ) {
+    kill( pid, SIGUSR1 );
+    memory_profiler_sync();
+}
+
+#elif defined( VARIANT_API )
+
+void start( pid_t pid ) {
+    memory_profiler_start();
+}
+
+void stop( pid_t pid ) {
+    memory_profiler_stop();
+}
+
+#endif
 
 void * thread_main( void * arg ) {
     malloc( 20001 );
@@ -47,7 +72,7 @@ int main() {
 
     const pid_t pid = getpid();
     fprintf( stderr, "start\n" );
-    kill( pid, SIGUSR1 );
+    start( pid );
 
     malloc( 10002 );
     thread_blocked_1 = 0;
@@ -59,10 +84,9 @@ int main() {
     malloc( 10003 );
 
     fprintf( stderr, "stop\n" );
-    kill( pid, SIGUSR1 );
-    memory_profiler_sync();
+    stop( pid );
     fprintf( stderr, "start\n" );
-    kill( pid, SIGUSR1 );
+    start( pid );
 
     malloc( 10004 );
     thread_blocked_2 = 0;

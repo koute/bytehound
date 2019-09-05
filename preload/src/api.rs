@@ -441,19 +441,34 @@ pub unsafe extern "C" fn memory_profiler_override_next_timestamp( timestamp: u64
     mem::drop( lock );
 }
 
+fn sync() {
+    let lock = acquire_lock();
+    crate::event::flush();
+    crate::global::sync();
+    mem::drop( lock );
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn memory_profiler_start() {
+    debug!( "Start called..." );
+    if crate::global::enable() {
+        sync();
+    }
+    debug!( "Start finished" );
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_stop() {
-    let lock = acquire_lock();
-    send_event( InternalEvent::Stop );
-    mem::drop( lock );
+    debug!( "Stop called..." );
+    if crate::global::disable() {
+        sync();
+    }
+    debug!( "Stop finished" );
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_sync() {
     debug!( "Sync called..." );
-    let lock = acquire_lock();
-    crate::event::flush();
-    crate::global::sync();
-    mem::drop( lock );
+    sync();
     debug!( "Sync finished" );
 }

@@ -411,26 +411,26 @@ fn test_alloc_in_tls() {
     assert_file_exists( cwd.join( "memory-profiling-alloc-in-tls.dat" ) );
 }
 
-#[test]
-fn test_start_stop() {
+fn test_start_stop_generic( kind: &str ) {
     let cwd = workdir();
 
-    compile( "start-stop.c" );
-
+    let output = format!( "start-stop_{}", kind );
+    let define = format!( "VARIANT_{}", kind.to_uppercase() );
+    compile_with_flags( "start-stop.c", &[ "-o", &output, "-D", &define ] );
     run_on_target(
         &cwd,
-        "./start-stop",
+        &format!( "./{}", output ),
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
             ("MEMORY_PROFILER_LOG", "debug".into()),
-            ("MEMORY_PROFILER_OUTPUT", "start-stop_%n.dat".into()),
+            ("MEMORY_PROFILER_OUTPUT", format!( "start-stop_{}_%n.dat", kind ).into()),
             ("MEMORY_PROFILER_DISABLE_BY_DEFAULT", "1".into())
         ]
     ).assert_success();
 
-    let analysis_1 = analyze( "start-stop", cwd.join( "start-stop_0.dat" ) );
-    let analysis_2 = analyze( "start-stop", cwd.join( "start-stop_1.dat" ) );
+    let analysis_1 = analyze( &format!( "start-stop_{}", kind ), cwd.join( format!( "start-stop_{}_0.dat", kind ) ) );
+    let analysis_2 = analyze( &format!( "start-stop_{}", kind ), cwd.join( format!( "start-stop_{}_1.dat", kind ) ) );
 
     {
         let mut iter = analysis_1.allocations_from_source( "start-stop.c" );
@@ -460,6 +460,16 @@ fn test_start_stop() {
 
         assert_eq!( iter.next(), None );
     }
+}
+
+#[test]
+fn test_start_stop_sigusr1() {
+    test_start_stop_generic( "sigusr1" );
+}
+
+#[test]
+fn test_start_stop_api() {
+    test_start_stop_generic( "api" );
 }
 
 #[test]

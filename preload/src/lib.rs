@@ -79,6 +79,7 @@ pub use crate::api::{
 
     memory_profiler_set_marker,
     memory_profiler_override_next_timestamp,
+    memory_profiler_start,
     memory_profiler_stop,
     memory_profiler_sync
 };

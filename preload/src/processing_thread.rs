@@ -453,7 +453,6 @@ pub(crate) fn thread_main() {
     let mut last_broadcast = coarse_timestamp;
     let mut last_server_poll = coarse_timestamp;
     let mut timestamp_override = None;
-    let mut stopped = false;
     let mut poll_fds = Vec::new();
     'main_loop: loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
@@ -502,7 +501,7 @@ pub(crate) fn thread_main() {
         }
 
         let serializer = &mut output_writer;
-        let skip = stopped || serializer.inner().is_none();
+        let skip = serializer.inner().is_none();
         for event in events.drain(..) {
             match event {
                 InternalEvent::Alloc { ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, mut timestamp, throttle } => {
@@ -654,10 +653,6 @@ pub(crate) fn thread_main() {
                 },
                 InternalEvent::OverrideNextTimestamp { timestamp } => {
                     timestamp_override = Some( timestamp );
-                },
-                InternalEvent::Stop => {
-                    stopped = true;
-                    let _ = serializer.flush();
                 },
                 InternalEvent::AddressSpaceUpdated { maps, new_binaries } => {
                     let timestamp = get_timestamp();
