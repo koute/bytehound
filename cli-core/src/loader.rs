@@ -765,6 +765,7 @@ impl Loader {
                     return;
                 }
 
+                trace!( "File: {}", path );
                 if let Ok( binary_data ) = BinaryData::load_from_owned_bytes( &path, contents.clone().into_owned() ) {
                     self.scan_for_symbols( &binary_data );
                     self.binaries.insert( path.deref().to_owned(), Arc::new( binary_data ) );
