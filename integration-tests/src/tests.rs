@@ -642,11 +642,17 @@ fn test_gather_generic( expected_allocations: usize, callback: impl FnOnce( Gath
     );
 
     let timestamp = Instant::now();
-    while timestamp.elapsed() < Duration::from_secs( 10 ) {
+    let mut found = false;
+    while timestamp.elapsed() < Duration::from_secs( 30 ) {
         if std::net::TcpStream::connect( format!( "127.0.0.1:{}", port ) ).is_ok() {
+            found = true;
             break;
         }
         thread::sleep( Duration::from_millis( 100 ) );
+    }
+
+    if !found {
+        panic!( "Couldn't connect to the embedded server" );
     }
 
     let tmp_path = cwd.join( "tmp" ).join( format!( "test-gather-{}", port ) );
