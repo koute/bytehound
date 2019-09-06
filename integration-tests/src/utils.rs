@@ -103,7 +103,7 @@ impl ChildHandle {
     pub fn wait( mut self ) -> CommandResult {
         let start = Instant::now();
         let mut status = None;
-        while start.elapsed() < Duration::from_secs( 30 ) {
+        while start.elapsed() < Duration::from_secs( 60 ) {
             status = self.child.try_wait().unwrap();
             if status.is_some() {
                 break;
