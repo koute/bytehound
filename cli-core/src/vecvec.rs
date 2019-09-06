@@ -40,6 +40,13 @@ impl< K, T > VecVec< K, T > {
         self.index.len()
     }
 
+    #[inline]
+    pub fn get( &self, index: usize ) -> (&K, &[T]) {
+        let (ref key, offset, length) = self.index[ index ];
+        let value = &self.storage[ (offset as usize)..(offset + length) as usize ];
+        (key, value)
+    }
+
     pub fn sort_by< F >( &mut self, mut callback: F )
         where F: FnMut( (&K, &[T]), (&K, &[T]) ) -> Ordering
     {

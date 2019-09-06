@@ -14,7 +14,6 @@ use std::io;
 use std::borrow::Cow;
 use std::cmp::{min, max, Ordering};
 use std::path::PathBuf;
-use std::iter::FusedIterator;
 
 use actix_web::{
     body::{
@@ -73,8 +72,6 @@ mod streaming_channel;
 mod byte_channel;
 mod streaming_serializer;
 mod filter;
-#[macro_use]
-mod rental;
 
 use crate::byte_channel::byte_channel;
 use crate::streaming_serializer::StreamingSerializer;
@@ -109,12 +106,6 @@ impl AllocationGroups {
 
     fn len( &self ) -> usize {
         self.allocations_by_backtrace.len()
-    }
-
-    #[inline]
-    fn iter( &self ) -> impl Iterator< Item = (BacktraceId, &[AllocationId]) > + ExactSizeIterator + FusedIterator {
-        self.allocations_by_backtrace.iter()
-            .map( |(&index, ids)| (index, ids) )
     }
 }
 
@@ -785,11 +776,11 @@ fn get_allocation_groups< 'a >(
     let factory = move || {
         let backtrace_format = backtrace_format.clone();
         let allocations = allocation_groups.clone();
-        let iter = new_rental!( allocations, |allocations| allocations.iter() );
-        iter
+        (0..allocations.allocations_by_backtrace.len())
             .skip( skip )
             .take( remaining )
-            .map( move |(backtrace_id, matched_allocation_ids)| {
+            .map( move |index| {
+                let (&backtrace_id, matched_allocation_ids) = allocations.allocations_by_backtrace.get( index );
                 let all = get_global_group_data( data, backtrace_id );
                 let only_matched = get_allocation_group_data( data, matched_allocation_ids.into_iter().map( |&allocation_id| data.get_allocation( allocation_id ) ) );
                 let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
