@@ -11,6 +11,8 @@ docker build \
     -f Dockerfile.hybrid \
     -t crossenv \
     --build-arg TARGET_LIST="$TARGET_LIST" \
+    --build-arg UID="$(id -u)" \
+    --build-arg GID="$(id -g)" \
     ./
 
 EXTRA_ARGS=""

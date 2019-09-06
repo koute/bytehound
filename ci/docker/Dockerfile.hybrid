@@ -10,7 +10,9 @@ RUN locale-gen en_US.UTF-8 && \
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8
 
-RUN useradd -ms /bin/bash user
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g $GID user && useradd --uid $UID -g user -ms /bin/bash user
 
 COPY static/run-if-enabled /usr/local/bin
 COPY static/runner /usr/local/bin
