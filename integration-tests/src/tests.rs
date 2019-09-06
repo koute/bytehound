@@ -416,7 +416,7 @@ fn test_start_stop_generic( kind: &str ) {
 
     let output = format!( "start-stop_{}", kind );
     let define = format!( "VARIANT_{}", kind.to_uppercase() );
-    compile_with_flags( "start-stop.c", &[ "-o", &output, "-D", &define ] );
+    compile_with_flags( "start-stop.c", &[ "-o", &output, "-D", &define, "-fPIC" ] );
     run_on_target(
         &cwd,
         &format!( "./{}", output ),
@@ -757,7 +757,7 @@ fn test_gather_partial_killed() {
 fn test_dlopen() {
     let cwd = workdir();
     compile_with_flags( "dlopen.c", &[ "-ldl" ] );
-    compile_with_flags( "dlopen_so.c", &[ "-shared" ] );
+    compile_with_flags( "dlopen_so.c", &[ "-shared", "-fPIC" ] );
 
     run_on_target(
         &cwd,
