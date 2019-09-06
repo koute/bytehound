@@ -108,20 +108,6 @@ pub trait Itertools : Iterator {
     /// Iterator element type is `Self::Item`.
     ///
     /// This iterator is *fused*.
-    ///
-    /// ```
-    /// use itertools::Itertools;
-    ///
-    /// // sum same-sign runs together
-    /// let data = vec![-1., -2., -3., 3., 1., 0., -1.];
-    /// itertools::assert_equal(data.into_iter().coalesce(|x, y|
-    ///         if (x >= 0.) == (y >= 0.) {
-    ///             Ok(x + y)
-    ///         } else {
-    ///             Err((x, y))
-    ///         }),
-    ///         vec![-6., 4., -1.]);
-    /// ```
     fn coalesce<F>(self, f: F) -> Coalesce<Self, F>
         where Self: Sized,
               F: FnMut(Self::Item, Self::Item)
