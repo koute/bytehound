@@ -67,6 +67,7 @@ use cli_core::{
 
 use common::Timestamp;
 
+mod itertools;
 mod protocol;
 mod streaming_channel;
 mod byte_channel;
