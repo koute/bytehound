@@ -8,7 +8,7 @@ edition = "2018"
 byteorder = "1"
 ctrlc = "3"
 goblin = "0.0.24"
-string-interner = "0.7"
+string-interner = { version = "0.7", default-features = false }
 cpp_demangle = "0.2"
 chrono = "0.4"
 libc = "0.2"
