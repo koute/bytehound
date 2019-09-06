@@ -14,7 +14,6 @@ chrono = "0.4"
 libc = "0.2"
 log = "0.4"
 lru = "0.1"
-fxhash = "0.2"
 bitflags = "1"
 inferno = { version = "0.7", default-features = false }
 lazy_static = "1"
