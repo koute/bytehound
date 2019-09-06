@@ -5,7 +5,7 @@ authors = ["Jan Bujak <jan.bujak@nokia.com>"]
 edition = "2018"
 
 [dependencies]
-clap = "2"
+clap = { version = "2", default-features = false }
 log = "0.4"
 chrono = "0.4"
 cli-core = { path = "../cli-core" }
