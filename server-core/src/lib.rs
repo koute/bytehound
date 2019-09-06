@@ -13,7 +13,7 @@ use std::thread;
 use std::io;
 use std::borrow::Cow;
 use std::cmp::{min, max, Ordering};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::iter::FusedIterator;
 
 use actix_web::{
@@ -1335,15 +1335,36 @@ fn handler_dynamic_statics_ascii_tree( req: HttpRequest ) -> Result< HttpRespons
     Ok( HttpResponse::Ok().content_type( "text/plain; charset=utf-8" ).body( body ) )
 }
 
+fn guess_mime( path: &str ) -> &str {
+    macro_rules! mimes {
+        ($($ext:expr => $mime:expr),+) => {
+            $(
+                if path.ends_with( $ext ) { return $mime; }
+            )+
+        };
+    }
+
+    mimes! {
+        ".html" => "text/html",
+        ".css" => "text/css",
+        ".js" => "text/javascript",
+        ".svg" => "image/svg+xml",
+        ".woff" => "font/woff",
+        ".woff2" => "font/woff2",
+        ".ttf" => "font/ttf",
+        ".eot" => "application/vnd.ms-fontobject"
+    }
+
+    "application/octet-stream"
+}
+
 struct StaticResponse( &'static str, &'static [u8] );
 impl Responder for StaticResponse {
     type Error = actix_web::Error;
     type Future = Result< HttpResponse >;
 
     fn respond_to( self, _: &HttpRequest ) -> Self::Future {
-        let mime = mime_guess::guess_mime_type( Path::new( self.0 ) );
-        let mime = format!( "{}", mime );
-        Ok( HttpResponse::Ok().content_type( mime ).body( self.1 ) )
+        Ok( HttpResponse::Ok().content_type( guess_mime( self.0 ) ).body( self.1 ) )
     }
 }
 
