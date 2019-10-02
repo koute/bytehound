@@ -98,6 +98,7 @@ fn target_toolchain_prefix() -> &'static str {
         "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu-",
         "armv7-unknown-linux-gnueabihf" => "arm-linux-gnueabihf-",
         "mips64-unknown-linux-gnuabi64" => "mips64-linux-gnuabi64-",
+        "x86_64-unknown-linux-gnu" => "x86_64-linux-gnu-",
         target => panic!( "Unknown target: '{}'", target )
     }
 }
@@ -303,17 +304,27 @@ fn compile( source: &str ) {
     compile_with_flags( source, &[] );
 }
 
-fn map_to_target( executable: impl AsRef< OsStr >, args: &[impl AsRef< OsStr >] ) -> (OsString, Vec< OsString >) {
+fn map_to_target(
+    executable: impl AsRef< OsStr >,
+    args: &[impl AsRef< OsStr >],
+    envs: &[(impl AsRef< OsStr >, impl AsRef< OsStr >)]
+) -> (OsString, Vec< OsString >, Vec< (OsString, OsString) >) {
     let mut executable = executable.as_ref().to_owned();
     let mut args: Vec< OsString > =
         args.iter().map( |arg| arg.as_ref().to_owned() ).collect();
+    let mut envs: Vec< (OsString, OsString) > =
+        envs.iter().map( |(key, value)| (key.as_ref().to_owned(), value.as_ref().to_owned()) ).collect();
 
     if let Some( runner ) = std::env::var_os( "MEMORY_PROFILER_TEST_RUNNER" ) {
         args = std::iter::once( executable ).chain( args.into_iter() ).collect();
         executable = runner;
+        if let Some( index ) = envs.iter().position( |&(ref key, _)| key == "LD_PRELOAD" ) {
+            let (_, value) = envs.remove( index );
+            envs.push( ("TARGET_LD_PRELOAD".into(), value) );
+        }
     }
 
-    (executable, args)
+    (executable, args, envs)
 }
 
 pub fn run_on_target< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: &[(P, Q)] ) -> CommandResult
@@ -323,8 +334,8 @@ pub fn run_on_target< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: 
           P: AsRef< OsStr >,
           Q: AsRef< OsStr >
 {
-    let (executable, args) = map_to_target( executable, args );
-    run( cwd, executable, &args, envs )
+    let (executable, args, envs) = map_to_target( executable, args, envs );
+    run( cwd, executable, &args, &envs )
 }
 
 pub fn run_in_the_background_on_target< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: &[(P, Q)] ) -> ChildHandle
@@ -334,8 +345,8 @@ pub fn run_in_the_background_on_target< C, E, S, P, Q >( cwd: C, executable: E, 
           P: AsRef< OsStr >,
           Q: AsRef< OsStr >
 {
-    let (executable, args) = map_to_target( executable, args );
-    run_in_the_background( cwd, executable, &args, envs )
+    let (executable, args, envs) = map_to_target( executable, args, envs );
+    run_in_the_background( cwd, executable, &args, &envs )
 }
 
 #[test]
