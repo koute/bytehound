@@ -201,6 +201,18 @@ impl Analysis {
     }
 }
 
+fn assert_allocation_backtrace( alloc: &Allocation, expected: &[&str] ) {
+    let mut actual: Vec< _ > = alloc.backtrace.iter().map( |frame| frame.raw_function.clone().unwrap_or( String::new() ) ).collect();
+    actual.reverse();
+
+    let matches = actual.len() >= expected.len() && actual.iter().zip( expected.iter() ).all( |(lhs, rhs)| lhs == rhs );
+    if matches {
+        return;
+    }
+
+    panic!( "Unexpected backtrace!\n\nActual:\n{}\n\nExpected to start with:\n{}\n", actual.join( "\n" ), expected.join( "\n" ) );
+}
+
 fn workdir() -> PathBuf {
     let path = repository_root().join( "target" );
     let workdir = if let Some( target ) = target() {
@@ -788,4 +800,122 @@ fn test_dlopen() {
     let a0 = iter.next().unwrap();
     assert_eq!( a0.size, 123123 );
     assert_eq!( iter.next(), None );
+}
+
+#[test]
+fn test_throw() {
+    let cwd = workdir();
+    compile( "throw.cpp" );
+
+    run_on_target(
+        &cwd,
+        "./throw",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "throw.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "throw", cwd.join( "throw.dat" ) );
+    let a0 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123456 ).unwrap();
+    let a1 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123457 ).unwrap();
+    let a2 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123458 ).unwrap();
+    let a3 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123459 ).unwrap();
+
+    assert_allocation_backtrace( a0, &[
+        "foobar_0",
+        "foobar_1",
+        "foobar_2",
+        "foobar_3",
+        "foobar_4",
+        "foobar_5",
+        "main"
+    ]);
+
+    assert_allocation_backtrace( a1, &[
+        "foobar_3",
+        "foobar_4",
+        "foobar_5",
+        "main"
+    ]);
+
+    assert_allocation_backtrace( a2, &[
+        "foobar_5",
+        "main"
+    ]);
+
+    assert_allocation_backtrace( a3, &[
+        "main"
+    ]);
+}
+
+#[test]
+fn test_longjmp() {
+    let cwd = workdir();
+    compile( "longjmp.c" );
+
+    run_on_target(
+        &cwd,
+        "./longjmp",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "longjmp.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "longjmp", cwd.join( "longjmp.dat" ) );
+    let a0 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123456 ).unwrap();
+    let a1 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123457 ).unwrap();
+    let a2 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123458 ).unwrap();
+    let a3 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123459 ).unwrap();
+
+    assert_allocation_backtrace( a0, &[
+        "foobar_0",
+        "foobar_1",
+        "foobar_2",
+        "foobar_3",
+        "foobar_4",
+        "foobar_5",
+        "main"
+    ]);
+
+    assert_allocation_backtrace( a1, &[
+        "foobar_3",
+        "foobar_4",
+        "foobar_5",
+        "main"
+    ]);
+
+    assert_allocation_backtrace( a2, &[
+        "foobar_5",
+        "main"
+    ]);
+
+    assert_allocation_backtrace( a3, &[
+        "main"
+    ]);
+}
+
+#[test]
+fn test_backtrace() {
+    let cwd = workdir();
+    compile_with_flags( "backtrace.c", &[ "-rdynamic" ] );
+
+    run_on_target(
+        &cwd,
+        "./backtrace",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "backtrace.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "backtrace", cwd.join( "backtrace.dat" ) );
+    assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123456 ) );
 }
