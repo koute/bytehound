@@ -25,6 +25,9 @@ RUN run-if-enabled aarch64-unknown-linux-gnu "apt-get install -y --no-install-re
 RUN run-if-enabled armv7-unknown-linux-gnueabihf "apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf libc6-dev-armhf-cross"
 RUN run-if-enabled mips64-unknown-linux-gnuabi64 "apt-get install -y --no-install-recommends g++-mips64-linux-gnuabi64 libc6-dev-mips64-cross"
 
+ARG IS_INTERACTIVE=0
+RUN [ $IS_INTERACTIVE -eq 0 ] || (mkdir /mnt/host && sed -i 's/root:\*/root:$6$Fc5teNQbSppq8I57$A1f7wwDpDKyHzb.0OPW6fpASde7sFtdiAA.2AZakKR8\/vQ8WiRySJBY2Ueyk0N0O2FqEkaGRFakwgSH.kodG2\//' /etc/shadow)
+
 USER user
 WORKDIR /home/user
 ENV USER=user \
