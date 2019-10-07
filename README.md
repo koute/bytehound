@@ -33,7 +33,7 @@
 
 ## Building
 
-1. Install Rust nightly and the Yarn package manager (for building the GUI)
+1. Install GCC, Rust and the Yarn package manager (for building the GUI)
 2. Build it:
 
         $ cargo build --release -p memory-profiler
@@ -290,9 +290,6 @@ Whenever to use a more intrusive, faster unwinding algorithm; enabled by default
 
 Setting it to `0` will on average significantly slow down unwinding. This option
 is provided only for debugging purposes.
-
-Currently supported only on Rust nightly; when compiled on stable this option is ignored
-and the shadow stack is never used.
 
 ## Enabling full debug logs
 
