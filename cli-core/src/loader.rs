@@ -522,7 +522,7 @@ impl Loader {
 
         self.address_space_needs_reloading = false;
         let binaries = &self.binaries;
-        let debug_info_index = &self.debug_info_index;
+        let debug_info_index = &mut self.debug_info_index;
         let regions: Vec< Region > = self.maps.values().cloned().collect();
         self.address_space.reload( regions, &mut |region, handle| {
             handle.should_load_frame_descriptions( false );
