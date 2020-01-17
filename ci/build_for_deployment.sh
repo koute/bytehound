@@ -11,11 +11,13 @@ else
 fi
 set -e
 
+cd preload
 if [ "$IS_NIGHTLY" = "1" ]; then
-    cargo build --release --target=x86_64-unknown-linux-gnu -p memory-profiler --features nightly
+    cargo build --release --target=x86_64-unknown-linux-gnu --features nightly
 else
-    cargo build --release --target=x86_64-unknown-linux-gnu -p memory-profiler
+    cargo build --release --target=x86_64-unknown-linux-gnu
 fi
+cd ..
 
 cargo build --release --target=x86_64-unknown-linux-gnu -p memory-profiler-cli
 cargo build --release --target=x86_64-unknown-linux-gnu -p memory-profiler-gather
