@@ -1,5 +1,5 @@
 FROM ubuntu:disco
-MAINTAINER Jan Bujak (jan.bujak@nokia.com)
+MAINTAINER Jan Bujak (j@exia.io)
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates file gcc g++ git locales make qemu-user

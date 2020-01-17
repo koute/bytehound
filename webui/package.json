@@ -2,7 +2,7 @@
   "name": "webui",
   "version": "0.0.0",
   "main": "index.js",
-  "author": "Jan Bujak <jan.bujak@nokia.com>",
+  "author": "Jan Bujak <j@exia.io>",
   "license": "MIT",
   "private": true,
   "devDependencies": {
