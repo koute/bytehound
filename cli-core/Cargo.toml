@@ -25,7 +25,7 @@ common = { path = "../common" }
 lz4-compress = { path = "../lz4-compress" }
 
 [dependencies.nwind]
-git = "https://github.com/nokia/not-perf.git"
+git = "https://github.com/koute/not-perf.git"
 rev = "c6b9635"
 
 [dev-dependencies]
