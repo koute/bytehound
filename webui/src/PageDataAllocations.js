@@ -260,6 +260,16 @@ const FIELDS = {
         label: "Negative source file regex",
         badge: value => "Sources NOT matching /" + value + "/"
     },
+    library_regex: {
+        ...REGEX_FIELD,
+        label: "Library regex",
+        badge: value => "Libraries matching /" + value + "/"
+    },
+    negative_library_regex: {
+        ...REGEX_FIELD,
+        label: "Negative library regex",
+        badge: value => "Libraries NOT matching /" + value + "/"
+    },
     backtraces: {
         label: "Backtrace",
         badge: value => "Matching backtrace with ID " + value
@@ -436,6 +446,10 @@ class FilterEditor extends React.Component {
                         <div className="px-2" />
                         {this.field("negative_source_regex")}
                     </div>
+                    <div className="px-2" />
+                        {this.field("library_regex")}
+                    <div className="px-2" />
+                        {this.field("negative_library_regex")}
                     <div className="d-flex flex-row">
                         {this.field("backtrace_depth_min")}
                         <div className="px-2" />
