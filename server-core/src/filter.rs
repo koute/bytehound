@@ -87,8 +87,10 @@ pub fn prepare_filter(
 
     if filter.function_regex.is_some()
         || filter.source_regex.is_some()
+        || filter.library_regex.is_some()
         || filter.negative_function_regex.is_some()
         || filter.negative_source_regex.is_some()
+        || filter.negative_library_regex.is_some()
     {
         let function_regex = if let Some(ref pattern) = filter.function_regex {
             Some(
@@ -103,6 +105,15 @@ pub fn prepare_filter(
             Some(
                 Regex::new(pattern)
                     .map_err(|err| PrepareFilterError::InvalidRegex("source_regex", err))?,
+            )
+        } else {
+            None
+        };
+
+        let library_regex = if let Some(ref pattern) = filter.library_regex {
+            Some(
+                Regex::new(pattern)
+                    .map_err(|err| PrepareFilterError::InvalidRegex("library_regex", err))?,
             )
         } else {
             None
@@ -126,14 +137,25 @@ pub fn prepare_filter(
                 None
             };
 
+        let negative_library_regex =
+            if let Some(ref pattern) = filter.negative_library_regex {
+                Some(Regex::new(pattern).map_err(|err| {
+                    PrepareFilterError::InvalidRegex("negative_library_regex", err)
+                })?)
+            } else {
+                None
+            };
+
         let mut matched_backtraces = HashSet::new();
         let mut positive_cache = HashMap::new();
         let mut negative_cache = HashMap::new();
         for (backtrace_id, backtrace) in data.all_backtraces() {
-            let mut positive_matched = function_regex.is_none() && source_regex.is_none();
+            let mut positive_matched =
+                function_regex.is_none() && source_regex.is_none() && library_regex.is_none();
             let mut negative_matched = false;
-            let check_negative =
-                negative_function_regex.is_some() || negative_source_regex.is_some();
+            let check_negative = negative_function_regex.is_some()
+                || negative_source_regex.is_some()
+                || negative_library_regex.is_some();
 
             for (frame_id, frame) in backtrace {
                 let check_positive = if positive_matched {
@@ -165,6 +187,13 @@ pub fn prepare_filter(
                         .map(|id| data.interner().resolve(id).unwrap())
                 }
 
+                let mut library = None;
+                if (check_positive && library_regex.is_some()) || negative_library_regex.is_some() {
+                    library = frame
+                        .library()
+                        .map(|id| data.interner().resolve(id).unwrap())
+                }
+
                 if check_positive {
                     let matched_function = if let Some(regex) = function_regex.as_ref() {
                         if let Some(ref function) = function {
@@ -186,7 +215,17 @@ pub fn prepare_filter(
                         true
                     };
 
-                    positive_matched = matched_function && matched_source;
+                    let matched_library = if let Some(regex) = library_regex.as_ref() {
+                        if let Some(ref library) = library {
+                            regex.is_match(library)
+                        } else {
+                            false
+                        }
+                    } else {
+                        true
+                    };
+
+                    positive_matched = matched_function && matched_source && matched_library;
                     positive_cache.insert(frame_id, positive_matched);
                 }
 
@@ -215,6 +254,16 @@ pub fn prepare_filter(
                     if let Some(regex) = negative_source_regex.as_ref() {
                         if let Some(ref source) = source {
                             if regex.is_match(source) {
+                                negative_cache.insert(frame_id, true);
+                                negative_matched = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(regex) = negative_library_regex.as_ref() {
+                        if let Some(ref library) = library {
+                            if regex.is_match(library) {
                                 negative_cache.insert(frame_id, true);
                                 negative_matched = true;
                                 break;
