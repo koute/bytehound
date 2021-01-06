@@ -496,18 +496,30 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
             Operation::Reallocation { ref new_allocation, .. } => new_allocation.timestamp
         };
 
-        let backtrace_id = match op {
-            Operation::Allocation { ref allocation, .. } => Some(allocation.backtrace),
-            Operation::Deallocation { ref deallocation, .. } => deallocation.backtrace,
-            Operation::Reallocation { ref new_allocation, .. } => Some(new_allocation.backtrace)
-        };
-
         let mut filter_out_backtrace = false;
+        let mut filter_in_reallocated_backtrace = false;
         match filter.backtraces {
             Some(v) => {
-                if backtrace_id != Some(BacktraceId::new( v as _ ))  {
-                    filter_out_backtrace = true;
-                }        
+                match op {
+                    Operation::Allocation { ref allocation, .. } => {
+                        if allocation.backtrace != BacktraceId::new( v as _ )  {
+                            filter_out_backtrace = true;
+                        }
+                    },
+                    Operation::Deallocation { ref allocation, .. } => {
+                        if allocation.backtrace != BacktraceId::new( v as _ )  {
+                            filter_out_backtrace = true;
+                        }
+                    },
+                    Operation::Reallocation { ref new_allocation, ref old_allocation, .. } => {
+                        if old_allocation.backtrace != BacktraceId::new( v as _ )  {
+                            filter_out_backtrace = true;
+                        }
+                        if new_allocation.backtrace == BacktraceId::new( v as _ )  {
+                            filter_in_reallocated_backtrace = true;
+                        }
+                    }
+                };      
             },
             None => {},
         }
@@ -574,8 +586,23 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
         let leaked_count = leaked_count.last_mut().unwrap();
 
         let (size_delta_v, count_delta_v) = if filter_out_backtrace {
-            // This allocation is from other backtrace, skip it
-            (0, 0)
+            match op {
+                Operation::Reallocation { new_allocation, old_allocation, .. } => {
+                    if filter_in_reallocated_backtrace {
+                        if new_allocation.deallocation.is_none() {
+                            *leaked_size += new_allocation.size;
+                            *leaked_count += 1;
+                        }
+                        (new_allocation.size as i64, 1)
+                    } else {
+                        (0, 0)    
+                    }
+                },
+                _ => {
+                    // This operation is from other backtrace, skip it
+                    (0, 0)
+                }
+            }
         } else {
             match op {
                 Operation::Allocation { allocation, .. } => {
