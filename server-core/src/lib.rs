@@ -487,6 +487,7 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
     let mut allocations = Vec::with_capacity( maximum_len );
     let mut deallocations = Vec::with_capacity( maximum_len );
     let mut x = (-1_i32) as u64;
+    let filter: protocol::AllocFilter = query( &req )?;
 
     for op in data.operations() {
         let timestamp = match op {
@@ -494,6 +495,22 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
             Operation::Deallocation { ref deallocation, .. } => deallocation.timestamp,
             Operation::Reallocation { ref new_allocation, .. } => new_allocation.timestamp
         };
+
+        let backtrace_id = match op {
+            Operation::Allocation { ref allocation, .. } => Some(allocation.backtrace),
+            Operation::Deallocation { ref deallocation, .. } => deallocation.backtrace,
+            Operation::Reallocation { ref new_allocation, .. } => Some(new_allocation.backtrace)
+        };
+
+        let mut filter_out_backtrace = false;
+        match filter.backtraces {
+            Some(v) => {
+                if backtrace_id != Some(BacktraceId::new( v as _ ))  {
+                    filter_out_backtrace = true;
+                }        
+            },
+            None => {},
+        }
 
         let timestamp = timestamp.as_secs();
         let timestamp_changed = timestamp != x;
@@ -556,29 +573,34 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
         let leaked_size = leaked_size.last_mut().unwrap();
         let leaked_count = leaked_count.last_mut().unwrap();
 
-        let (size_delta_v, count_delta_v) = match op {
-            Operation::Allocation { allocation, .. } => {
-                *allocations += 1;
-                if allocation.deallocation.is_none() {
-                    *leaked_size += allocation.size;
-                    *leaked_count += 1;
-                }
+        let (size_delta_v, count_delta_v) = if filter_out_backtrace {
+            // This allocation is from other backtrace, skip it
+            (0, 0)
+        } else {
+            match op {
+                Operation::Allocation { allocation, .. } => {
+                    *allocations += 1;
+                    if allocation.deallocation.is_none() {
+                        *leaked_size += allocation.size;
+                        *leaked_count += 1;
+                    }
 
-                (allocation.size as i64, 1)
-            },
-            Operation::Deallocation { allocation, .. } => {
-                *deallocations += 1;
-                (allocation.size as i64 * -1, -1)
-            },
-            Operation::Reallocation { new_allocation, old_allocation, .. } => {
-                *allocations += 1;
-                *deallocations += 1;
-                if new_allocation.deallocation.is_none() {
-                    *leaked_size += new_allocation.size;
-                    *leaked_count += 1;
-                }
+                    (allocation.size as i64, 1)
+                },
+                Operation::Deallocation { allocation, .. } => {
+                    *deallocations += 1;
+                    (allocation.size as i64 * -1, -1)
+                },
+                Operation::Reallocation { new_allocation, old_allocation, .. } => {
+                    *allocations += 1;
+                    *deallocations += 1;
+                    if new_allocation.deallocation.is_none() {
+                        *leaked_size += new_allocation.size;
+                        *leaked_count += 1;
+                    }
 
-                (new_allocation.size as i64 - old_allocation.size as i64, 0)
+                    (new_allocation.size as i64 - old_allocation.size as i64, 0)
+                }
             }
         };
 
