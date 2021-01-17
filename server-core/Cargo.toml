@@ -17,7 +17,7 @@ futures = "0.1"
 serde_urlencoded = "0.5"
 regex = "1"
 bytes = "0.4"
-lru = "0.1"
+lru = "0.6"
 parking_lot = "0.9"
 common = { path = "../common" }
 hashbrown = "0.6"

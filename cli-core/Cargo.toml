@@ -13,7 +13,7 @@ cpp_demangle = "0.2"
 chrono = "0.4"
 libc = "0.2"
 log = "0.4"
-lru = "0.1"
+lru = "0.6"
 bitflags = "1"
 inferno = { version = "0.9", default-features = false }
 lazy_static = "1"
