@@ -8,7 +8,6 @@ use hashbrown::HashMap;
 
 use common::Timestamp;
 use common::speedy::{
-    Endianness,
     Writable
 };
 
@@ -45,7 +44,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
 
     let tfp = File::create( tmpfile_path )?;
     let mut tfp = Lz4Writer::new( tfp );
-    Event::Header( header ).write_to_stream( Endianness::LittleEndian, &mut tfp )?;
+    Event::Header( header ).write_to_stream( &mut tfp )?;
 
     let (live_allocations, mut stats_by_backtrace) = {
         let mut counter = 0;
@@ -85,7 +84,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                     }
 
                     let event = Event::Backtrace { id, addresses: addresses.into() };
-                    event.write_to_stream( Endianness::LittleEndian, &mut tfp )?;
+                    event.write_to_stream( &mut tfp )?;
 
                     continue;
                 },
@@ -103,7 +102,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                     }
 
                     let event = Event::Backtrace { id, addresses: addresses.into() };
-                    event.write_to_stream( Endianness::LittleEndian, &mut tfp )?;
+                    event.write_to_stream( &mut tfp )?;
 
                     continue;
                 },
@@ -169,7 +168,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                     allocations.insert( allocation.pointer, Allocation { counter, backtrace: allocation.backtrace, usable_size } );
 
                     let event = Event::Alloc { timestamp, allocation: allocation.clone() };
-                    event.write_to_stream( Endianness::LittleEndian, &mut tfp )?;
+                    event.write_to_stream( &mut tfp )?;
 
                     counter += 1;
                     continue;
@@ -229,7 +228,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                 Event::DecodedBacktrace { .. } => {}
             }
 
-            event.write_to_stream( Endianness::LittleEndian, &mut tfp )?;
+            event.write_to_stream( &mut tfp )?;
         }
 
         let live_allocations: HashMap< _, _ > = allocations.into_iter().map( |(pointer, allocation)| {
@@ -245,7 +244,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
     let ifp = File::open( tmpfile_path )?;
     let (header, event_stream) = parse_events( ifp )?;
     let mut ofp = Lz4Writer::new( output_fp );
-    Event::Header( header ).write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+    Event::Header( header ).write_to_stream( &mut ofp )?;
 
     {
         let mut counter = 0;
@@ -281,7 +280,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                 _ => {}
             }
 
-            event.write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+            event.write_to_stream( &mut ofp )?;
 
             if let Some( id ) = backtrace_id {
                 if let Some( stats ) = stats_by_backtrace.remove( &id ) {
@@ -294,7 +293,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                         min_size: stats.min_size,
                         max_size: stats.max_size
                     };
-                    event.write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+                    event.write_to_stream( &mut ofp )?;
                 }
             }
         }

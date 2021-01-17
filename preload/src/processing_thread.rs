@@ -16,7 +16,7 @@ use std::io::{
     SeekFrom
 };
 
-use common::speedy::{Writable, Readable, Endianness};
+use common::speedy::{Writable, Readable};
 
 use common::event::{DataId, Event, AllocBody};
 use common::lz4_stream::Lz4Writer;
@@ -128,7 +128,7 @@ fn poll_clients( id: DataId, initial_timestamp: Timestamp, poll_fds: &mut Vec< l
         }
 
         trace!( "Reading a client's request..." );
-        let request = match Request::read_from_stream( Endianness::LittleEndian, &mut client.stream ) {
+        let request = match Request::read_from_stream_unbuffered( &mut client.stream ) {
             Ok( request ) => request,
             Err( error ) => {
                 info!( "Failed to read a client request: {}", error );
@@ -155,7 +155,7 @@ fn poll_clients( id: DataId, initial_timestamp: Timestamp, poll_fds: &mut Vec< l
             },
             Request::Ping => {
                 trace!( "Received a Ping request" );
-                if let Err( error ) = Response::Pong.write_to_stream( Endianness::LittleEndian, &mut client.stream ) {
+                if let Err( error ) = Response::Pong.write_to_stream( &mut client.stream ) {
                     info!( "Failed to respond to a client ping: {}", error );
                     client.running = false;
                 }
@@ -206,7 +206,8 @@ impl< 'a > io::Write for &'a mut Client {
     fn write( &mut self, data: &[u8] ) -> io::Result< usize > {
         let length = data.len();
         let response = Response::Data( data.into() );
-        response.write_to_stream( Endianness::LittleEndian, &mut self.stream ).map( |_| length )
+        let count = response.write_to_stream( &mut self.stream ).map( |_| length )?;
+        Ok( count )
     }
 
     fn flush( &mut self ) -> io::Result< () > {
@@ -228,7 +229,7 @@ impl Client {
             streaming: false
         };
 
-        Response::Start( broadcast_header( id, initial_timestamp, listener_port ) ).write_to_stream( Endianness::LittleEndian, &mut client.stream )?;
+        Response::Start( broadcast_header( id, initial_timestamp, listener_port ) ).write_to_stream( &mut client.stream )?;
         Ok( client )
     }
 
@@ -245,7 +246,7 @@ impl Client {
         file.seek( SeekFrom::Start( 0 ) )?;
         copy( file, &mut *self )?;
 
-        Response::FinishedInitialStreaming.write_to_stream( Endianness::LittleEndian, &mut self.stream )?;
+        Response::FinishedInitialStreaming.write_to_stream( &mut self.stream )?;
 
         if let Err( error ) = remove_file( &path ) {
             warn!( "Failed to remove {:?}: {}", path, error );
@@ -279,7 +280,7 @@ impl Client {
         }
 
         Response::FinishedInitialStreaming
-            .write_to_stream( Endianness::LittleEndian, &mut self.stream )?;
+            .write_to_stream( &mut self.stream )?;
 
         Ok(())
     }
@@ -342,7 +343,7 @@ fn send_broadcast_to( id: DataId, initial_timestamp: Timestamp, listener_port: u
     socket.set_broadcast( true )?;
 
     let mut message = Vec::new();
-    broadcast_header( id, initial_timestamp, listener_port ).write_to_stream( Endianness::LittleEndian, &mut message ).unwrap();
+    broadcast_header( id, initial_timestamp, listener_port ).write_to_stream( &mut message ).unwrap();
 
     socket.send_to( &message, "255.255.255.255:43512" )?;
     Ok(())
@@ -528,7 +529,7 @@ pub(crate) fn thread_main() {
                                 preceding_free_space
                             }
                         };
-                        let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, mut timestamp, throttle } => {
@@ -554,7 +555,7 @@ pub(crate) fn thread_main() {
                                 preceding_free_space
                             }
                         };
-                        let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Free { ptr, backtrace, thread, mut timestamp, throttle } => {
@@ -570,7 +571,7 @@ pub(crate) fn thread_main() {
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread };
-                        let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Mmap { pointer, length, backtrace, thread, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, mut timestamp, throttle } => {
@@ -598,7 +599,7 @@ pub(crate) fn thread_main() {
                             offset
                         };
 
-                        let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Munmap { ptr, len, backtrace, thread, mut timestamp, throttle } => {
@@ -614,7 +615,7 @@ pub(crate) fn thread_main() {
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread };
-                        let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Mallopt { param, value, result, mut timestamp, backtrace, thread, throttle } => {
@@ -630,7 +631,7 @@ pub(crate) fn thread_main() {
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
                         mem::drop( throttle );
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread };
-                        let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                        let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Exit => {
@@ -649,7 +650,7 @@ pub(crate) fn thread_main() {
                     }
 
                     let event = Event::Marker { value };
-                    let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                    let _ = event.write_to_stream( &mut *serializer );
                 },
                 InternalEvent::OverrideNextTimestamp { timestamp } => {
                     timestamp_override = Some( timestamp );
@@ -665,7 +666,7 @@ pub(crate) fn thread_main() {
                                 contents: binary.as_bytes().into()
                             };
 
-                            let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                            let _ = event.write_to_stream( &mut *serializer );
                         }
                     }
 
@@ -676,7 +677,7 @@ pub(crate) fn thread_main() {
                         contents: maps.as_bytes().into()
                     };
 
-                    let _ = event.write_to_stream( Endianness::LittleEndian, &mut *serializer );
+                    let _ = event.write_to_stream( &mut *serializer );
                 }
             }
         }
@@ -689,7 +690,7 @@ pub(crate) fn thread_main() {
 
     let _ = output_writer.flush();
     for client in &mut output_writer.inner_mut_without_flush().clients {
-        let _ = Response::Finished.write_to_stream( Endianness::LittleEndian, &mut client.stream );
+        let _ = Response::Finished.write_to_stream( &mut client.stream );
         let _ = client.stream.flush();
     }
 

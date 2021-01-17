@@ -1,4 +1,5 @@
 use std::ops::{Add, Sub, Mul, Div};
+use speedy::{Readable, Writable};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Readable, Writable)]
 pub struct Timestamp( u64 );

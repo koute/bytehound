@@ -8,8 +8,8 @@ pub struct SpinLock< T > {
     pub flag: AtomicBool
 }
 
-unsafe impl< T > Send for SpinLock< T > {}
-unsafe impl< T > Sync for SpinLock< T > {}
+unsafe impl< T > Send for SpinLock< T > where T: Send {}
+unsafe impl< T > Sync for SpinLock< T > where T: Send {}
 
 pub struct SpinLockGuard< 'a, T: 'a >( &'a SpinLock< T > );
 
@@ -70,7 +70,7 @@ impl< 'a, T > Deref for SpinLockGuard< 'a, T > {
 
     fn deref( &self ) -> &Self::Target {
         unsafe {
-            transmute( self.0.value.get() )
+            &*self.0.value.get()
         }
     }
 }
@@ -78,7 +78,7 @@ impl< 'a, T > Deref for SpinLockGuard< 'a, T > {
 impl< 'a, T > DerefMut for SpinLockGuard< 'a, T > {
     fn deref_mut( &mut self ) -> &mut Self::Target {
         unsafe {
-            transmute( self.0.value.get() )
+            &mut *self.0.value.get()
         }
     }
 }

@@ -10,7 +10,7 @@ use nwind::proc_maps::Region;
 use nwind::proc_maps::parse as parse_maps;
 
 use common::event::{DataId, Event, FramesInvalidated, HeaderBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
-use common::speedy::{Endianness, Writable};
+use common::speedy::Writable;
 use common::Timestamp;
 
 use crate::{CMDLINE, EXECUTABLE, PID};
@@ -39,7 +39,9 @@ fn write_file< U: Write >( mut serializer: &mut U, path: &str, bytes: &[u8] ) ->
         timestamp: get_timestamp(),
         path: path.into(),
         contents: bytes.into()
-    }.write_to_stream( Endianness::LittleEndian, &mut serializer )
+    }.write_to_stream( &mut serializer )?;
+
+    Ok(())
 }
 
 fn new_header_body( id: DataId, initial_timestamp: Timestamp ) -> io::Result< HeaderBody > {
@@ -66,7 +68,8 @@ fn new_header_body( id: DataId, initial_timestamp: Timestamp ) -> io::Result< He
 }
 
 pub fn write_header< U: Write >( id: DataId, initial_timestamp: Timestamp, serializer: &mut U ) -> io::Result< () > {
-    Event::Header( new_header_body( id, initial_timestamp )? ).write_to_stream( Endianness::LittleEndian, serializer )
+    Event::Header( new_header_body( id, initial_timestamp )? ).write_to_stream( serializer )?;
+    Ok(())
 }
 
 pub fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > {
@@ -106,13 +109,14 @@ pub fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > 
 
 pub fn write_maps< U: Write >( serializer: &mut U ) -> io::Result< Vec< u8 > > {
     let maps = read_file( "/proc/self/maps" )?;
-    Event::File { timestamp: get_timestamp(), path: "/proc/self/maps".into(), contents: maps.clone().into() }.write_to_stream( Endianness::LittleEndian, serializer )?;
+    Event::File { timestamp: get_timestamp(), path: "/proc/self/maps".into(), contents: maps.clone().into() }.write_to_stream( serializer )?;
     Ok( maps )
 }
 
 fn write_wallclock< U: Write >( serializer: &mut U ) -> io::Result< () > {
     let (timestamp, sec, nsec) = get_wall_clock();
-    Event::WallClock { timestamp, sec, nsec }.write_to_stream( Endianness::LittleEndian, serializer )
+    Event::WallClock { timestamp, sec, nsec }.write_to_stream( serializer )?;
+    Ok(())
 }
 
 fn write_uptime< U: Write >( serializer: &mut U ) -> io::Result< () > {
@@ -131,7 +135,7 @@ fn write_environ< U: Write >( mut serializer: U ) -> io::Result< () > {
             let string = CStr::from_ptr( *ptr );
             Event::Environ {
                 entry: string.to_bytes().into()
-            }.write_to_stream( Endianness::LittleEndian, &mut serializer )?;
+            }.write_to_stream( &mut serializer )?;
 
             ptr = ptr.offset( 1 );
         }
@@ -161,7 +165,7 @@ pub fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: 
             thread,
             frames_invalidated,
             addresses: frames.into()
-        }.write_to_stream( Endianness::LittleEndian, serializer )?;
+        }.write_to_stream( serializer )?;
     } else if mem::size_of::< usize >() == mem::size_of::< u64 >() {
         let frames: &[usize] = backtrace.frames.as_slice();
         let frames: &[u64] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u64, frames.len() ) };
@@ -170,7 +174,7 @@ pub fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: 
             thread,
             frames_invalidated,
             addresses: frames.into()
-        }.write_to_stream( Endianness::LittleEndian, serializer )?;
+        }.write_to_stream( serializer )?;
     } else {
         unreachable!();
     }

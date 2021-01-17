@@ -1,9 +1,8 @@
-use std::io;
 use std::fmt;
 use std::str::FromStr;
 use std::borrow::Cow;
 
-use speedy::{Readable, Writable, Context, Reader, Writer, Endianness};
+use speedy::{Readable, Writable, Context, Reader, Writer};
 
 use crate::timestamp::Timestamp;
 
@@ -198,7 +197,7 @@ pub enum FramesInvalidated {
 }
 
 impl< 'a, C: Context > Readable< 'a, C > for FramesInvalidated {
-    fn read_from< R: Reader< 'a, C > >( reader: &mut R ) -> io::Result< Self > {
+    fn read_from< R: Reader< 'a, C > >( reader: &mut R ) -> Result< Self, C::Error > {
         let frames = reader.read_u32()?;
         if frames == 0xFFFFFFFF {
             Ok( FramesInvalidated::All )
@@ -209,7 +208,7 @@ impl< 'a, C: Context > Readable< 'a, C > for FramesInvalidated {
 }
 
 impl< C: Context > Writable< C > for FramesInvalidated {
-    fn write_to< 'this, T: ?Sized + Writer< 'this, C > >( &'this self, writer: &mut T ) -> io::Result< () > {
+    fn write_to< T: ?Sized + Writer< C > >( &self, writer: &mut T ) -> Result< (), C::Error > {
         let value = match *self {
             FramesInvalidated::All => 0xFFFFFFFF,
             FramesInvalidated::Some( value ) => value
@@ -226,18 +225,18 @@ pub enum FramedEvent< 'a > {
 }
 
 impl< 'a, C: Context > Readable< 'a, C > for FramedEvent< 'a > {
-    fn read_from< R: Reader< 'a, C > >( reader: &mut R ) -> io::Result< Self > {
+    fn read_from< R: Reader< 'a, C > >( reader: &mut R ) -> Result< Self, C::Error > {
         let length = reader.read_u32()? as usize;
-        let bytes = reader.read_bytes_cow( length )?;
+        let bytes = reader.read_cow( length )?;
         match bytes {
             Cow::Borrowed( bytes ) => {
-                match Event::read_from_buffer( Endianness::LittleEndian, &bytes ) {
+                match Event::read_from_buffer( &bytes ) {
                     Ok( event ) => Ok( FramedEvent::Known( event ) ),
                     Err( _ ) => Ok( FramedEvent::Unknown( Cow::Borrowed( bytes ) ) )
                 }
             },
             Cow::Owned( bytes ) => {
-                match Event::read_from_buffer_owned( Endianness::LittleEndian, &bytes ) {
+                match Event::read_from_buffer_owned( &bytes ) {
                     Ok( event ) => Ok( FramedEvent::Known( event ) ),
                     Err( _ ) => Ok( FramedEvent::Unknown( Cow::Owned( bytes ) ) )
                 }
@@ -247,10 +246,10 @@ impl< 'a, C: Context > Readable< 'a, C > for FramedEvent< 'a > {
 }
 
 impl< 'a, C: Context > Writable< C > for FramedEvent< 'a > {
-    fn write_to< 'this, T: ?Sized + Writer< 'this, C > >( &'this self, writer: &mut T ) -> io::Result< () > {
+    fn write_to< T: ?Sized + Writer< C > >( &self, writer: &mut T ) -> Result< (), C::Error > {
         match self {
             &FramedEvent::Known( ref event ) => {
-                let length = Writable::< C >::bytes_needed( event ) as u32;
+                let length = Writable::< C >::bytes_needed( event )? as u32;
                 writer.write_u32( length )?;
                 writer.write_value( event )?;
 

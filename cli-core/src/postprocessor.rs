@@ -9,7 +9,6 @@ use nwind::{
     DebugInfoIndex
 };
 use common::speedy::{
-    Endianness,
     Writable,
 };
 
@@ -40,7 +39,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
     }
 
     let mut loader = Loader::new( header.clone(), debug_info_index );
-    Event::Header( header ).write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+    Event::Header( header ).write_to_stream( &mut ofp )?;
 
     let mut frames = Vec::new();
     let mut frames_to_write = Vec::new();
@@ -95,7 +94,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
         }
 
         if write {
-            event.write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+            event.write_to_stream( &mut ofp )?;
         }
 
         if is_backtrace {
@@ -126,7 +125,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
                                 Event::String {
                                     id: raw_id,
                                     string: string.into()
-                                }.write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+                                }.write_to_stream( &mut ofp )?;
                             }
 
                             raw_id
@@ -153,7 +152,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
                     line: frame.line().unwrap_or( 0xFFFFFFFF ),
                     column: frame.column().unwrap_or( 0xFFFFFFFF ),
                     is_inline: frame.is_inline()
-                }.write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+                }.write_to_stream( &mut ofp )?;
             }
 
             if let Some( backtrace_id ) = backtrace_id {
@@ -162,7 +161,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
 
                 Event::DecodedBacktrace {
                     frames: (&frames).into()
-                }.write_to_stream( Endianness::LittleEndian, &mut ofp )?;
+                }.write_to_stream( &mut ofp )?;
             }
         } else if process {
             loader.process( event );

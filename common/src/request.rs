@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use speedy::{Readable, Writable};
 use crate::timestamp::Timestamp;
 use crate::event::DataId;
 

@@ -6,7 +6,7 @@ use std::ptr;
 use nwind::proc_maps::parse as parse_maps;
 
 use common::event::Event;
-use common::speedy::{Endianness, Writable};
+use common::speedy::Writable;
 
 use crate::PAGE_SIZE;
 use crate::syscall;
@@ -76,7 +76,7 @@ fn memory_dump_body< U: Write >( mut serializer: &mut U ) -> io::Result< () > {
                 address,
                 length: chunk_size as u64,
                 data: data.into()
-            }.write_to_stream( Endianness::LittleEndian, &mut serializer )?;
+            }.write_to_stream( &mut serializer )?;
 
             end -= chunk_size;
         }

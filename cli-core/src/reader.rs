@@ -5,7 +5,7 @@ use common::event::{
     HeaderBody
 };
 
-use common::speedy::{Readable, Endianness};
+use common::speedy::Readable;
 use crate::threaded_lz4_stream::Lz4Reader;
 
 pub struct Iter< T: Read + Send > {
@@ -22,10 +22,11 @@ impl< T > Iterator for Iter< T > where T: Read + Send {
             return None;
         }
 
-        match Event::read_from_stream( Endianness::LittleEndian, &mut self.fp ) {
+        match Event::read_from_stream_unbuffered( &mut self.fp ) {
             Ok( event ) => Some( Ok( event ) ),
             Err( err ) => {
                 self.done = true;
+                let err: io::Error = err.into();
                 if err.kind() == io::ErrorKind::UnexpectedEof {
                     None
                 } else {
@@ -39,7 +40,7 @@ impl< T > Iterator for Iter< T > where T: Read + Send {
 pub fn parse_events< T >( fp: T ) -> io::Result< (HeaderBody, impl Iterator< Item = io::Result< Event< 'static > > >) > where T: Read + Send + 'static {
     let mut fp = Lz4Reader::new( fp );
 
-    let event = Event::read_from_stream( Endianness::LittleEndian, &mut fp )?;
+    let event = Event::read_from_stream_unbuffered( &mut fp )?;
     let header = match event {
         Event::Header( header ) => {
             header

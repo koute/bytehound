@@ -23,6 +23,8 @@ struct CacheEntry {
     cache: Weak< Cache >
 }
 
+unsafe impl Send for CacheEntry {}
+
 impl CacheEntry {
     #[inline(always)]
     fn pack( mut frames: Vec< usize >, cache: Weak< Cache > ) -> Self {

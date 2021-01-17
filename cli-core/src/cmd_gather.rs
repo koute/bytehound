@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use std::mem;
 
 use chrono::prelude::*;
-use common::speedy::{Readable, Writable, Endianness};
+use common::speedy::{Readable, Writable};
 
 use common::request::{PROTOCOL_VERSION, BroadcastHeader, Request, Response};
 use common::get_local_ips;
@@ -41,7 +41,7 @@ impl io::Read for Wrapper {
 
             match self.stream.read( buffer ) {
                 Err( ref error ) if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut => {
-                    Request::Ping.write_to_stream( Endianness::LittleEndian, &self.stream )?;
+                    Request::Ping.write_to_stream( &self.stream )?;
                     continue;
                 },
                 result => return result
@@ -60,7 +60,7 @@ fn client_loop( socket: TcpStream, mut fp: File, sigint: Sigint, mut ip_lock: Op
             ip_lock = None;
         }
 
-        let response = Response::read_from_stream( Endianness::LittleEndian, &mut socket );
+        let response = Response::read_from_stream_unbuffered( &mut socket );
         match response {
             Ok( Response::Data( data ) ) => {
                 fp.write_all( &data )?;
@@ -79,13 +79,14 @@ fn client_loop( socket: TcpStream, mut fp: File, sigint: Sigint, mut ip_lock: Op
                 return Ok(());
             },
             Ok( _ ) => {},
-            Err( ref error ) if error.kind() == ErrorKind::UnexpectedEof => {
-                return Ok(());
-            },
-            Err( ref error ) if error.kind() == ErrorKind::Other && format!( "{}", error ) == "interrupted by SIGINT" => {
-                return Ok(());
-            },
-            Err( error ) => return Err( error )
+            Err( error ) => {
+                let error: io::Error = error.into();
+                if error.kind() == ErrorKind::UnexpectedEof || (error.kind() == ErrorKind::Other && format!( "{}", error ) == "interrupted by SIGINT") {
+                    return Ok(());
+                }
+
+                return Err( error );
+            }
         }
     }
 
@@ -95,7 +96,7 @@ fn client_loop( socket: TcpStream, mut fp: File, sigint: Sigint, mut ip_lock: Op
 fn connect< A: ToSocketAddrs >( target: A ) -> Result< (TcpStream, File, String), io::Error > {
     let socket = TcpStream::connect( target )?;
     let target = socket.peer_addr().unwrap();
-    let response = Response::read_from_stream( Endianness::LittleEndian, &socket )?;
+    let response = Response::read_from_stream_unbuffered( &socket )?;
     match response {
         Response::Start( BroadcastHeader { pid, executable, arch, timestamp, initial_timestamp, .. } ) => {
             let executable = String::from_utf8_lossy( &executable );
@@ -125,7 +126,7 @@ fn connect< A: ToSocketAddrs >( target: A ) -> Result< (TcpStream, File, String)
                 }
             };
 
-            Request::StartStreaming.write_to_stream( Endianness::LittleEndian, &socket )?;
+            Request::StartStreaming.write_to_stream( &socket )?;
 
             Ok( (socket, fp, filename) )
         },
@@ -179,7 +180,7 @@ pub fn main( target: Option< &str > ) -> Result< (), Box< dyn Error > > {
                         addr.ip()
                     };
 
-                    let start_body = match BroadcastHeader::read_from_buffer( Endianness::LittleEndian, &buffer[ ..byte_count ] ) {
+                    let start_body = match BroadcastHeader::read_from_buffer( &buffer[ ..byte_count ] ) {
                         Ok( start_body ) => start_body,
                         Err( err ) => {
                             error!( "Failed to deserialize broadcast handshake packet from '{}': {:?}", addr.ip(), err );

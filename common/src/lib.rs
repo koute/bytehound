@@ -1,8 +1,5 @@
 pub extern crate speedy;
 
-#[macro_use]
-extern crate speedy_derive;
-
 mod os_util;
 mod timestamp;
 

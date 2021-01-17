@@ -19,6 +19,8 @@ struct ThreadRegistry {
     threads: Option< HashMap< u32, *const Tls > >
 }
 
+unsafe impl Send for ThreadRegistry {}
+
 impl ThreadRegistry {
     fn threads( &mut self ) -> &mut HashMap< u32, *const Tls > {
         self.threads.get_or_insert_with( HashMap::new )
