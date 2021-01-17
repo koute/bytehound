@@ -1,14 +1,14 @@
 use std::cmp::{min, max};
 use std::collections::HashMap;
-use std::mem::{self, ManuallyDrop};
+use std::mem::MaybeUninit;
 
 use crate::data::{Timestamp, AllocationId, Allocation, DataPointer};
 
 pub type NodeId = u64;
 
 pub struct Node< K, V > {
-    key: ManuallyDrop< K >,
-    value: ManuallyDrop< V >,
+    key: MaybeUninit< K >,
+    value: MaybeUninit< V >,
     pub total_size: u64,
     pub total_count: u64,
     pub total_first_timestamp: Timestamp,
@@ -26,7 +26,9 @@ impl< K, V > Node< K, V > {
         if self.is_root() {
             None
         } else {
-            Some( &*self.value )
+            unsafe {
+                Some( &*self.value.as_ptr() )
+            }
         }
     }
 
@@ -40,8 +42,8 @@ impl< K, V > Drop for Node< K, V > {
     fn drop( &mut self ) {
         if !self.is_root() {
             unsafe {
-                ManuallyDrop::drop( &mut self.key );
-                ManuallyDrop::drop( &mut self.value );
+                std::ptr::drop_in_place( self.key.as_mut_ptr() );
+                std::ptr::drop_in_place( self.value.as_mut_ptr() );
             }
         }
     }
@@ -56,8 +58,8 @@ impl< K, V > Tree< K, V > where K: PartialEq + Clone {
     #[inline(always)]
     pub fn new() -> Self {
         let root = Node {
-            key: ManuallyDrop::new( unsafe { mem::uninitialized() } ),
-            value: ManuallyDrop::new( unsafe { mem::uninitialized() } ),
+            key: MaybeUninit::uninit(),
+            value: MaybeUninit::uninit(),
             total_size: 0,
             total_count: 0,
             total_first_timestamp: Timestamp::max(),
@@ -96,8 +98,8 @@ impl< K, V > Tree< K, V > where K: PartialEq + Clone {
             let child_id = self.get_child_id( node_id, &key );
             let child_id = if child_id.is_none() {
                 let child_node = Node {
-                    key: ManuallyDrop::new( key.clone() ),
-                    value: ManuallyDrop::new( value ),
+                    key: MaybeUninit::new( key.clone() ),
+                    value: MaybeUninit::new( value ),
                     total_size: 0,
                     total_count: 0,
                     total_first_timestamp: timestamp,
