@@ -16,6 +16,7 @@ mod reader;
 mod loader;
 mod postprocessor;
 mod squeeze;
+mod squeeze_resolution;
 mod frame;
 mod data;
 mod io_adapter;
@@ -39,6 +40,7 @@ pub use crate::vecvec::VecVec;
 pub use crate::util::table_to_string;
 pub use crate::postprocessor::postprocess;
 pub use crate::squeeze::squeeze_data;
+pub use crate::squeeze_resolution::squeeze_data_resolution;
 pub use crate::reader::parse_events;
 pub use crate::repack::repack;
 

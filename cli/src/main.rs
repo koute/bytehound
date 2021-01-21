@@ -86,6 +86,23 @@ enum Opt {
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
     },
+    /// Generates a new data file decreased resolution of allocations
+    #[structopt(name = "squeeze-resolution")]
+    SqueezeResolution {
+        /// The file to which the squeezed data will be written
+        #[structopt(long, short = "o", parse(from_os_str))]
+        output: PathBuf,
+
+        #[structopt(long, parse(from_os_str))]
+        tmpfile: Option< PathBuf >,
+
+        #[structopt(parse(from_os_str), required = false)]
+        input: PathBuf,
+
+        /// Resolution of output data
+        #[structopt(short = "b", long = "bucket_count", default_value = "100")]
+        bucket_count: u32
+    },
     #[structopt(name = "repack", raw(setting = "structopt::clap::AppSettings::Hidden"))]
     Repack {
         #[structopt(long, short = "o", parse(from_os_str))]
@@ -134,6 +151,14 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
                 None => format!( "{}.tmp", input.to_str().unwrap() ).into()
             };
             cli_core::squeeze_data( ifp, ofp, tmpfile.as_ref() )?;
+        },
+        Opt::SqueezeResolution { output, tmpfile, input, bucket_count } => {
+            let ofp = File::create( output )?;
+            let tmpfile = match tmpfile {
+                Some( tmpfile ) => tmpfile,
+                None => format!( "{}.tmp", input.to_str().unwrap() ).into()
+            };
+            cli_core::squeeze_data_resolution( &input, ofp, tmpfile.as_ref(), bucket_count )?;
         },
         Opt::Repack { input, output } => {
             let ifp = File::open( &input )?;
