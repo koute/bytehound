@@ -86,8 +86,8 @@ enum Opt {
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
     },
-    /// Generates a new data file decreased resolution of allocations
-    #[structopt(name = "squeeze-resolution")]
+    /// Generates a new data file with decreased resolution of allocations
+    #[structopt(name = "experimental-squeeze-resolution")]
     SqueezeResolution {
         /// The file to which the squeezed data will be written
         #[structopt(long, short = "o", parse(from_os_str))]

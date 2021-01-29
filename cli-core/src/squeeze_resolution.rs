@@ -28,7 +28,8 @@ use crate::reader::parse_events;
 struct Allocation {
     counter: u64,
     backtrace: u64,
-    usable_size: u64
+    usable_size: u64,
+    size: u64
 }
 
 struct GroupStatistics {
@@ -164,6 +165,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
         let mut backtrace_map: lru::LruCache< u64, u64 > = lru::LruCache::new( 128 );
         let mut stats_by_backtrace: HashMap< u64, GroupStatistics > = Default::default();
         let mut allocations: HashMap< u64, Allocation > = Default::default();
+        let mut mmap_to_bt: HashMap< u64, u64 > = Default::default();
         let mut remap_backtraces = false;
         let mut current_bucket : HashMap< u64, BucketStatistics > = Default::default();
         let mut next_bucket_timestamp = timestamp_min + timestamp_step;
@@ -257,7 +259,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                         stats.max_size = min( stats.max_size, usable_size );
                     }
 
-                    allocations.insert( pointer, Allocation { counter, backtrace: *backtrace, usable_size } );
+                    allocations.insert( pointer, Allocation { counter, backtrace: *backtrace, usable_size, size } );
                     counter += 1;
 
                     {
@@ -267,7 +269,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                                 max_size: 0
                             }
                         });
-                        stats.current_size += usable_size;
+                        stats.current_size += size;
                         if stats.current_size > stats.max_size {
                             stats.max_size = stats.current_size;
                         }
@@ -307,7 +309,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                                     max_size: 0
                                 }
                             });
-                            stats.current_size -= usable_size;
+                            stats.current_size -= allocation.size;
                         }
 
                         if let Some( stats ) = stats_by_backtrace.get_mut( &old_allocation.backtrace ) {
@@ -315,7 +317,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                         }
                     }
 
-                    allocations.insert( allocation.pointer, Allocation { counter, backtrace: allocation.backtrace, usable_size } );
+                    allocations.insert( allocation.pointer, Allocation { counter, backtrace: allocation.backtrace, usable_size, size: allocation.size } );
 
                     let event = Event::Alloc { timestamp, allocation: allocation.clone() };
                     event.write_to_stream( &mut tfp )?;
@@ -330,7 +332,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                                 max_size: 0
                             }
                         });
-                        stats.current_size += usable_size;
+                        stats.current_size += allocation.size;
                         if stats.current_size > stats.max_size {
                             stats.max_size = stats.current_size;
                         }
@@ -348,7 +350,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                                     max_size: 0
                                 }
                             });
-                            stats.current_size -= allocation.usable_size;
+                            stats.current_size -= allocation.size;
                         }
                         
                         if let Some( stats ) = stats_by_backtrace.get_mut( &allocation.backtrace ) {
@@ -358,7 +360,7 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
 
                     continue;
                 },
-                Event::MemoryMap { ref mut backtrace, length, .. } => {
+                Event::MemoryMap { ref mut backtrace, length, pointer, .. } => {
                     if remap_backtraces {
                         *backtrace = backtrace_map.get( backtrace ).cloned().unwrap();
                     }
@@ -375,14 +377,16 @@ pub fn squeeze_data_resolution< G >( input: &PathBuf, output_fp: G, tmpfile_path
                             stats.max_size = stats.current_size;
                         }
                     }
+
+                    mmap_to_bt.insert(pointer, *backtrace);
                 },
-                Event::MemoryUnmap { ref mut backtrace, length, .. } => {
+                Event::MemoryUnmap { ref mut backtrace, length, pointer, .. } => {
                     if remap_backtraces {
                         *backtrace = backtrace_map.get( backtrace ).cloned().unwrap();
                     }
 
-                    {
-                        let stats = current_bucket.entry( *backtrace ).or_insert_with( || {
+                    if let Some( alloc_backtrace ) = mmap_to_bt.remove( &pointer ) {
+                        let stats = current_bucket.entry( alloc_backtrace ).or_insert_with( || {
                             BucketStatistics {
                                 current_size: 0,
                                 max_size: 0
