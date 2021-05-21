@@ -4,7 +4,7 @@ use std::path::Path;
 use std::cmp::{max, min};
 use std::mem;
 
-use hashbrown::HashMap;
+use ahash::AHashMap as HashMap;
 
 use common::Timestamp;
 use common::speedy::{

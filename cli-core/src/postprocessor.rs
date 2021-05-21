@@ -2,7 +2,7 @@ use std::io::{self, Read, Write};
 use std::ffi::OsStr;
 use std::u64;
 
-use hashbrown::HashSet;
+use ahash::AHashSet as HashSet;
 use string_interner::Symbol;
 
 use nwind::{

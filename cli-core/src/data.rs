@@ -6,7 +6,7 @@ use std::borrow::{Borrow, Cow};
 use std::iter::FusedIterator;
 use std::collections::BTreeMap;
 
-use hashbrown::HashMap;
+use ahash::AHashMap as HashMap;
 use string_interner;
 
 use crate::tree::Tree;

@@ -28,7 +28,7 @@ use actix_web::{
     Result
 };
 
-use hashbrown::HashMap;
+use ahash::AHashMap as HashMap;
 
 use actix_web::error::{ErrorNotFound, ErrorBadRequest, ErrorInternalServerError};
 use actix_web::error::Error as ActixWebError;

@@ -20,7 +20,7 @@ bytes = "0.4"
 lru = "0.6"
 parking_lot = "0.11"
 common = { path = "../common" }
-hashbrown = "0.6"
+ahash = "0.7"
 
 [build-dependencies]
 semalock = "0.2"

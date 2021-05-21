@@ -1,4 +1,5 @@
-use hashbrown::{HashMap, HashSet};
+use ahash::AHashMap as HashMap;
+use ahash::AHashSet as HashSet;
 
 use regex::{self, Regex};
 

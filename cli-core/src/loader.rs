@@ -8,7 +8,9 @@ use std::time::Instant;
 use std::ffi::OsStr;
 use std::cmp;
 
-use hashbrown::{hash_map, HashMap, HashSet};
+use std::collections::hash_map;
+use ahash::AHashMap as HashMap;
+use ahash::AHashSet as HashSet;
 use byteorder::{BigEndian, LittleEndian, ByteOrder};
 use nwind::{arch, BinaryData, AddressSpace, IAddressSpace, DebugInfoIndex};
 use nwind::proc_maps::Region;
