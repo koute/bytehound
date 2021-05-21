@@ -18,7 +18,7 @@ serde_urlencoded = "0.5"
 regex = "1"
 bytes = "0.4"
 lru = "0.6"
-parking_lot = "0.9"
+parking_lot = "0.11"
 common = { path = "../common" }
 hashbrown = "0.6"
 

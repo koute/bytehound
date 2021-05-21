@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-parking_lot = { version = "0.9" }
+parking_lot = { version = "0.11" }
 libc = "0.2"
 sc = { version = "0.2", optional = true }
 lazy_static = "1"
