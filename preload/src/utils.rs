@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 use std::fs::File;
 use std::fmt;
-use std::mem;
+use std::mem::MaybeUninit;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt::Write as _;
@@ -40,28 +40,72 @@ pub fn temporarily_change_umask( umask: libc::c_int ) -> RestoreFileCreationMask
     RestoreFileCreationMaskOnDrop( old_umask )
 }
 
+const STACK_BUFFER_LEN: usize = 1024;
+
+struct Buffer {
+    buffer: [MaybeUninit< u8 >; STACK_BUFFER_LEN],
+    length: usize
+}
+
+impl Buffer {
+    fn new() -> Self {
+        unsafe {
+            Self {
+                buffer: MaybeUninit::< [MaybeUninit< u8 >; STACK_BUFFER_LEN] >::uninit().assume_init(),
+                length: 0
+            }
+        }
+    }
+
+    fn as_slice( &self ) -> &[u8] {
+        unsafe { std::slice::from_raw_parts( self.buffer.as_ptr() as *const u8, self.length ) }
+    }
+}
+
+impl Write for Buffer {
+    fn write( &mut self, input: &[u8] ) -> io::Result< usize > {
+        let count = std::cmp::min( input.len(), STACK_BUFFER_LEN - self.length );
+        unsafe {
+            std::ptr::copy_nonoverlapping( input.as_ptr(), self.buffer[ self.length.. ].as_mut_ptr() as *mut u8, count );
+        }
+        self.length += count;
+        Ok( count )
+    }
+
+    fn flush( &mut self ) -> io::Result< () > {
+        Ok(())
+    }
+}
+
 fn stack_format< R, F, G >( format_callback: F, use_callback: G ) -> R
-    where F: FnOnce( &mut &mut [u8] ),
+    where F: FnOnce( &mut Buffer ),
           G: FnOnce( &[u8] ) -> R
 {
-    let mut buffer: [u8; 1024] = unsafe { mem::uninitialized() };
-    let p = {
-        let mut p = &mut buffer[..];
-        format_callback( &mut p );
-        p.as_ptr() as usize
-    };
-
-    let length = p - buffer.as_ptr() as usize;
-    use_callback( &buffer[ 0..length ] )
+    let mut buffer = Buffer::new();
+    format_callback( &mut buffer );
+    use_callback( buffer.as_slice() )
 }
 
 #[test]
-fn test_stack_format() {
+fn test_stack_format_short() {
     stack_format( |out| {
-        let _ = write!( out, "foo = {}", "bar" );
-        let _ = write!( out, ";" );
+        write!( out, "foo = {}", "bar" ).unwrap();
+        write!( out, ";" ).unwrap();
     }, |output| {
         assert_eq!( output, b"foo = bar;" );
+    });
+}
+
+#[test]
+fn test_stack_format_long() {
+    stack_format( |out| {
+        for _ in 0..STACK_BUFFER_LEN {
+            write!( out, "X" ).unwrap();
+        }
+        assert!( write!( out, "Y" ).is_err() );
+    }, |output| {
+        assert_eq!( output.len(), STACK_BUFFER_LEN );
+        assert!( output.iter().all( |&byte| byte == b'X' ) );
     });
 }
 

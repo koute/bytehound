@@ -65,7 +65,7 @@ pub fn enable() -> bool {
         return false;
     }
 
-    ENABLED_BY_USER.compare_and_swap( false, true, Ordering::SeqCst ) == false
+    ENABLED_BY_USER.compare_exchange( false, true, Ordering::SeqCst, Ordering::SeqCst ).is_ok()
 }
 
 pub fn disable() -> bool {
@@ -73,7 +73,7 @@ pub fn disable() -> bool {
         return false;
     }
 
-    ENABLED_BY_USER.compare_and_swap( true, false, Ordering::SeqCst ) == true
+    ENABLED_BY_USER.compare_exchange( true, false, Ordering::SeqCst, Ordering::SeqCst ).is_ok()
 }
 
 fn is_busy() -> bool {
@@ -214,7 +214,7 @@ fn try_enable( state: usize ) -> bool {
         return false;
     }
 
-    if STATE.compare_and_swap( STATE_DISABLED, STATE_STARTING, Ordering::SeqCst ) != STATE_DISABLED {
+    if STATE.compare_exchange( STATE_DISABLED, STATE_STARTING, Ordering::SeqCst, Ordering::SeqCst ).is_err() {
         return false;
     }
 
@@ -259,7 +259,7 @@ pub fn try_disable_if_requested() {
         return;
     }
 
-    if STATE.compare_and_swap( STATE_ENABLED, STATE_STOPPING, Ordering::SeqCst ) != STATE_ENABLED {
+    if STATE.compare_exchange( STATE_ENABLED, STATE_STOPPING, Ordering::SeqCst, Ordering::SeqCst ).is_err() {
         return;
     }
 

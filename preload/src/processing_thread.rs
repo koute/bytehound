@@ -455,7 +455,7 @@ pub(crate) fn thread_main() {
     let mut last_server_poll = coarse_timestamp;
     let mut timestamp_override = None;
     let mut poll_fds = Vec::new();
-    'main_loop: loop {
+    loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
         crate::global::try_disable_if_requested();

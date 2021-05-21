@@ -46,15 +46,15 @@ macro_rules! thread_local_reentrant {
 
                 if ONCE.load( Ordering::Acquire ) != COMPLETE {
                     loop {
-                        let old = ONCE.compare_and_swap( INCOMPLETE, RUNNING, Ordering::SeqCst );
-                        if old == INCOMPLETE {
+                        let old = ONCE.compare_exchange( INCOMPLETE, RUNNING, Ordering::SeqCst, Ordering::SeqCst );
+                        if old.is_ok() {
                             unsafe {
                                 libc::pthread_key_create( &mut KEY, Some( destructor ) );
                             }
 
                             ONCE.store( COMPLETE, Ordering::SeqCst );
                             break;
-                        } else if old == COMPLETE {
+                        } else if old == Err( COMPLETE ) {
                             break;
                         } else {
                             std::thread::yield_now();
