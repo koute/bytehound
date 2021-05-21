@@ -1,3 +1,5 @@
+#![feature(thread_local_const_init)]
+
 #[macro_use]
 extern crate log;
 

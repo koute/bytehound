@@ -115,9 +115,8 @@ macro_rules! thread_local_reentrant {
             fn tls() -> &'static std::thread::LocalKey< std::cell::UnsafeCell< (*mut $ty, bool) > > {
                 use std::cell::UnsafeCell;
 
-                const EMPTY_TLS: UnsafeCell< (*mut $ty, bool) > = UnsafeCell::new( (0 as _, false) );
                 thread_local! {
-                    static TLS: UnsafeCell< (*mut $ty, bool) > = EMPTY_TLS;
+                    static TLS: UnsafeCell< (*mut $ty, bool) > = const { UnsafeCell::new( (0 as _, false) ) };
                 }
 
                 &TLS
