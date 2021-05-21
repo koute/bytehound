@@ -695,7 +695,7 @@ impl Loader {
                     partial_addresses.iter().cloned()
                 );
                 let backtrace_id = self.add_backtrace( raw_id, addresses.as_slice().into(), callback );
-                mem::replace( self.previous_backtrace_on_thread.get_mut( &thread ).unwrap(), addresses );
+                *self.previous_backtrace_on_thread.get_mut( &thread ).unwrap() = addresses;
 
                 backtrace_id
             },
@@ -707,7 +707,7 @@ impl Loader {
                     partial_addresses.iter().cloned().map( |value| value as u64 )
                 );
                 let backtrace_id = self.add_backtrace( raw_id, addresses.as_slice().into(), callback );
-                mem::replace( self.previous_backtrace_on_thread.get_mut( &thread ).unwrap(), addresses );
+                *self.previous_backtrace_on_thread.get_mut( &thread ).unwrap() = addresses;
 
                 backtrace_id
             },
@@ -755,7 +755,7 @@ impl Loader {
                 }
 
                 self.maps = RangeMap::from_vec( maps );
-                let binaries: Vec< _ > = self.binaries.values().cloned().collect();;
+                let binaries: Vec< _ > = self.binaries.values().cloned().collect();
                 for binary_data in binaries {
                     self.scan_for_symbols( &binary_data );
                 }

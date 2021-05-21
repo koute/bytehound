@@ -534,7 +534,6 @@ fn binary_search_range< 'a, T, V, W, F >( array: &'a [T], min: Option< V >, max:
 #[cfg(test)]
 mod tests {
     use super::binary_search_range;
-    use std::ops::Range;
 
     quickcheck! {
         fn binary_search_range_works( xs: Vec< u8 >, min: Option< u8 >, max: Option< u8 > ) -> bool {

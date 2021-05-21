@@ -72,7 +72,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                 },
                 Event::PartialBacktrace { id, thread, frames_invalidated, ref mut addresses } => {
                     let addresses = Loader::expand_partial_backtrace( &mut previous_backtrace_on_thread, thread, frames_invalidated, addresses.iter().cloned() );
-                    mem::replace( previous_backtrace_on_thread.get_mut( &thread ).unwrap(), addresses.clone() );
+                    *previous_backtrace_on_thread.get_mut( &thread ).unwrap() = addresses.clone();
 
                     let new_id = backtrace_cache.entry( addresses.clone() ).or_insert( id );
 
@@ -90,7 +90,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                 },
                 Event::PartialBacktrace32 { id, thread, frames_invalidated, ref mut addresses } => {
                     let addresses = Loader::expand_partial_backtrace( &mut previous_backtrace_on_thread, thread, frames_invalidated, addresses.iter().map( |&address| address as u64 ) );
-                    mem::replace( previous_backtrace_on_thread.get_mut( &thread ).unwrap(), addresses.clone() );
+                    *previous_backtrace_on_thread.get_mut( &thread ).unwrap() = addresses.clone();
 
                     let new_id = backtrace_cache.entry( addresses.clone() ).or_insert( id );
 
