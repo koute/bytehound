@@ -26,7 +26,7 @@ lz4-compress = { path = "../lz4-compress" }
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"
-rev = "6a041ec"
+rev = "dde87e7"
 
 [dev-dependencies]
 quickcheck = "0.9"
