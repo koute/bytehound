@@ -12,9 +12,9 @@ pub struct Channel< T > {
 }
 
 impl< T > Channel< T > {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Channel {
-            queue: Mutex::new( Vec::new() ),
+            queue: parking_lot::const_mutex( Vec::new() ),
             condvar: Condvar::new()
         }
     }

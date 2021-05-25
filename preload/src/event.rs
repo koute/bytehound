@@ -76,9 +76,7 @@ pub(crate) enum InternalEvent {
     }
 }
 
-lazy_static! {
-    static ref EVENT_CHANNEL: Channel< InternalEvent > = Channel::new();
-}
+static EVENT_CHANNEL: Channel< InternalEvent > = Channel::new();
 
 pub(crate) fn send_event( event: InternalEvent ) {
     EVENT_CHANNEL.send( event );
