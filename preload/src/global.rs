@@ -204,6 +204,7 @@ fn spawn_processing_thread() {
     *thread_handle = Some( new_handle );
 }
 
+#[cold]
 #[inline(never)]
 fn try_enable( state: usize ) -> bool {
     if state == STATE_UNINITIALIZED {
@@ -268,6 +269,14 @@ pub fn try_disable_if_requested() {
 
 const THROTTLE_LIMIT: usize = 8192;
 
+#[cold]
+#[inline(never)]
+fn throttle( tls: &RawThreadHandle ) {
+    while ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
+        thread::yield_now();
+    }
+}
+
 /// A handle to per-thread storage; you can't do anything with it.
 ///
 /// Can be sent to other threads.
@@ -287,6 +296,7 @@ impl WeakThreadHandle {
 pub struct StrongThreadHandle( Option< RawThreadHandle > );
 
 impl StrongThreadHandle {
+    #[cold]
     #[inline(never)]
     fn acquire_slow() -> Option< Self > {
         let current_thread_id = syscall::gettid();
@@ -310,8 +320,8 @@ impl StrongThreadHandle {
         }
 
         let tls = TLS.with( |tls| {
-            while ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
-                thread::yield_now();
+            if ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
+                throttle( tls );
             }
 
             if !tls.is_enabled() {
