@@ -48,6 +48,7 @@ impl< T > Channel< T > {
     pub fn send_with< F: FnOnce() -> T >( &self, callback: F ) -> usize {
         let mut guard = self.queue.lock();
         self.condvar.notify_all();
+        guard.reserve( 1 );
         guard.push( callback() );
         guard.len()
     }
@@ -59,6 +60,7 @@ impl< T > Channel< T > {
             self.condvar.notify_all();
         }
 
+        guard.reserve( 1 );
         guard.push( callback() );
         length
     }
