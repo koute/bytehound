@@ -13,7 +13,7 @@ use common::Timestamp;
 
 use crate::InternalEvent;
 use crate::event::{send_event, send_event_throttled};
-use crate::global::{acquire_lock, on_exit};
+use crate::global::{StrongThreadHandle, on_exit};
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
@@ -129,7 +129,7 @@ fn get_glibc_metadata( ptr: *mut c_void, size: usize ) -> (u32, u32, u64) {
 
 #[inline(always)]
 unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     let ptr =
         if is_calloc || opt::get().zero_memory {
             calloc_real( size as size_t, 1 )
@@ -141,31 +141,28 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
         return ptr;
     }
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return ptr };
+    let mut thread = if let Some( thread ) = thread { thread } else { return ptr };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut tls, &mut backtrace );
+    unwind::grab( &mut thread, &mut backtrace );
 
     let (mut flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( ptr, size );
     if is_calloc {
         flags |= event::ALLOC_FLAG_CALLOC;
     }
 
-    let thread = tls.thread_id;
     send_event_throttled( move || {
         InternalEvent::Alloc {
             ptr: ptr as usize,
             size: size as usize,
             backtrace,
-            thread,
             flags,
             extra_usable_space,
             preceding_free_space,
             timestamp: get_timestamp_if_enabled(),
-            throttle
+            thread: thread.decay()
         }
     });
 
-    mem::drop( tls );
     ptr
 }
 
@@ -195,14 +192,13 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
         return ptr::null_mut();
     }
 
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     let new_ptr = realloc_real( old_ptr, size );
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return new_ptr };
+    let mut thread = if let Some( thread ) = thread { thread } else { return new_ptr };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut tls, &mut backtrace );
+    unwind::grab( &mut thread, &mut backtrace );
 
-    let thread = tls.thread_id;
     let timestamp = get_timestamp_if_enabled();
 
     if !new_ptr.is_null() {
@@ -213,12 +209,11 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
                 new_ptr: new_ptr as usize,
                 size: size as usize,
                 backtrace,
-                thread,
                 flags,
                 extra_usable_space,
                 preceding_free_space,
                 timestamp,
-                throttle
+                thread: thread.decay()
             }
         });
     } else {
@@ -226,14 +221,12 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
             InternalEvent::Free {
                 ptr: old_ptr as usize,
                 backtrace,
-                thread,
                 timestamp,
-                throttle
+                thread: thread.decay()
             }
         });
     }
 
-    mem::drop( tls );
     new_ptr
 }
 
@@ -243,27 +236,23 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
         return;
     }
 
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     free_real( ptr );
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return };
+    let mut thread = if let Some( thread ) = thread { thread } else { return };
     let mut backtrace = Backtrace::new();
     if opt::get().grab_backtraces_on_free {
-        unwind::grab( &mut tls, &mut backtrace );
+        unwind::grab( &mut thread, &mut backtrace );
     }
 
-    let thread = tls.thread_id;
     send_event_throttled( || {
         InternalEvent::Free {
             ptr: ptr as usize,
             backtrace,
-            thread,
             timestamp: get_timestamp_if_enabled(),
-            throttle
+            thread: thread.decay()
         }
     });
-
-    mem::drop( tls );
 }
 
 #[no_mangle]
@@ -277,7 +266,7 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
         return libc::EINVAL;
     }
 
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
 
     let pointer = memalign_real( alignment, size );
     *memptr = pointer;
@@ -285,44 +274,40 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
         return libc::ENOMEM;
     }
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return 0 };
+    let mut thread = if let Some( thread ) = thread { thread } else { return 0 };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut tls, &mut backtrace );
+    unwind::grab( &mut thread, &mut backtrace );
 
     let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
-    let thread = tls.thread_id;
     send_event_throttled( || {
         InternalEvent::Alloc {
             ptr: pointer as usize,
             size: size as usize,
             backtrace,
-            thread,
             flags,
             extra_usable_space,
             preceding_free_space,
             timestamp: get_timestamp_if_enabled(),
-            throttle
+            thread: thread.decay()
         }
     });
 
-    mem::drop( tls );
     0
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
 
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
     if ptr == libc::MAP_FAILED {
         return ptr;
     }
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return ptr };
+    let mut thread = if let Some( thread ) = thread { thread } else { return ptr };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut tls, &mut backtrace );
+    unwind::grab( &mut thread, &mut backtrace );
 
-    let thread = tls.thread_id;
     send_event_throttled( || InternalEvent::Mmap {
         pointer: ptr as usize,
         length: length as usize,
@@ -332,61 +317,53 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
         file_descriptor: fildes as u32,
         offset: off as u64,
         backtrace,
-        thread,
         timestamp: get_timestamp_if_enabled(),
-        throttle
+        thread: thread.decay()
     });
 
-    mem::drop( tls );
     ptr
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     let result = syscall::munmap( ptr, length );
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return result };
+    let mut thread = if let Some( thread ) = thread { thread } else { return result };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut tls, &mut backtrace );
+    unwind::grab( &mut thread, &mut backtrace );
 
     if !ptr.is_null() {
-        let thread = tls.thread_id;
         send_event_throttled( || InternalEvent::Munmap {
             ptr: ptr as usize,
             len: length as usize,
             backtrace,
-            thread,
             timestamp: get_timestamp_if_enabled(),
-            throttle
+            thread: thread.decay()
         });
     }
 
-    mem::drop( tls );
     result
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     let result = mallopt_real( param, value );
 
-    let (mut tls, throttle) = if let Some( lock ) = lock { lock } else { return result };
+    let mut thread = if let Some( thread ) = thread { thread } else { return result };
     let mut backtrace = Backtrace::new();
-    unwind::grab( &mut tls, &mut backtrace );
+    unwind::grab( &mut thread, &mut backtrace );
 
-    let thread = tls.thread_id;
     send_event_throttled( || InternalEvent::Mallopt {
         param: param as i32,
         value: value as i32,
         result: result as i32,
         backtrace,
-        thread,
         timestamp: get_timestamp_if_enabled(),
-        throttle
+        thread: thread.decay()
     });
 
-    mem::drop( tls );
     result
 }
 
@@ -424,28 +401,29 @@ pub unsafe extern "C" fn pvalloc( _size: size_t ) -> *mut c_void {
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_set_marker( value: u32 ) {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     send_event( InternalEvent::SetMarker {
         value
     });
 
-    mem::drop( lock );
+    mem::drop( thread );
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_override_next_timestamp( timestamp: u64 ) {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     send_event_throttled( || InternalEvent::OverrideNextTimestamp {
         timestamp: Timestamp::from_usecs( timestamp )
     });
-    mem::drop( lock );
+
+    mem::drop( thread );
 }
 
 fn sync() {
-    let lock = acquire_lock();
+    let thread = StrongThreadHandle::acquire();
     crate::event::flush();
     crate::global::sync();
-    mem::drop( lock );
+    mem::drop( thread );
 }
 
 #[no_mangle]

@@ -5,24 +5,25 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
-use nwind::LocalUnwindContext;
-
-use crate::arc_counter::ArcCounter;
+use crate::arc_lite::ArcLite;
 use crate::event::{InternalEvent, send_event};
 use crate::spin_lock::{SpinLock, SpinLockGuard};
 use crate::syscall;
-use crate::thread_local::{TlsCtor, TlsPointer};
-use crate::unwind::prepare_to_start_unwinding;
+use crate::unwind::{ThreadUnwindState, prepare_to_start_unwinding};
+use crate::timestamp::Timestamp;
+
+pub type RawThreadHandle = ArcLite< ThreadData >;
 
 struct ThreadRegistry {
     pub enabled_for_new_threads: bool,
-    threads: Option< HashMap< u32, *const Tls > >
+    threads: Option< HashMap< u32, RawThreadHandle > >,
+    dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >
 }
 
 unsafe impl Send for ThreadRegistry {}
 
 impl ThreadRegistry {
-    fn threads( &mut self ) -> &mut HashMap< u32, *const Tls > {
+    fn threads( &mut self ) -> &mut HashMap< u32, RawThreadHandle > {
         self.threads.get_or_insert_with( HashMap::new )
     }
 }
@@ -40,7 +41,8 @@ static ENABLED_BY_USER: AtomicBool = AtomicBool::new( false );
 
 static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegistry {
     enabled_for_new_threads: false,
-    threads: None
+    threads: None,
+    dead_thread_queue: Vec::new()
 });
 
 static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () > > > = SpinLock::new( None );
@@ -146,9 +148,7 @@ pub unsafe extern fn on_fork() {
         });
     }
 
-    let mut tls = get_tls();
-    let tls = tls.as_mut().unwrap();
-    tls.set_enabled( false );
+    TLS.with( |tls| tls.set_enabled( false ) );
 }
 
 fn spawn_processing_thread() {
@@ -158,11 +158,13 @@ fn spawn_processing_thread() {
     assert!( !THREAD_RUNNING.load( Ordering::SeqCst ) );
 
     let new_handle = thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
-        {
-            let tls = unsafe { TLS.get().unwrap() };
-            tls.is_internal = true;
+        TLS.with( |tls| {
+            unsafe {
+                *tls.is_internal.get() = true;
+            }
             assert!( !tls.is_enabled() );
-        }
+        });
+
         THREAD_RUNNING.store( true, Ordering::SeqCst );
 
         let result = std::panic::catch_unwind( || {
@@ -176,14 +178,13 @@ fn spawn_processing_thread() {
         let mut thread_registry = THREAD_REGISTRY.lock();
         thread_registry.enabled_for_new_threads = false;
         for tls in thread_registry.threads().values() {
-            let tls = unsafe { &**tls };
-            if tls.is_internal {
+            if tls.is_internal() {
                 continue;
             }
 
             debug!( "Disabling thread {:04x}...", tls.thread_id );
             tls.set_enabled( false );
-            tls.backtrace_cache.clear();
+            tls.unwind_cache.clear();
         }
 
         STATE.store( STATE_DISABLED, Ordering::SeqCst );
@@ -238,8 +239,7 @@ fn try_enable( state: usize ) -> bool {
         let mut thread_registry = THREAD_REGISTRY.lock();
         thread_registry.enabled_for_new_threads = true;
         for tls in thread_registry.threads().values() {
-            let tls = unsafe { &**tls };
-            if tls.is_internal {
+            if tls.is_internal() {
                 continue;
             }
 
@@ -266,35 +266,111 @@ pub fn try_disable_if_requested() {
     send_event( InternalEvent::Exit );
 }
 
-#[inline(always)]
-pub fn acquire_lock() -> Option< (RecursionLock< 'static >, ThrottleHandle) > {
-    let state = STATE.load( Ordering::Relaxed );
-    if state != STATE_ENABLED {
-        if !try_enable( state ) {
-            return None;
-        }
-    }
+const THROTTLE_LIMIT: usize = 8192;
 
-    let tls = get_tls()?;
-    if !tls.is_enabled() {
-        None
-    } else {
-        let throttle = ThrottleHandle::new( &tls );
-        Some( (RecursionLock::new( tls ), throttle) )
+/// A handle to per-thread storage; you can't do anything with it.
+///
+/// Can be sent to other threads.
+pub struct WeakThreadHandle( RawThreadHandle );
+unsafe impl Send for WeakThreadHandle {}
+unsafe impl Sync for WeakThreadHandle {}
+
+impl WeakThreadHandle {
+    pub fn tid( &self ) -> u32 {
+        self.0.thread_id
     }
 }
 
-const THROTTLE_LIMIT: usize = 8192;
+/// A handle to per-thread storage.
+///
+/// Can only be aquired for the current thread, and cannot be sent to other threads.
+pub struct StrongThreadHandle( Option< RawThreadHandle > );
 
-pub struct ThrottleHandle( ArcCounter );
-impl ThrottleHandle {
-    fn new( tls: &Tls ) -> Self {
-        let state = &tls.throttle_state;
-        while state.get() >= THROTTLE_LIMIT {
-            thread::yield_now();
+impl StrongThreadHandle {
+    #[inline(never)]
+    fn acquire_slow() -> Option< Self > {
+        let current_thread_id = syscall::gettid();
+        let mut registry = THREAD_REGISTRY.lock();
+        if let Some( thread ) = registry.threads().get( &current_thread_id ) {
+            debug!( "Acquired a dead thread: {:04X}", current_thread_id );
+            Some( StrongThreadHandle( Some( thread.clone() ) ) )
+        } else {
+            warn!( "Failed to acquire a handle for thread: {:04X}", current_thread_id );
+            None
+        }
+    }
+
+    #[inline(always)]
+    pub fn acquire() -> Option< Self > {
+        let state = STATE.load( Ordering::Relaxed );
+        if state != STATE_ENABLED {
+            if !try_enable( state ) {
+                return None;
+            }
         }
 
-        ThrottleHandle( state.clone() )
+        let tls = TLS.with( |tls| {
+            while ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
+                thread::yield_now();
+            }
+
+            if !tls.is_enabled() {
+                None
+            } else {
+                tls.set_enabled( false );
+                Some( tls.0.clone() )
+            }
+        });
+
+        match tls {
+            Some( Some( tls ) ) => {
+                Some( StrongThreadHandle( Some( tls ) ) )
+            },
+            Some( None ) => {
+                None
+            },
+            None => {
+                Self::acquire_slow()
+            }
+        }
+    }
+
+    pub fn decay( mut self ) -> WeakThreadHandle {
+        let tls = match self.0.take() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        tls.set_enabled( true );
+        WeakThreadHandle( tls )
+    }
+
+    pub fn unwind_state( &mut self ) -> &mut ThreadUnwindState {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        unsafe {
+            &mut *tls.unwind_state.get()
+        }
+    }
+
+    pub fn unwind_cache( &self ) -> &Arc< crate::unwind::Cache > {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        &tls.unwind_cache
+    }
+}
+
+impl Drop for StrongThreadHandle {
+    fn drop( &mut self ) {
+        if let Some( tls ) = self.0.take() {
+            tls.set_enabled( true );
+        }
     }
 }
 
@@ -313,12 +389,11 @@ impl AllocationLock {
                 continue;
             }
 
+            if tls.is_internal() {
+                continue;
+            }
             unsafe {
-                let tls = &**tls;
-                if tls.is_internal {
-                    continue;
-                }
-                tls.throttle_state.add( THROTTLE_LIMIT );
+                ArcLite::add( tls, THROTTLE_LIMIT );
             }
         }
 
@@ -329,14 +404,11 @@ impl AllocationLock {
                 continue;
             }
 
-            unsafe {
-                let tls = &**tls;
-                if tls.is_internal {
-                    continue;
-                }
-                while tls.throttle_state.get() != THROTTLE_LIMIT {
-                    thread::yield_now();
-                }
+            if tls.is_internal() {
+                continue;
+            }
+            while ArcLite::get_refcount_relaxed( tls ) != THROTTLE_LIMIT {
+                thread::yield_now();
             }
         }
 
@@ -357,108 +429,103 @@ impl Drop for AllocationLock {
             }
 
             unsafe {
-                let tls = &**tls;
-                tls.throttle_state.sub( THROTTLE_LIMIT );
+                ArcLite::sub( tls, THROTTLE_LIMIT );
             }
         }
     }
 }
 
-pub struct RecursionLock< 'a > {
-    tls: &'a Tls
+pub struct ThreadData {
+    thread_id: u32,
+    is_internal: UnsafeCell< bool >,
+    enabled: AtomicBool,
+    unwind_cache: Arc< crate::unwind::Cache >,
+    unwind_state: UnsafeCell< ThreadUnwindState >
 }
 
-impl< 'a > RecursionLock< 'a > {
-    fn new( tls: &'a Tls ) -> Self {
-        tls.set_enabled( false );
-        RecursionLock {
-            tls
-        }
-    }
-}
-
-impl< 'a > Drop for RecursionLock< 'a > {
-    fn drop( &mut self ) {
-        self.tls.set_enabled( true );
-    }
-}
-
-impl< 'a > Deref for RecursionLock< 'a > {
-    type Target = Tls;
-    fn deref( &self ) -> &Self::Target {
-        self.tls
-    }
-}
-
-pub struct Tls {
-    pub thread_id: u32,
-    pub is_internal: bool,
-    pub enabled: AtomicBool,
-    pub backtrace_cache: Arc< crate::unwind::Cache >,
-    pub throttle_state: ArcCounter,
-    pub unwind_ctx: UnsafeCell< LocalUnwindContext >,
-    last_dl_state: UnsafeCell< (u64, u64) >
-}
-
-impl Drop for Tls {
-    fn drop( &mut self ) {
-        let mut registry = THREAD_REGISTRY.lock();
-        self.set_enabled( false );
-        registry.threads().remove( &self.thread_id );
-    }
-}
-
-impl Tls {
+impl ThreadData {
     #[inline(always)]
     pub fn is_enabled( &self ) -> bool {
         self.enabled.load( Ordering::Relaxed )
     }
 
+    #[inline(always)]
+    pub fn is_internal( &self ) -> bool {
+        unsafe {
+            *self.is_internal.get()
+        }
+    }
+
     fn set_enabled( &self, value: bool ) {
         self.enabled.store( value, Ordering::Relaxed )
     }
+}
 
-    pub unsafe fn unwind_ctx( &self ) -> &mut LocalUnwindContext {
-        &mut *self.unwind_ctx.get()
-    }
+struct ThreadSentinel( RawThreadHandle );
 
-    pub unsafe fn last_dl_state( &self ) -> &mut (u64, u64) {
-        &mut *self.last_dl_state.get()
+impl Deref for ThreadSentinel {
+    type Target = RawThreadHandle;
+    fn deref( &self ) -> &Self::Target {
+        &self.0
     }
 }
 
-struct Constructor;
-impl TlsCtor< Tls > for Constructor {
-    fn thread_local_new< F >( self, callback: F ) -> TlsPointer< Tls >
-        where F: FnOnce( Tls ) -> TlsPointer< Tls >
-    {
-        let thread_id = syscall::gettid();
+impl Drop for ThreadSentinel {
+    fn drop( &mut self ) {
         let mut registry = THREAD_REGISTRY.lock();
+        if let Some( thread ) = registry.threads().get( &self.thread_id ) {
+            let thread = thread.clone();
+            registry.dead_thread_queue.push( (crate::timestamp::get_timestamp(), thread) );
+        }
 
-        let tls = Tls {
-            thread_id,
-            is_internal: false,
-            enabled: AtomicBool::new( registry.enabled_for_new_threads ),
-            backtrace_cache: Arc::new( crate::unwind::Cache::new() ),
-            throttle_state: ArcCounter::new(),
-            unwind_ctx: UnsafeCell::new( LocalUnwindContext::new() ),
-            last_dl_state: UnsafeCell::new( (0, 0) )
-        };
-
-        let tls = callback( tls );
-        registry.threads().insert( thread_id, tls.get_ptr() as *const _ );
-
-        tls
+        debug!( "Thread dropped: {:04X}", self.thread_id );
     }
 }
 
 thread_local_reentrant! {
-    static TLS: Tls [Constructor];
+    static TLS: ThreadSentinel = |callback| {
+        let thread_id = syscall::gettid();
+        let mut registry = THREAD_REGISTRY.lock();
+
+        let tls = ThreadData {
+            thread_id,
+            is_internal: UnsafeCell::new( false ),
+            enabled: AtomicBool::new( registry.enabled_for_new_threads ),
+            unwind_cache: Arc::new( crate::unwind::Cache::new() ),
+            unwind_state: UnsafeCell::new( ThreadUnwindState::new() )
+        };
+
+        let tls = ArcLite::new( tls );
+        registry.threads().insert( thread_id, tls.clone() );
+
+        callback( ThreadSentinel( tls ) )
+    };
 }
 
-#[inline]
-pub fn get_tls() -> Option< &'static Tls > {
-    unsafe {
-        TLS.get().map( |tls| tls as _ )
+pub fn garbage_collect_dead_threads( now: Timestamp ) {
+    use std::collections::hash_map::Entry;
+
+    let mut registry = THREAD_REGISTRY.lock();
+    let registry = &mut *registry;
+
+    if registry.dead_thread_queue.is_empty() {
+        return;
+    }
+
+    let count = registry.dead_thread_queue.iter()
+        .take_while( |&(time_of_death, _)| time_of_death.as_secs() + 3 < now.as_secs() )
+        .count();
+
+    if count == 0 {
+        return;
+    }
+
+    let threads = registry.threads.get_or_insert_with( HashMap::new );
+    for (_, thread) in registry.dead_thread_queue.drain( ..count ) {
+        if let Entry::Occupied( entry ) = threads.entry( thread.thread_id ) {
+            if RawThreadHandle::ptr_eq( entry.get(), &thread ) {
+                entry.remove_entry();
+            }
+        }
     }
 }

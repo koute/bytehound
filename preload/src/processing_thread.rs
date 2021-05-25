@@ -31,7 +31,7 @@ use common::get_local_ips;
 use crate::{CMDLINE, EXECUTABLE, PID};
 use crate::arch;
 use crate::event::{InternalEvent, send_event, timed_recv_all_events};
-use crate::global::{AllocationLock, get_tls};
+use crate::global::AllocationLock;
 use crate::opt;
 use crate::timestamp::{Timestamp, get_timestamp, get_wall_clock};
 use crate::utils::{
@@ -411,8 +411,6 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
 }
 
 pub(crate) fn thread_main() {
-    assert!( !get_tls().unwrap().is_enabled() );
-
     info!( "Starting event thread..." );
 
     let uuid = generate_data_id();
@@ -489,6 +487,8 @@ pub(crate) fn thread_main() {
             }
         }
 
+        crate::global::garbage_collect_dead_threads( coarse_timestamp );
+
         if events.is_empty() && !running {
             break;
         }
@@ -505,7 +505,7 @@ pub(crate) fn thread_main() {
         let skip = serializer.inner().is_none();
         for event in events.drain(..) {
             match event {
-                InternalEvent::Alloc { ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, mut timestamp, throttle } => {
+                InternalEvent::Alloc { ptr, size, backtrace, flags, extra_usable_space, preceding_free_space, mut timestamp, thread } => {
                     if skip {
                         continue;
                     }
@@ -515,15 +515,16 @@ pub(crate) fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
-                        mem::drop( throttle );
+                    let tid = thread.tid();
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                        mem::drop( thread );
                         let event = Event::Alloc {
                             timestamp,
                             allocation: AllocBody {
                                 pointer: ptr as u64,
                                 size: size as u64,
                                 backtrace,
-                                thread,
+                                thread: tid,
                                 flags,
                                 extra_usable_space,
                                 preceding_free_space
@@ -532,7 +533,7 @@ pub(crate) fn thread_main() {
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
-                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, thread, flags, extra_usable_space, preceding_free_space, mut timestamp, throttle } => {
+                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, flags, extra_usable_space, preceding_free_space, mut timestamp, thread } => {
                     if skip {
                         continue;
                     }
@@ -542,14 +543,16 @@ pub(crate) fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
-                        mem::drop( throttle );
+                    let tid = thread.tid();
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                        mem::drop( thread );
                         let event = Event::Realloc {
                             timestamp, old_pointer: old_ptr as u64,
                             allocation: AllocBody {
                                 pointer: new_ptr as u64,
                                 size: size as u64,
-                                backtrace, thread,
+                                backtrace,
+                                thread: tid,
                                 flags,
                                 extra_usable_space,
                                 preceding_free_space
@@ -558,7 +561,7 @@ pub(crate) fn thread_main() {
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
-                InternalEvent::Free { ptr, backtrace, thread, mut timestamp, throttle } => {
+                InternalEvent::Free { ptr, backtrace, mut timestamp, thread } => {
                     if skip {
                         continue;
                     }
@@ -568,13 +571,14 @@ pub(crate) fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
-                        mem::drop( throttle );
-                        let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread };
+                    let tid = thread.tid();
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                        mem::drop( thread );
+                        let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
-                InternalEvent::Mmap { pointer, length, backtrace, thread, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, mut timestamp, throttle } => {
+                InternalEvent::Mmap { pointer, length, backtrace, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, mut timestamp, thread } => {
                     if skip {
                         continue;
                     }
@@ -584,14 +588,15 @@ pub(crate) fn thread_main() {
                     }
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
-                        mem::drop( throttle );
+                    let tid = thread.tid();
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                        mem::drop( thread );
                         let event = Event::MemoryMap {
                             timestamp,
                             pointer: pointer as u64,
                             length: length as u64,
                             backtrace,
-                            thread,
+                            thread: tid,
                             requested_address: requested_address as u64,
                             mmap_protection,
                             mmap_flags,
@@ -602,7 +607,7 @@ pub(crate) fn thread_main() {
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
-                InternalEvent::Munmap { ptr, len, backtrace, thread, mut timestamp, throttle } => {
+                InternalEvent::Munmap { ptr, len, backtrace, mut timestamp, thread } => {
                     if skip {
                         continue;
                     }
@@ -612,13 +617,14 @@ pub(crate) fn thread_main() {
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
-                        mem::drop( throttle );
-                        let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread };
+                    let tid = thread.tid();
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                        mem::drop( thread );
+                        let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
-                InternalEvent::Mallopt { param, value, result, mut timestamp, backtrace, thread, throttle } => {
+                InternalEvent::Mallopt { param, value, result, mut timestamp, backtrace, thread } => {
                     if skip {
                         continue;
                     }
@@ -628,9 +634,10 @@ pub(crate) fn thread_main() {
                     }
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, thread, backtrace, &mut next_backtrace_id ) {
-                        mem::drop( throttle );
-                        let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread };
+                    let tid = thread.tid();
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                        mem::drop( thread );
+                        let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },

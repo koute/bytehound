@@ -5,13 +5,28 @@ use perf_event_open::{Perf, EventSource, Event};
 use nwind::{
     LocalAddressSpace,
     LocalAddressSpaceOptions,
+    LocalUnwindContext,
     UnwindControl
 };
 use parking_lot::{RwLock, RwLockWriteGuard};
 
-use crate::global::Tls;
+use crate::global::StrongThreadHandle;
 use crate::spin_lock::SpinLock;
 use crate::opt;
+
+pub struct ThreadUnwindState {
+    unwind_ctx: LocalUnwindContext,
+    last_dl_state: (u64, u64)
+}
+
+impl ThreadUnwindState {
+    pub fn new() -> Self {
+        ThreadUnwindState {
+            unwind_ctx: LocalUnwindContext::new(),
+            last_dl_state: (0, 0)
+        }
+    }
+}
 
 type Context = *mut c_void;
 type ReasonCode = c_int;
@@ -79,14 +94,14 @@ pub struct Backtrace {
 }
 
 impl Backtrace {
-    fn reserve_from_cache( &mut self, tls: &Tls ) {
-        let mut entries = tls.backtrace_cache.entries.lock();
+    fn reserve_from_cache( &mut self, unwind_cache: &Arc< Cache > ) {
+        let mut entries = unwind_cache.entries.lock();
         if let Some( entry ) = entries.pop() {
             let (frames, cache) = entry.unpack();
             self.frames = frames;
             self.cache = cache;
         } else {
-            self.cache = Arc::downgrade( &tls.backtrace_cache );
+            self.cache = Arc::downgrade( &unwind_cache );
         }
     }
 
@@ -257,8 +272,7 @@ fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> parking_lot
     AS.read()
 }
 
-fn reload_if_necessary_dl_iterate_phdr( tls: &Tls ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
-    let last_state = unsafe { tls.last_dl_state() };
+fn reload_if_necessary_dl_iterate_phdr( last_state: &mut (u64, u64) ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
     let dl_state = get_dl_state();
     if *last_state != dl_state {
         *last_state = dl_state;
@@ -284,8 +298,8 @@ fn get_dl_state() -> (u64, u64) {
 }
 
 #[inline(never)]
-pub fn grab( tls: &Tls, out: &mut Backtrace ) {
-    out.reserve_from_cache( tls );
+pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
+    out.reserve_from_cache( tls.unwind_cache() );
     debug_assert!( out.frames.is_empty() );
 
     if false {
@@ -296,16 +310,18 @@ pub fn grab( tls: &Tls, out: &mut Backtrace ) {
         return;
     }
 
+    let unwind_state = tls.unwind_state();
+    let unwind_ctx = &mut unwind_state.unwind_ctx;
+
     let address_space = unsafe {
         if let Some( ref perf ) = PERF {
             reload_if_necessary_perf_event_open( perf )
         } else {
-            reload_if_necessary_dl_iterate_phdr( tls )
+            reload_if_necessary_dl_iterate_phdr( &mut unwind_state.last_dl_state )
         }
     };
 
     let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && address_space.is_shadow_stack_enabled();
-    let unwind_ctx = unsafe { tls.unwind_ctx() };
     if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
         address_space.unwind( unwind_ctx, |address| {
             out.frames.push( address );

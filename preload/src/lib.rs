@@ -26,7 +26,7 @@ mod logger;
 mod opt;
 mod syscall;
 mod raw_file;
-mod arc_counter;
+mod arc_lite;
 mod writers;
 mod writer_memory;
 mod api;

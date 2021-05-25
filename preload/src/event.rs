@@ -4,7 +4,7 @@ use std::sync::Arc;
 use common::Timestamp;
 
 use crate::channel::Channel;
-use crate::global::ThrottleHandle;
+use crate::global::WeakThreadHandle;
 use crate::unwind::Backtrace;
 
 pub(crate) enum InternalEvent {
@@ -12,31 +12,28 @@ pub(crate) enum InternalEvent {
         ptr: usize,
         size: usize,
         backtrace: Backtrace,
-        thread: u32,
         flags: u32,
         extra_usable_space: u32,
         preceding_free_space: u64,
         timestamp: Timestamp,
-        throttle: ThrottleHandle
+        thread: WeakThreadHandle
     },
     Realloc {
         old_ptr: usize,
         new_ptr: usize,
         size: usize,
         backtrace: Backtrace,
-        thread: u32,
         flags: u32,
         extra_usable_space: u32,
         preceding_free_space: u64,
         timestamp: Timestamp,
-        throttle: ThrottleHandle
+        thread: WeakThreadHandle
     },
     Free {
         ptr: usize,
         backtrace: Backtrace,
-        thread: u32,
         timestamp: Timestamp,
-        throttle: ThrottleHandle
+        thread: WeakThreadHandle
     },
     Exit,
     GrabMemoryDump,
@@ -51,27 +48,24 @@ pub(crate) enum InternalEvent {
         mmap_flags: u32,
         offset: u64,
         backtrace: Backtrace,
-        thread: u32,
         file_descriptor: u32,
         timestamp: Timestamp,
-        throttle: ThrottleHandle
+        thread: WeakThreadHandle
     },
     Munmap {
         ptr: usize,
         len: usize,
         backtrace: Backtrace,
-        thread: u32,
         timestamp: Timestamp,
-        throttle: ThrottleHandle
+        thread: WeakThreadHandle
     },
     Mallopt {
         param: i32,
         value: i32,
         result: i32,
         backtrace: Backtrace,
-        thread: u32,
         timestamp: Timestamp,
-        throttle: ThrottleHandle
+        thread: WeakThreadHandle
     },
     OverrideNextTimestamp {
         timestamp: Timestamp
