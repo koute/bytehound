@@ -80,7 +80,7 @@ pub fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > 
             continue;
         }
 
-        if region.name == "[heap]" || region.name == "[stack]" || region.name == "[vdso]" {
+        if region.name == "[heap]" || region.name == "[stack]" || region.name == "[vdso]" || region.name == "[vsyscall]" {
             continue;
         }
 
