@@ -70,6 +70,17 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                         continue;
                     }
                 },
+                Event::Backtrace32 { id, ref addresses } => {
+                    let addresses = addresses.iter().map( |&p| p as u64 ).collect();
+                    let new_id = backtrace_cache.entry( addresses ).or_insert( id );
+
+                    backtrace_map.put( id, *new_id );
+                    remap_backtraces = true;
+
+                    if id != *new_id {
+                        continue;
+                    }
+                },
                 Event::PartialBacktrace { id, thread, frames_invalidated, ref mut addresses } => {
                     let addresses = Loader::expand_partial_backtrace( &mut previous_backtrace_on_thread, thread, frames_invalidated, addresses.iter().cloned() );
                     *previous_backtrace_on_thread.get_mut( &thread ).unwrap() = addresses.clone();

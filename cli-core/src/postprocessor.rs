@@ -52,7 +52,8 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
         let mut is_backtrace = false;
         let mut write = true;
         match event {
-            Event::Backtrace { .. } => {
+            Event::Backtrace { .. } |
+            Event::Backtrace32 { .. } => {
                 is_backtrace = true;
                 write = false;
             },

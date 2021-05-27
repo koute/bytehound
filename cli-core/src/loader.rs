@@ -714,6 +714,9 @@ impl Loader {
             Event::Backtrace { id: raw_id, addresses } => {
                 self.add_backtrace( raw_id, addresses, callback )
             },
+            Event::Backtrace32 { id: raw_id, addresses } => {
+                self.add_backtrace( raw_id, addresses.iter().map( |&p| p as u64 ).collect(), callback )
+            },
             _ => {
                 unreachable!();
             }
@@ -775,7 +778,8 @@ impl Loader {
             },
             event @ Event::PartialBacktrace { .. } |
             event @ Event::PartialBacktrace32 { .. } |
-            event @ Event::Backtrace { .. } => {
+            event @ Event::Backtrace { .. } |
+            event @ Event::Backtrace32 { .. } => {
                 self.process_backtrace_event( event, |_, _| {} );
             },
             Event::String { id, string } => {

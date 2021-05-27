@@ -16,14 +16,16 @@ use crate::opt;
 
 pub struct ThreadUnwindState {
     unwind_ctx: LocalUnwindContext,
-    last_dl_state: (u64, u64)
+    last_dl_state: (u64, u64),
+    last_backtrace_depth: usize
 }
 
 impl ThreadUnwindState {
     pub fn new() -> Self {
         ThreadUnwindState {
             unwind_ctx: LocalUnwindContext::new(),
-            last_dl_state: (0, 0)
+            last_dl_state: (0, 0),
+            last_backtrace_depth: 0
         }
     }
 }
@@ -298,6 +300,18 @@ fn get_dl_state() -> (u64, u64) {
 }
 
 #[inline(never)]
+#[cold]
+fn on_broken_unwinding( last_backtrace_depth: usize, stale_frame_count: usize ) {
+    error!(
+        "Unwinding is totally broken; last backtrace was {} frames long, and yet we've apparently popped {} frames since last unwind",
+        last_backtrace_depth,
+        stale_frame_count
+    );
+
+    unsafe { libc::abort(); }
+}
+
+#[inline(never)]
 pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
     out.reserve_from_cache( tls.unwind_cache() );
     debug_assert!( out.frames.is_empty() );
@@ -328,11 +342,32 @@ pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
             UnwindControl::Continue
         });
         out.stale_count = None;
+        unwind_state.last_backtrace_depth = out.frames.len();
     } else {
         let stale_count = address_space.unwind_through_fresh_frames( unwind_ctx, |address| {
             out.frames.push( address );
             UnwindControl::Continue
         });
+
+        let last_backtrace_depth = unwind_state.last_backtrace_depth;
+        let mut new_backtrace_depth = out.frames.len();
+
+        if let Some( stale_frame_count ) = stale_count {
+            if stale_frame_count > last_backtrace_depth {
+                on_broken_unwinding( last_backtrace_depth, stale_frame_count );
+            } else {
+                new_backtrace_depth += last_backtrace_depth - stale_frame_count;
+                if cfg!( feature = "debug-logs" ) {
+                    debug!( "Finished unwinding; backtrace depth: {} (fresh = {}, non-fresh = {})", new_backtrace_depth, out.frames.len(), last_backtrace_depth - stale_frame_count );
+                }
+            }
+        } else {
+            if cfg!( feature = "debug-logs" ) {
+                debug!( "Finished unwinding; backtrace depth: {}", new_backtrace_depth );
+            }
+        }
+
+        unwind_state.last_backtrace_depth = new_backtrace_depth;
         out.stale_count = stale_count.map( |value| value as u32 );
     }
 

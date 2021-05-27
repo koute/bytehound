@@ -188,6 +188,10 @@ pub enum Event< 'a > {
         frames_invalidated: FramesInvalidated,
         addresses: Cow< 'a, [u32] >
     },
+    Backtrace32 {
+        id: u64,
+        addresses: Cow< 'a, [u32] >
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

@@ -16,6 +16,8 @@ use std::io::{
     SeekFrom
 };
 
+use std::collections::HashMap;
+
 use common::speedy::{Writable, Readable};
 
 use common::event::{DataId, Event, AllocBody};
@@ -410,6 +412,130 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
     Some( (fp, output_path.into()) )
 }
 
+struct NoHash;
+impl std::hash::BuildHasher for NoHash {
+    type Hasher = NoHasher;
+    fn build_hasher( &self ) -> Self::Hasher {
+        NoHasher( 0 )
+    }
+}
+
+struct NoHasher( u64 );
+impl std::hash::Hasher for NoHasher {
+    fn finish( &self ) -> u64 {
+        self.0
+    }
+
+    fn write( &mut self, _bytes: &[u8] ) {
+        unimplemented!()
+    }
+
+    fn write_u32( &mut self, value: u32 ) {
+        self.0 ^= value as u64;
+    }
+
+    fn write_u64( &mut self, value: u64 ) {
+        self.0 ^= value;
+    }
+
+    fn write_usize( &mut self, value: usize ) {
+        self.0 ^= value as u64;
+    }
+}
+
+struct BacktraceCacheEntry {
+    id: u64,
+    backtrace: Vec< usize >
+}
+
+#[derive(Default)]
+struct BacktraceCacheThreadState {
+    current_backtrace: Vec< usize >
+}
+
+pub struct BacktraceCache {
+    next_id: u64,
+    thread_state: HashMap< u32, BacktraceCacheThreadState, NoHash >,
+    buffer: Vec< usize >,
+    cache: lru::LruCache< usize, BacktraceCacheEntry, NoHash >
+}
+
+impl BacktraceCache {
+    pub fn new() -> Self {
+        BacktraceCache {
+            next_id: 1,
+            thread_state: HashMap::with_hasher( NoHash ),
+            buffer: Vec::new(),
+            cache: lru::LruCache::with_hasher( 8192, NoHash )
+        }
+    }
+
+    pub fn resolve( &mut self, tid: u32, backtrace: crate::unwind::Backtrace ) -> (u64, Option< &[usize] >) {
+        if backtrace.is_empty() {
+            return (0, None);
+        }
+
+        let thread_state = self.thread_state.entry( tid ).or_insert_with( BacktraceCacheThreadState::default );
+
+        let mut key = 0;
+        match backtrace.stale_count {
+            None => {
+                thread_state.current_backtrace.clear();
+                thread_state.current_backtrace.reserve( backtrace.frames.len() );
+                for &frame in &backtrace.frames {
+                    key ^= frame;
+                    thread_state.current_backtrace.push( frame );
+                }
+            },
+            Some( count ) => {
+                let count = count as usize;
+                self.buffer.reserve( backtrace.frames.len() + thread_state.current_backtrace[ count.. ].len() );
+
+                for &frame in &backtrace.frames {
+                    key ^= frame;
+                    self.buffer.push( frame );
+                }
+                for &frame in &thread_state.current_backtrace[ count.. ] {
+                    key ^= frame;
+                    self.buffer.push( frame );
+                }
+
+                std::mem::swap( &mut thread_state.current_backtrace, &mut self.buffer );
+                self.buffer.clear();
+            }
+        }
+
+        let id = match self.cache.get_mut( &key ) {
+            None => {
+                let id = self.next_id;
+                self.next_id += 1;
+                self.cache.put( key, BacktraceCacheEntry {
+                    id,
+                    backtrace: thread_state.current_backtrace.clone()
+                });
+
+                id
+            },
+            Some( entry ) => {
+                if entry.backtrace == thread_state.current_backtrace {
+                    return (entry.id, None);
+                } else {
+                    let id = self.next_id;
+                    self.next_id += 1;
+
+                    entry.id = id;
+                    entry.backtrace.clear();
+                    entry.backtrace.extend_from_slice( &thread_state.current_backtrace );
+
+                    id
+                }
+            }
+        };
+
+        (id, Some( &thread_state.current_backtrace ))
+    }
+}
+
 pub(crate) fn thread_main() {
     info!( "Starting event thread..." );
 
@@ -444,7 +570,6 @@ pub(crate) fn thread_main() {
     }
 
     let mut events = Vec::new();
-    let mut next_backtrace_id = 0;
     let mut last_flush_timestamp = get_timestamp();
     let mut coarse_timestamp = get_timestamp();
     let mut running = true;
@@ -453,6 +578,7 @@ pub(crate) fn thread_main() {
     let mut last_server_poll = coarse_timestamp;
     let mut timestamp_override = None;
     let mut poll_fds = Vec::new();
+    let mut backtrace_cache = BacktraceCache::new();
     loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
@@ -516,7 +642,7 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::Alloc {
                             timestamp,
@@ -544,7 +670,7 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::Realloc {
                             timestamp, old_pointer: old_ptr as u64,
@@ -572,7 +698,7 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
@@ -589,7 +715,7 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::MemoryMap {
                             timestamp,
@@ -618,7 +744,7 @@ pub(crate) fn thread_main() {
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
@@ -635,7 +761,7 @@ pub(crate) fn thread_main() {
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut next_backtrace_id ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );

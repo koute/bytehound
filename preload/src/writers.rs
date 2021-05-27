@@ -9,7 +9,7 @@ use std::path::Path;
 use nwind::proc_maps::Region;
 use nwind::proc_maps::parse as parse_maps;
 
-use common::event::{DataId, Event, FramesInvalidated, HeaderBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
+use common::event::{DataId, Event, HeaderBody, HEADER_FLAG_IS_LITTLE_ENDIAN};
 use common::speedy::Writable;
 use common::Timestamp;
 
@@ -19,6 +19,7 @@ use crate::opt;
 use crate::timestamp::{get_timestamp, get_wall_clock};
 use crate::unwind::Backtrace;
 use crate::utils::read_file;
+use crate::processing_thread::BacktraceCache;
 
 fn read_maps() -> io::Result< Vec< Region > > {
     let maps = read_file( "/proc/self/maps" )?;
@@ -144,35 +145,23 @@ fn write_environ< U: Write >( mut serializer: U ) -> io::Result< () > {
     Ok(())
 }
 
-pub fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Backtrace, next_backtrace_id: &mut u64 ) -> io::Result< u64 > {
-    if backtrace.is_empty() {
-        return Ok( 0 );
-    }
-
-    let id = *next_backtrace_id;
-    *next_backtrace_id = id + 1;
-
-    let frames_invalidated = match backtrace.stale_count {
-        None => FramesInvalidated::All,
-        Some( value ) => FramesInvalidated::Some( value )
+pub fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Backtrace, cache: &mut BacktraceCache ) -> io::Result< u64 > {
+    let (id, backtrace) = cache.resolve( thread, backtrace );
+    let backtrace = match backtrace {
+        Some( backtrace ) => backtrace,
+        None => return Ok( id )
     };
 
     if mem::size_of::< usize >() == mem::size_of::< u32 >() {
-        let frames: &[usize] = backtrace.frames.as_slice();
-        let frames: &[u32] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u32, frames.len() ) };
-        Event::PartialBacktrace32 {
+        let frames: &[u32] = unsafe { std::slice::from_raw_parts( backtrace.as_ptr() as *const u32, backtrace.len() ) };
+        Event::Backtrace32 {
             id,
-            thread,
-            frames_invalidated,
             addresses: frames.into()
         }.write_to_stream( serializer )?;
     } else if mem::size_of::< usize >() == mem::size_of::< u64 >() {
-        let frames: &[usize] = backtrace.frames.as_slice();
-        let frames: &[u64] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u64, frames.len() ) };
-        Event::PartialBacktrace {
+        let frames: &[u64] = unsafe { std::slice::from_raw_parts( backtrace.as_ptr() as *const u64, backtrace.len() ) };
+        Event::Backtrace {
             id,
-            thread,
-            frames_invalidated,
             addresses: frames.into()
         }.write_to_stream( serializer )?;
     } else {
