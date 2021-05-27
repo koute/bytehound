@@ -191,7 +191,7 @@ extern "C" fn on_backtrace( context: Context, data: *mut c_void ) -> ReasonCode 
 lazy_static! {
     static ref AS: RwLock< LocalAddressSpace > = {
         let opts = LocalAddressSpaceOptions::new()
-            .should_load_symbols( cfg!(feature = "logging") && log_enabled!( ::log::Level::Debug ) );
+            .should_load_symbols( cfg!( feature = "debug-logs" ) && log_enabled!( ::log::Level::Debug ) );
 
         let mut address_space = LocalAddressSpace::new_with_opts( opts ).unwrap();
         address_space.use_shadow_stack( opt::get().enable_shadow_stack );
