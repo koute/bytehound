@@ -15,7 +15,7 @@ use crate::timestamp::Timestamp;
 pub type RawThreadHandle = ArcLite< ThreadData >;
 
 struct ThreadRegistry {
-    pub enabled_for_new_threads: bool,
+    enabled_for_new_threads: bool,
     threads: Option< HashMap< u32, RawThreadHandle > >,
     dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >
 }
