@@ -19,7 +19,10 @@ pub struct Opts {
     pub register_sigusr2: bool,
     pub use_perf_event_open: bool,
     pub write_binaries_to_output: bool,
-    pub zero_memory: bool
+    pub zero_memory: bool,
+    pub cull_temporary_allocations: bool,
+    pub temporary_allocation_lifetime_threshold: u64,
+    pub temporary_allocation_pending_threshold: usize
 }
 
 static mut OPTS: Opts = Opts {
@@ -39,7 +42,10 @@ static mut OPTS: Opts = Opts {
     register_sigusr2: true,
     use_perf_event_open: true,
     write_binaries_to_output: true,
-    zero_memory: false
+    zero_memory: false,
+    cull_temporary_allocations: false,
+    temporary_allocation_lifetime_threshold: 10000,
+    temporary_allocation_pending_threshold: 32768,
 };
 
 trait ParseVar: Sized {
@@ -59,6 +65,18 @@ impl ParseVar for u16 {
 }
 
 impl ParseVar for u32 {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        value.to_str()?.parse().ok()
+    }
+}
+
+impl ParseVar for u64 {
+    fn parse_var( value: &OsStr ) -> Option< Self > {
+        value.to_str()?.parse().ok()
+    }
+}
+
+impl ParseVar for usize {
     fn parse_var( value: &OsStr ) -> Option< Self > {
         value.to_str()?.parse().ok()
     }
@@ -120,7 +138,13 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_USE_PERF_EVENT_OPEN"       => &mut opts.use_perf_event_open,
         "MEMORY_PROFILER_USE_SHADOW_STACK"          => &mut opts.enable_shadow_stack,
         "MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT"  => &mut opts.write_binaries_to_output,
-        "MEMORY_PROFILER_ZERO_MEMORY"               => &mut opts.zero_memory
+        "MEMORY_PROFILER_ZERO_MEMORY"               => &mut opts.zero_memory,
+        "MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS"
+            => &mut opts.cull_temporary_allocations,
+        "MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD"
+            => &mut opts.temporary_allocation_lifetime_threshold,
+        "MEMORY_PROFILER_TEMPORARY_ALLOCATION_PENDING_THRESHOLD"
+            => &mut opts.temporary_allocation_pending_threshold
     }
 
     opts.is_initialized = true;
