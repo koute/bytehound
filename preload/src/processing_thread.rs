@@ -465,12 +465,12 @@ pub struct BacktraceCache {
 }
 
 impl BacktraceCache {
-    pub fn new() -> Self {
+    pub fn new( cache_size: usize ) -> Self {
         BacktraceCache {
             next_id: 1,
             thread_state: HashMap::with_hasher( NoHash ),
             buffer: Vec::new(),
-            cache: lru::LruCache::with_hasher( 8192, NoHash )
+            cache: lru::LruCache::with_hasher( cache_size, NoHash )
         }
     }
 
@@ -593,7 +593,7 @@ pub(crate) fn thread_main() {
     let mut last_server_poll = coarse_timestamp;
     let mut timestamp_override = None;
     let mut poll_fds = Vec::new();
-    let mut backtrace_cache = BacktraceCache::new();
+    let mut backtrace_cache = BacktraceCache::new( opt::get().backtrace_cache_size );
     let mut bucket_cache = Vec::new();
     let bucket_cache_maximum_size = 8192;
     let mut allocations: OrderedMap< NonZeroUsize, AllocationBucket, NoHash > = OrderedMap::default();

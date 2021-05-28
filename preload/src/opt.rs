@@ -21,6 +21,7 @@ pub struct Opts {
     pub write_binaries_to_output: bool,
     pub zero_memory: bool,
     pub gather_mmap_calls: bool,
+    pub backtrace_cache_size: usize,
     pub cull_temporary_allocations: bool,
     pub temporary_allocation_lifetime_threshold: u64,
     pub temporary_allocation_pending_threshold: usize
@@ -45,6 +46,7 @@ static mut OPTS: Opts = Opts {
     write_binaries_to_output: true,
     zero_memory: false,
     gather_mmap_calls: true,
+    backtrace_cache_size: 16384,
     cull_temporary_allocations: false,
     temporary_allocation_lifetime_threshold: 10000,
     temporary_allocation_pending_threshold: 32768,
@@ -142,6 +144,7 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT"  => &mut opts.write_binaries_to_output,
         "MEMORY_PROFILER_ZERO_MEMORY"               => &mut opts.zero_memory,
         "MEMORY_PROFILER_GATHER_MMAP_CALLS"         => &mut opts.gather_mmap_calls,
+        "MEMORY_PROFILER_BACKTRACE_CACHE_SIZE"      => &mut opts.backtrace_cache_size,
         "MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS"
             => &mut opts.cull_temporary_allocations,
         "MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD"
