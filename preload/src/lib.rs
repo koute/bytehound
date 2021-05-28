@@ -57,7 +57,6 @@ lazy_static! {
     };
 }
 
-#[cfg(not(test))]
 pub use crate::api::{
     memory_profiler_raw_mmap,
     memory_profiler_raw_munmap,
