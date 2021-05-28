@@ -1,6 +1,6 @@
 [package]
 name = "memory-profiler-cli"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Jan Bujak <j@exia.io>"]
 edition = "2018"
 
