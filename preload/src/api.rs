@@ -306,7 +306,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
     let thread = StrongThreadHandle::acquire();
 
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
-    if ptr == libc::MAP_FAILED {
+    if ptr == libc::MAP_FAILED || !opt::get().gather_mmap_calls {
         return ptr;
     }
 
@@ -334,6 +334,10 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let thread = StrongThreadHandle::acquire();
     let result = syscall::munmap( ptr, length );
+
+    if !opt::get().gather_mmap_calls {
+        return result;
+    }
 
     let mut thread = if let Some( thread ) = thread { thread } else { return result };
     let mut backtrace = Backtrace::new();
