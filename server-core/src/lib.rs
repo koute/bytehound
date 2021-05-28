@@ -496,6 +496,8 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
         };
 
         let timestamp = timestamp.as_secs();
+        assert!( x == (-1_i32 as u64) || timestamp >= x );
+
         let timestamp_changed = timestamp != x;
 
         if timestamp_changed {

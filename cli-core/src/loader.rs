@@ -94,7 +94,7 @@ pub struct Loader {
     backtrace_to_id: HashMap< Vec< u64 >, BacktraceId >,
     backtrace_remappings: HashMap< u64, BacktraceId >,
     group_stats: Vec< GroupStatistics >,
-    operations: Vec< OperationId >,
+    operations: Vec< (Timestamp, OperationId) >,
     allocations: Vec< Allocation >,
     allocation_map: HashMap< DataPointer, AllocationId >,
     allocation_range_map: RangeMap< AllocationId >,
@@ -359,7 +359,7 @@ impl Loader {
         self.total_allocated_count += 1;
 
         let op = OperationId::new_allocation( allocation_id );
-        self.operations.push( op );
+        self.operations.push( (timestamp, op) );
 
         if flags.contains( AllocationFlags::IS_SHARED_PTR ) {
             self.shared_ptr_allocations.insert( pointer, allocation_id );
@@ -393,7 +393,7 @@ impl Loader {
         group_stats.free_size += allocation.usable_size();
 
         let op = OperationId::new_deallocation( allocation_id );
-        self.operations.push( op );
+        self.operations.push( (timestamp, op) );
 
         if allocation.is_shared_ptr() {
             self.shared_ptr_allocations.remove( &allocation.pointer );
@@ -468,7 +468,7 @@ impl Loader {
         self.total_allocated_count += 1;
 
         let op = OperationId::new_reallocation( reallocation_id );
-        self.operations.push( op );
+        self.operations.push( (timestamp, op) );
 
         self.allocation_range_map_dirty = true;
         self.allocations_by_backtrace.get_mut( &backtrace ).unwrap().push( allocation_id );
@@ -967,8 +967,10 @@ impl Loader {
         let mut sorted_by_size = indices;
         sorted_by_size.sort_by_key( |index| self.allocations[ index.raw() as usize ].size );
 
+        self.operations.sort_by_key( |(timestamp, _)| *timestamp );
+        let operations: Vec< _ > = self.operations.into_iter().map( |(_, op)| op ).collect();
+
         self.allocations.shrink_to_fit();
-        self.operations.shrink_to_fit();
         self.frames.shrink_to_fit();
         self.backtraces.shrink_to_fit();
         self.backtraces_storage.shrink_to_fit();
@@ -1002,7 +1004,7 @@ impl Loader {
             sorted_by_timestamp,
             sorted_by_address,
             sorted_by_size,
-            operations: self.operations,
+            operations,
             frames: self.frames,
             backtraces: self.backtraces,
             backtraces_storage: self.backtraces_storage,
