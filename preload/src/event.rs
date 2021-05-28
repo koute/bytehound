@@ -1,5 +1,6 @@
 use std::time::Duration;
 use std::sync::Arc;
+use std::num::NonZeroUsize;
 
 use common::Timestamp;
 
@@ -9,7 +10,7 @@ use crate::unwind::Backtrace;
 
 pub(crate) enum InternalEvent {
     Alloc {
-        ptr: usize,
+        ptr: NonZeroUsize,
         size: usize,
         backtrace: Backtrace,
         flags: u32,
@@ -19,8 +20,8 @@ pub(crate) enum InternalEvent {
         thread: WeakThreadHandle
     },
     Realloc {
-        old_ptr: usize,
-        new_ptr: usize,
+        old_ptr: NonZeroUsize,
+        new_ptr: NonZeroUsize,
         size: usize,
         backtrace: Backtrace,
         flags: u32,
@@ -30,7 +31,7 @@ pub(crate) enum InternalEvent {
         thread: WeakThreadHandle
     },
     Free {
-        ptr: usize,
+        ptr: NonZeroUsize,
         backtrace: Backtrace,
         timestamp: Timestamp,
         thread: WeakThreadHandle

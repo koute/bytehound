@@ -1,5 +1,6 @@
 use std::mem;
 use std::ptr;
+use std::num::NonZeroUsize;
 
 use libc::{
     c_void,
@@ -137,9 +138,10 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
             malloc_real( size as size_t )
         };
 
-    if ptr.is_null() {
-        return ptr;
-    }
+    let address = match NonZeroUsize::new( ptr as usize ) {
+        Some( address ) => address,
+        None => return ptr
+    };
 
     let mut thread = if let Some( thread ) = thread { thread } else { return ptr };
     let mut backtrace = Backtrace::new();
@@ -152,7 +154,7 @@ unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
 
     send_event_throttled( move || {
         InternalEvent::Alloc {
-            ptr: ptr as usize,
+            ptr: address,
             size: size as usize,
             backtrace,
             flags,
@@ -183,9 +185,10 @@ pub unsafe extern "C" fn calloc( count: size_t, element_size: size_t ) -> *mut c
 
 #[no_mangle]
 pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
-    if old_ptr.is_null() {
-        return malloc( size );
-    }
+    let old_address = match NonZeroUsize::new( old_ptr as usize ) {
+        Some( old_address ) => old_address,
+        None => return malloc( size )
+    };
 
     if size == 0 {
         free( old_ptr );
@@ -201,12 +204,12 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
 
     let timestamp = get_timestamp_if_enabled();
 
-    if !new_ptr.is_null() {
+    if let Some( new_address ) = NonZeroUsize::new( new_ptr as usize ) {
         let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( new_ptr, size );
         send_event_throttled( move || {
             InternalEvent::Realloc {
-                old_ptr: old_ptr as usize,
-                new_ptr: new_ptr as usize,
+                old_ptr: old_address,
+                new_ptr: new_address,
                 size: size as usize,
                 backtrace,
                 flags,
@@ -219,7 +222,7 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
     } else {
         send_event_throttled( || {
             InternalEvent::Free {
-                ptr: old_ptr as usize,
+                ptr: old_address,
                 backtrace,
                 timestamp,
                 thread: thread.decay()
@@ -232,9 +235,10 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
 
 #[no_mangle]
 pub unsafe extern "C" fn free( ptr: *mut c_void ) {
-    if ptr.is_null() {
-        return;
-    }
+    let address = match NonZeroUsize::new( ptr as usize ) {
+        Some( address ) => address,
+        None => return
+    };
 
     let thread = StrongThreadHandle::acquire();
     free_real( ptr );
@@ -247,7 +251,7 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
 
     send_event_throttled( || {
         InternalEvent::Free {
-            ptr: ptr as usize,
+            ptr: address,
             backtrace,
             timestamp: get_timestamp_if_enabled(),
             thread: thread.decay()
@@ -270,9 +274,10 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 
     let pointer = memalign_real( alignment, size );
     *memptr = pointer;
-    if pointer.is_null() {
-        return libc::ENOMEM;
-    }
+    let address = match NonZeroUsize::new( pointer as usize ) {
+        Some( address ) => address,
+        None => return libc::ENOMEM
+    };
 
     let mut thread = if let Some( thread ) = thread { thread } else { return 0 };
     let mut backtrace = Backtrace::new();
@@ -281,7 +286,7 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
     let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
     send_event_throttled( || {
         InternalEvent::Alloc {
-            ptr: pointer as usize,
+            ptr: address,
             size: size as usize,
             backtrace,
             flags,

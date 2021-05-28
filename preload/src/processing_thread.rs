@@ -647,7 +647,7 @@ pub(crate) fn thread_main() {
                         let event = Event::Alloc {
                             timestamp,
                             allocation: AllocBody {
-                                pointer: ptr as u64,
+                                pointer: ptr.get() as u64,
                                 size: size as u64,
                                 backtrace,
                                 thread: tid,
@@ -673,9 +673,10 @@ pub(crate) fn thread_main() {
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
                         let event = Event::Realloc {
-                            timestamp, old_pointer: old_ptr as u64,
+                            timestamp,
+                            old_pointer: old_ptr.get() as u64,
                             allocation: AllocBody {
-                                pointer: new_ptr as u64,
+                                pointer: new_ptr.get() as u64,
                                 size: size as u64,
                                 backtrace,
                                 thread: tid,
@@ -700,7 +701,7 @@ pub(crate) fn thread_main() {
                     let tid = thread.tid();
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
-                        let event = Event::Free { timestamp, pointer: ptr as u64, backtrace, thread: tid };
+                        let event = Event::Free { timestamp, pointer: ptr.get() as u64, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
