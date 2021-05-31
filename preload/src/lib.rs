@@ -69,6 +69,7 @@ pub use crate::api::{
     malloc,
     calloc,
     realloc,
+    reallocarray,
     free,
     posix_memalign,
     mmap,

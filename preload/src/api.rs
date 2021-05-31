@@ -184,8 +184,8 @@ pub unsafe extern "C" fn calloc( count: size_t, element_size: size_t ) -> *mut c
     allocate( size, true )
 }
 
-#[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
+#[inline(always)]
+unsafe fn realloc_impl( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
     let old_address = match NonZeroUsize::new( old_ptr as usize ) {
         Some( old_address ) => old_address,
         None => return malloc( size )
@@ -232,6 +232,24 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
     }
 
     new_ptr
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
+    realloc_impl( old_ptr, size )
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn reallocarray( old_ptr: &mut c_void, count: size_t, element_size: size_t ) -> *mut c_void {
+    let size = match (count as usize).checked_mul( element_size as usize ) {
+        None => {
+            *libc::__errno_location() = libc::ENOMEM;
+            return ptr::null_mut()
+        },
+        Some( size ) => size as size_t
+    };
+
+    realloc_impl( old_ptr, size )
 }
 
 #[cfg_attr(not(test), no_mangle)]
