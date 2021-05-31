@@ -1105,6 +1105,50 @@ fn handler_backtrace( req: HttpRequest ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().json( response ) )
 }
 
+fn handler_backtraces( req: HttpRequest ) -> Result< HttpResponse > {
+    let backtrace_format: protocol::BacktraceFormat = query( &req )?;
+    let filter: protocol::BacktraceFilter = query( &req )?;
+    let filter = crate::filter::prepare_backtrace_filter( &filter )?;
+    let body = async_data_handler( &req, move |data, tx| {
+        let mut positive_cache = HashMap::new();
+        let mut negative_cache = HashMap::new();
+        let total_count = data.all_backtraces().flat_map( |(_, backtrace)| {
+            if !crate::filter::match_backtrace( data, &mut positive_cache, &mut negative_cache, &filter, backtrace ) {
+                None
+            } else {
+                Some(())
+            }
+        }).count();
+
+        let backtraces = move || {
+            let mut positive_cache = positive_cache.clone();
+            let mut negative_cache = negative_cache.clone();
+            let backtrace_format = backtrace_format.clone();
+            let filter = filter.clone();
+            data.all_backtraces().flat_map( move |(_, backtrace)| {
+                if !crate::filter::match_backtrace( data, &mut positive_cache, &mut negative_cache, &filter, backtrace.clone() ) {
+                    return None;
+                }
+
+                let mut frames = Vec::new();
+                for (_, frame) in backtrace {
+                    frames.push( get_frame( data, &backtrace_format, frame ) );
+                }
+                Some( frames )
+            })
+        };
+
+        let response = protocol::ResponseBacktraces {
+            backtraces: StreamingSerializer::new( backtraces ),
+            total_count: total_count as u64
+        };
+
+        let _ = serde_json::to_writer( tx, &response );
+    })?;
+
+    Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
+}
+
 fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a Data, filter: F ) -> impl Serialize + 'a {
     let main_heap_start = data.alloc_sorted_by_address( None, None )
         .map( |(_, allocation)| allocation )
@@ -1435,6 +1479,7 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
                     .service( web::resource( "/data/{id}/fragmentation_timeline" ).route( web::get().to( handler_fragmentation_timeline ) ) )
                     .service( web::resource( "/data/{id}/allocations" ).route( web::get().to( handler_allocations ) ) )
                     .service( web::resource( "/data/{id}/allocation_groups" ).route( web::get().to( handler_allocation_groups ) ) )
+                    .service( web::resource( "/data/{id}/backtraces" ).route( web::get().to( handler_backtraces ) ) )
                     .service( web::resource( "/data/{id}/raw_allocations" ).route( web::get().to( handler_raw_allocations ) ) )
                     .service( web::resource( "/data/{id}/tree" ).route( web::get().to( handler_tree ) ) )
                     .service( web::resource( "/data/{id}/mmaps" ).route( web::get().to( handler_mmaps ) ) )

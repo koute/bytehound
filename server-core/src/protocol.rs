@@ -226,6 +226,12 @@ pub struct ResponseRegions< T: Serialize > {
     pub regions: T
 }
 
+#[derive(Serialize)]
+pub struct ResponseBacktraces< T: Serialize > {
+    pub backtraces: T,
+    pub total_count: u64
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
 pub enum LifetimeFilter {
     #[serde(rename = "all")]
@@ -591,6 +597,16 @@ pub struct AllocFilter {
     pub group_leaked_allocations_max: Option< NumberOrPercentage >,
     pub group_allocations_min: Option< u32 >,
     pub group_allocations_max: Option< u32 >
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
+pub struct BacktraceFilter {
+    pub backtrace_depth_min: Option< u32 >,
+    pub backtrace_depth_max: Option< u32 >,
+    pub function_regex: Option< String >,
+    pub source_regex: Option< String >,
+    pub negative_function_regex: Option< String >,
+    pub negative_source_regex: Option< String >,
 }
 
 #[derive(Clone, Deserialize, Debug)]

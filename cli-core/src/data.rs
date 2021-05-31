@@ -575,10 +575,10 @@ mod tests {
     }
 }
 
-pub trait SliceLikeIterator: DoubleEndedIterator + ExactSizeIterator + FusedIterator {}
+pub trait SliceLikeIterator: DoubleEndedIterator + ExactSizeIterator + FusedIterator + Clone {}
 
 impl< T > SliceLikeIterator for T
-    where T: DoubleEndedIterator + ExactSizeIterator + FusedIterator
+    where T: DoubleEndedIterator + ExactSizeIterator + FusedIterator + Clone
 {
 }
 
@@ -736,7 +736,7 @@ impl Data {
         impl SliceLikeIterator<
             Item = (
                 BacktraceId,
-                impl Iterator<
+                impl SliceLikeIterator<
                     Item = (FrameId, &'a Frame)
                 >
             )

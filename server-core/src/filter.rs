@@ -46,6 +46,16 @@ pub struct Filter {
     pub group_filter: Option< GroupFilter >
 }
 
+#[derive(Clone, Debug)]
+pub struct BacktraceFilter {
+    pub backtrace_depth_min: usize,
+    pub backtrace_depth_max: usize,
+    pub function_regex: Option< Regex >,
+    pub source_regex: Option< Regex >,
+    pub negative_function_regex: Option< Regex >,
+    pub negative_source_regex: Option< Regex >,
+}
+
 impl Filter {
     pub fn timestamp_start_opt( &self ) -> Option< Timestamp > {
         if self.timestamp_start_specified {
@@ -89,127 +99,20 @@ pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< 
     let matched_backtraces_2;
 
     if filter.function_regex.is_some() || filter.source_regex.is_some() || filter.negative_function_regex.is_some() || filter.negative_source_regex.is_some() {
-        let function_regex = if let Some( ref pattern ) = filter.function_regex {
-            Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "function_regex", err ) )? )
-        } else {
-            None
-        };
-
-        let source_regex = if let Some( ref pattern ) = filter.source_regex {
-            Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "source_regex", err ) )? )
-        } else {
-            None
-        };
-
-        let negative_function_regex = if let Some( ref pattern ) = filter.negative_function_regex {
-            Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_function_regex", err ) )? )
-        } else {
-            None
-        };
-
-        let negative_source_regex = if let Some( ref pattern ) = filter.negative_source_regex {
-            Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_source_regex", err ) )? )
-        } else {
-            None
-        };
+        let subfilter = prepare_backtrace_filter( &protocol::BacktraceFilter {
+            backtrace_depth_min: filter.backtrace_depth_min,
+            backtrace_depth_max: filter.backtrace_depth_max,
+            function_regex: filter.function_regex.clone(),
+            source_regex: filter.source_regex.clone(),
+            negative_function_regex: filter.negative_function_regex.clone(),
+            negative_source_regex: filter.negative_source_regex.clone()
+        })?;
 
         let mut matched_backtraces = HashSet::new();
         let mut positive_cache = HashMap::new();
         let mut negative_cache = HashMap::new();
         for (backtrace_id, backtrace) in data.all_backtraces() {
-            let mut positive_matched = function_regex.is_none() && source_regex.is_none();
-            let mut negative_matched = false;
-            let check_negative = negative_function_regex.is_some() || negative_source_regex.is_some();
-
-            for (frame_id, frame) in backtrace {
-                let check_positive =
-                    if positive_matched {
-                        false
-                    } else if let Some( &cached_result ) = positive_cache.get( &frame_id ) {
-                        positive_matched = cached_result;
-                        false
-                    } else {
-                        true
-                    };
-
-                if positive_matched && !check_negative {
-                    break;
-                }
-
-                let mut function = None;
-                if (check_positive && function_regex.is_some()) || negative_function_regex.is_some() {
-                    function = frame.function().or_else( || frame.raw_function() ).map( |id| data.interner().resolve( id ).unwrap() );
-                }
-
-                let mut source = None;
-                if (check_positive && source_regex.is_some()) || negative_source_regex.is_some() {
-                    source = frame.source().map( |id| data.interner().resolve( id ).unwrap() )
-                }
-
-                if check_positive {
-                    let matched_function =
-                        if let Some( regex ) = function_regex.as_ref() {
-                            if let Some( ref function ) = function {
-                                regex.is_match( function )
-                            } else {
-                                false
-                            }
-                        } else {
-                            true
-                        };
-
-                    let matched_source =
-                        if let Some( regex ) = source_regex.as_ref() {
-                            if let Some( ref source ) = source {
-                                regex.is_match( source )
-                            } else {
-                                false
-                            }
-                        } else {
-                            true
-                        };
-
-                    positive_matched = matched_function && matched_source;
-                    positive_cache.insert( frame_id, positive_matched );
-                }
-
-                if check_negative {
-                    match negative_cache.get( &frame_id ).cloned() {
-                        Some( true ) => {
-                            negative_matched = true;
-                            break;
-                        },
-                        Some( false ) => {
-                            continue;
-                        },
-                        None => {}
-                    }
-
-                    if let Some( regex ) = negative_function_regex.as_ref() {
-                        if let Some( ref function ) = function {
-                            if regex.is_match( function ) {
-                                negative_cache.insert( frame_id, true );
-                                negative_matched = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if let Some( regex ) = negative_source_regex.as_ref() {
-                        if let Some( ref source ) = source {
-                            if regex.is_match( source ) {
-                                negative_cache.insert( frame_id, true );
-                                negative_matched = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    negative_cache.insert( frame_id, false );
-                }
-            }
-
-            if positive_matched && !negative_matched {
+            if match_backtrace( data, &mut positive_cache, &mut negative_cache, &subfilter, backtrace ) {
                 matched_backtraces.insert( backtrace_id );
             }
         }
@@ -283,6 +186,149 @@ pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< 
     };
 
     Ok( filter )
+}
+
+pub fn prepare_backtrace_filter( filter: &protocol::BacktraceFilter ) -> Result< BacktraceFilter, PrepareFilterError > {
+    let function_regex = if let Some( ref pattern ) = filter.function_regex {
+        Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "function_regex", err ) )? )
+    } else {
+        None
+    };
+
+    let source_regex = if let Some( ref pattern ) = filter.source_regex {
+        Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "source_regex", err ) )? )
+    } else {
+        None
+    };
+
+    let negative_function_regex = if let Some( ref pattern ) = filter.negative_function_regex {
+        Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_function_regex", err ) )? )
+    } else {
+        None
+    };
+
+    let negative_source_regex = if let Some( ref pattern ) = filter.negative_source_regex {
+        Some( Regex::new( pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_source_regex", err ) )? )
+    } else {
+        None
+    };
+
+    let filter = BacktraceFilter {
+        backtrace_depth_min: filter.backtrace_depth_min.unwrap_or( 0 ) as usize,
+        backtrace_depth_max: filter.backtrace_depth_max.unwrap_or( std::u32::MAX ) as usize,
+        function_regex,
+        source_regex,
+        negative_function_regex,
+        negative_source_regex
+    };
+
+    Ok( filter )
+}
+
+pub fn match_backtrace< 'a >(
+    data: &Data,
+    positive_cache: &mut HashMap< crate::FrameId, bool >,
+    negative_cache: &mut HashMap< crate::FrameId, bool >,
+    filter: &BacktraceFilter,
+    backtrace: impl ExactSizeIterator< Item = (crate::FrameId, &'a crate::Frame) >
+) -> bool {
+    if backtrace.len() < filter.backtrace_depth_min || backtrace.len() > filter.backtrace_depth_max {
+        return false;
+    }
+
+    let mut positive_matched = filter.function_regex.is_none() && filter.source_regex.is_none();
+    let mut negative_matched = false;
+    let check_negative = filter.negative_function_regex.is_some() || filter.negative_source_regex.is_some();
+
+    for (frame_id, frame) in backtrace {
+        let check_positive =
+            if positive_matched {
+                false
+            } else if let Some( &cached_result ) = positive_cache.get( &frame_id ) {
+                positive_matched = cached_result;
+                false
+            } else {
+                true
+            };
+
+        if positive_matched && !check_negative {
+            break;
+        }
+
+        let mut function = None;
+        if (check_positive && filter.function_regex.is_some()) || filter.negative_function_regex.is_some() {
+            function = frame.function().or_else( || frame.raw_function() ).map( |id| data.interner().resolve( id ).unwrap() );
+        }
+
+        let mut source = None;
+        if (check_positive && filter.source_regex.is_some()) || filter.negative_source_regex.is_some() {
+            source = frame.source().map( |id| data.interner().resolve( id ).unwrap() )
+        }
+
+        if check_positive {
+            let matched_function =
+                if let Some( regex ) = filter.function_regex.as_ref() {
+                    if let Some( ref function ) = function {
+                        regex.is_match( function )
+                    } else {
+                        false
+                    }
+                } else {
+                    true
+                };
+
+            let matched_source =
+                if let Some( regex ) = filter.source_regex.as_ref() {
+                    if let Some( ref source ) = source {
+                        regex.is_match( source )
+                    } else {
+                        false
+                    }
+                } else {
+                    true
+                };
+
+            positive_matched = matched_function && matched_source;
+            positive_cache.insert( frame_id, positive_matched );
+        }
+
+        if check_negative {
+            match negative_cache.get( &frame_id ).cloned() {
+                Some( true ) => {
+                    negative_matched = true;
+                    break;
+                },
+                Some( false ) => {
+                    continue;
+                },
+                None => {}
+            }
+
+            if let Some( regex ) = filter.negative_function_regex.as_ref() {
+                if let Some( ref function ) = function {
+                    if regex.is_match( function ) {
+                        negative_cache.insert( frame_id, true );
+                        negative_matched = true;
+                        break;
+                    }
+                }
+            }
+
+            if let Some( regex ) = filter.negative_source_regex.as_ref() {
+                if let Some( ref source ) = source {
+                    if regex.is_match( source ) {
+                        negative_cache.insert( frame_id, true );
+                        negative_matched = true;
+                        break;
+                    }
+                }
+            }
+
+            negative_cache.insert( frame_id, false );
+        }
+    }
+
+    positive_matched && !negative_matched
 }
 
 #[inline]
