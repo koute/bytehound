@@ -117,6 +117,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
 
                     continue;
                 },
+                Event::AllocEx { allocation: AllocBody { ref mut backtrace, pointer, size, extra_usable_space, .. }, timestamp, .. } |
                 Event::Alloc { allocation: AllocBody { ref mut backtrace, pointer, size, extra_usable_space, .. }, timestamp, .. } => {
                     let usable_size = size + extra_usable_space as u64;
                     {
@@ -145,6 +146,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                     allocations.insert( pointer, Allocation { counter, backtrace: *backtrace, usable_size } );
                     counter += 1;
                 },
+                Event::ReallocEx { timestamp, mut allocation, old_pointer, .. } |
                 Event::Realloc { timestamp, mut allocation, old_pointer, .. } => {
                     let usable_size = allocation.size + allocation.extra_usable_space as u64;
                     {
@@ -184,6 +186,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, tmpfile_path: &Path ) ->
                     counter += 1;
                     continue;
                 },
+                Event::FreeEx { pointer, .. } |
                 Event::Free { pointer, .. } => {
                     if let Some( allocation ) = allocations.remove( &pointer ) {
                         if let Some( stats ) = stats_by_backtrace.get_mut( &allocation.backtrace ) {

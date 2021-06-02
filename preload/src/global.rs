@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
 use crate::arc_lite::ArcLite;
-use crate::event::{InternalEvent, send_event};
+use crate::event::{InternalAllocationId, InternalEvent, send_event};
 use crate::spin_lock::{SpinLock, SpinLockGuard};
 use crate::syscall;
 use crate::unwind::{ThreadUnwindState, prepare_to_start_unwinding};
@@ -17,7 +17,8 @@ pub type RawThreadHandle = ArcLite< ThreadData >;
 struct ThreadRegistry {
     enabled_for_new_threads: bool,
     threads: Option< HashMap< u32, RawThreadHandle > >,
-    dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >
+    dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >,
+    thread_counter: u64
 }
 
 unsafe impl Send for ThreadRegistry {}
@@ -42,7 +43,8 @@ static ENABLED_BY_USER: AtomicBool = AtomicBool::new( false );
 static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegistry {
     enabled_for_new_threads: false,
     threads: None,
-    dead_thread_queue: Vec::new()
+    dead_thread_queue: Vec::new(),
+    thread_counter: 1
 });
 
 static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () > > > = SpinLock::new( None );
@@ -374,6 +376,22 @@ impl StrongThreadHandle {
 
         &tls.unwind_cache
     }
+
+    pub fn on_new_allocation( &mut self ) -> InternalAllocationId {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        let counter = tls.allocation_counter.get();
+        let allocation;
+        unsafe {
+            allocation = *counter;
+            *counter += 1;
+        }
+
+        InternalAllocationId::new( tls.internal_thread_id, allocation )
+    }
 }
 
 impl Drop for StrongThreadHandle {
@@ -447,10 +465,12 @@ impl Drop for AllocationLock {
 
 pub struct ThreadData {
     thread_id: u32,
+    internal_thread_id: u64,
     is_internal: UnsafeCell< bool >,
     enabled: AtomicBool,
     unwind_cache: Arc< crate::unwind::Cache >,
-    unwind_state: UnsafeCell< ThreadUnwindState >
+    unwind_state: UnsafeCell< ThreadUnwindState >,
+    allocation_counter: UnsafeCell< u64 >
 }
 
 impl ThreadData {
@@ -496,13 +516,17 @@ thread_local_reentrant! {
     static TLS: ThreadSentinel = |callback| {
         let thread_id = syscall::gettid();
         let mut registry = THREAD_REGISTRY.lock();
+        let internal_thread_id = registry.thread_counter;
+        registry.thread_counter += 1;
 
         let tls = ThreadData {
             thread_id,
+            internal_thread_id,
             is_internal: UnsafeCell::new( false ),
             enabled: AtomicBool::new( registry.enabled_for_new_threads ),
             unwind_cache: Arc::new( crate::unwind::Cache::new() ),
-            unwind_state: UnsafeCell::new( ThreadUnwindState::new() )
+            unwind_state: UnsafeCell::new( ThreadUnwindState::new() ),
+            allocation_counter: UnsafeCell::new( 1 )
         };
 
         let tls = ArcLite::new( tls );

@@ -69,6 +69,37 @@ pub const ALLOC_FLAG_PREV_IN_USE: u32 = 1;
 pub const ALLOC_FLAG_MMAPED: u32 = 2;
 pub const ALLOC_FLAG_NON_MAIN_ARENA: u32 = 4;
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Readable, Writable)]
+pub struct AllocationId {
+    pub thread: u64,
+    pub allocation: u64
+}
+
+impl std::fmt::Display for AllocationId {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        if self.is_untracked() {
+            write!( fmt, "{{untracked}}" )
+        } else if self.is_invalid() {
+            write!( fmt, "{{invalid}}" )
+        } else {
+            write!( fmt, "{{{}, {}}}", self.thread, self.allocation )
+        }
+    }
+}
+
+impl AllocationId {
+    pub const UNTRACKED: Self = AllocationId { thread: 0, allocation: 0 };
+    pub const INVALID: Self = AllocationId { thread: std::u64::MAX, allocation: std::u64::MAX };
+
+    pub fn is_untracked( self ) -> bool {
+        self == Self::UNTRACKED
+    }
+
+    pub fn is_invalid( self ) -> bool {
+        self == Self::INVALID
+    }
+}
+
 #[derive(Clone, PartialEq, Debug, Readable, Writable)]
 pub struct AllocBody {
     pub pointer: u64,
@@ -191,7 +222,25 @@ pub enum Event< 'a > {
     Backtrace32 {
         id: u64,
         addresses: Cow< 'a, [u32] >
-    }
+    },
+    AllocEx {
+        id: AllocationId,
+        timestamp: Timestamp,
+        allocation: AllocBody,
+    },
+    ReallocEx {
+        id: AllocationId,
+        timestamp: Timestamp,
+        old_pointer: u64,
+        allocation: AllocBody,
+    },
+    FreeEx {
+        id: AllocationId,
+        timestamp: Timestamp,
+        pointer: u64,
+        backtrace: u64,
+        thread: u32
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

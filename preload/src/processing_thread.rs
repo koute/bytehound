@@ -6,7 +6,6 @@ use std::net::{TcpListener, TcpStream, UdpSocket, IpAddr, SocketAddr};
 use std::time::Duration;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
-use std::num::NonZeroUsize;
 
 use std::os::unix::io::AsRawFd;
 
@@ -596,7 +595,7 @@ pub(crate) fn thread_main() {
     let mut backtrace_cache = BacktraceCache::new( opt::get().backtrace_cache_size );
     let mut bucket_cache = Vec::new();
     let bucket_cache_maximum_size = 8192;
-    let mut allocations: OrderedMap< NonZeroUsize, AllocationBucket, NoHash > = OrderedMap::default();
+    let mut allocations: OrderedMap< (u64, u64), AllocationBucket > = OrderedMap::default();
     loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
@@ -671,7 +670,19 @@ pub(crate) fn thread_main() {
         let skip = serializer.inner().is_none();
         for event in events.drain(..) {
             match event {
-                InternalEvent::Alloc { ptr, size, backtrace, flags, extra_usable_space, preceding_free_space, mut timestamp, thread } => {
+                InternalEvent::Alloc {
+                    id,
+                    address,
+                    size,
+                    usable_size,
+                    preceding_free_space,
+                    flags,
+                    backtrace,
+                    mut timestamp,
+                    thread
+                } => {
+                    debug_assert!( id.is_valid() );
+
                     if skip {
                         continue;
                     }
@@ -684,20 +695,22 @@ pub(crate) fn thread_main() {
                     let tid = thread.tid();
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
-                        let event = Event::Alloc {
+
+                        let event = Event::AllocEx {
+                            id: id.into(),
                             timestamp,
                             allocation: AllocBody {
-                                pointer: ptr.get() as u64,
+                                pointer: address.get() as u64,
                                 size: size as u64,
                                 backtrace,
                                 thread: tid,
                                 flags,
-                                extra_usable_space,
-                                preceding_free_space
+                                extra_usable_space: (usable_size - size) as u32,
+                                preceding_free_space: preceding_free_space as u64
                             }
                         };
 
-                        if running && opt::get().cull_temporary_allocations {
+                        if running && opt::get().cull_temporary_allocations && !id.is_untracked() {
                             let mut bucket = AllocationBucket {
                                 events: bucket_cache.pop().unwrap_or_else( Vec::new ),
                                 timestamp
@@ -705,15 +718,32 @@ pub(crate) fn thread_main() {
 
                             bucket.events.push( event );
 
-                            if allocations.insert( ptr, bucket ).is_some() {
-                                error!( "Duplicate allocation with address 0x{:08X}; this should never happen", ptr.get() );
+                            if allocations.insert( (id.thread, id.allocation), bucket ).is_some() {
+                                error!( "Duplicate allocation 0x{:08X} with ID {}; this should never happen", address.get(), id );
                             }
                         } else {
                             let _ = event.write_to_stream( &mut *serializer );
                         }
                     }
                 },
-                InternalEvent::Realloc { old_ptr, new_ptr, size, backtrace, flags, extra_usable_space, preceding_free_space, mut timestamp, thread } => {
+                InternalEvent::Realloc {
+                    id,
+                    old_address,
+                    new_address,
+                    new_size,
+                    new_usable_size,
+                    new_preceding_free_space,
+                    new_flags,
+                    backtrace,
+                    mut timestamp,
+                    thread
+                } => {
+                    if !id.is_valid() {
+                        // TODO: If we're culling temporary allocations try to find one
+                        // with the same address and flush it.
+                        error!( "Allocation 0x{:08X} with invalid ID {} was reallocated; this should never happen; you probably have an out-of-bounds write somewhere", old_address.get(), id );
+                    }
+
                     if skip {
                         continue;
                     }
@@ -726,33 +756,25 @@ pub(crate) fn thread_main() {
                     let tid = thread.tid();
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
-                        let event = Event::Realloc {
+                        let event = Event::ReallocEx {
+                            id: id.into(),
                             timestamp,
-                            old_pointer: old_ptr.get() as u64,
+                            old_pointer: old_address.get() as u64,
                             allocation: AllocBody {
-                                pointer: new_ptr.get() as u64,
-                                size: size as u64,
+                                pointer: new_address.get() as u64,
+                                size: new_size as u64,
                                 backtrace,
                                 thread: tid,
-                                flags,
-                                extra_usable_space,
-                                preceding_free_space
+                                flags: new_flags,
+                                extra_usable_space: (new_usable_size - new_size) as u32,
+                                preceding_free_space: new_preceding_free_space as u64
                             }
                         };
 
                         let mut event = Some( event );
-                        if running && opt::get().cull_temporary_allocations {
-                            if old_ptr != new_ptr {
-                                if let Some( mut bucket ) = allocations.remove( &old_ptr ) {
-                                    bucket.events.push( event.take().unwrap() );
-                                    if allocations.insert( new_ptr, bucket ).is_some() {
-                                        error!( "Duplicate allocation with address 0x{:08X}; this should never happen", new_ptr.get() );
-                                    }
-                                }
-                            } else {
-                                if let Some( bucket ) = allocations.get_mut( &old_ptr ) {
-                                    bucket.events.push( event.take().unwrap() );
-                                }
+                        if running && opt::get().cull_temporary_allocations && !id.is_untracked() && id.is_valid() {
+                            if let Some( bucket ) = allocations.get_mut( &(id.thread, id.allocation) ) {
+                                bucket.events.push( event.take().unwrap() );
                             }
                         }
 
@@ -761,7 +783,19 @@ pub(crate) fn thread_main() {
                         }
                     }
                 },
-                InternalEvent::Free { ptr, backtrace, mut timestamp, thread } => {
+                InternalEvent::Free {
+                    id,
+                    address,
+                    backtrace,
+                    mut timestamp,
+                    thread
+                } => {
+                    if !id.is_valid() {
+                        // TODO: If we're culling temporary allocations try to find one
+                        // with the same address and flush it.
+                        error!( "Allocation 0x{:08X} with invalid ID {} was freed; this should never happen; you probably have an out-of-bounds write somewhere", address.get(), id );
+                    }
+
                     if skip {
                         continue;
                     }
@@ -774,11 +808,17 @@ pub(crate) fn thread_main() {
                     let tid = thread.tid();
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         mem::drop( thread );
-                        let event = Event::Free { timestamp, pointer: ptr.get() as u64, backtrace, thread: tid };
+                        let event = Event::FreeEx {
+                            id: id.into(),
+                            timestamp,
+                            pointer: address.get() as u64,
+                            backtrace,
+                            thread: tid
+                        };
                         let mut should_write = true;
 
-                        if running && opt::get().cull_temporary_allocations {
-                            if let Some( mut bucket ) = allocations.remove( &ptr ) {
+                        if running && opt::get().cull_temporary_allocations && !id.is_untracked() && id.is_valid() {
+                            if let Some( mut bucket ) = allocations.remove( &(id.thread, id.allocation) ) {
                                 if bucket.is_long_lived( coarse_timestamp ) {
                                     for event in &bucket.events {
                                         let _ = event.write_to_stream( &mut *serializer );

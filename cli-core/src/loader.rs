@@ -96,7 +96,7 @@ pub struct Loader {
     group_stats: Vec< GroupStatistics >,
     operations: Vec< (Timestamp, OperationId) >,
     allocations: Vec< Allocation >,
-    allocation_map: HashMap< DataPointer, AllocationId >,
+    allocation_map: HashMap< (u64, u64), AllocationId >,
     allocation_range_map: RangeMap< AllocationId >,
     allocation_range_map_dirty: bool,
     allocations_by_backtrace: HashMap< BacktraceId, Vec< AllocationId > >,
@@ -181,6 +181,14 @@ fn get_basename( path: &str ) -> &str {
     };
 
     &path[ path.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 ).. ]
+}
+
+fn into_key( id: event::AllocationId, pointer: DataPointer ) -> (u64, u64) {
+    if !id.is_invalid() && !id.is_untracked() {
+        (id.thread, id.allocation)
+    } else {
+        (0, pointer)
+    }
 }
 
 impl Loader {
@@ -313,6 +321,7 @@ impl Loader {
 
     fn handle_alloc(
         &mut self,
+        id: event::AllocationId,
         timestamp: Timestamp,
         pointer: DataPointer,
         size: u64,
@@ -339,7 +348,8 @@ impl Loader {
             marker: self.marker
         };
 
-        let entry = self.allocation_map.entry( pointer );
+        let key = into_key( id, pointer );
+        let entry = self.allocation_map.entry( key );
         if let hash_map::Entry::Occupied( entry ) = entry {
             warn!( "Duplicate allocation of 0x{:016X}; old backtrace = {:?}, new backtrace = {:?}", pointer, self.allocations[ entry.get().raw() as usize ].backtrace, backtrace );
             return;
@@ -371,12 +381,14 @@ impl Loader {
 
     fn handle_free(
         &mut self,
+        id: event::AllocationId,
         timestamp: Timestamp,
         pointer: DataPointer,
         backtrace: Option< BacktraceId >,
         thread: ThreadId
     ) {
-        let allocation_id = match self.allocation_map.remove( &pointer ) {
+        let key = into_key( id, pointer );
+        let allocation_id = match self.allocation_map.remove( &key ) {
             Some( id ) => id,
             None => {
                 debug!( "Unknown deallocation of 0x{:016X} at backtrace = {:?}", pointer, backtrace );
@@ -404,6 +416,7 @@ impl Loader {
 
     fn handle_realloc(
         &mut self,
+        id: event::AllocationId,
         timestamp: Timestamp,
         old_pointer: DataPointer,
         new_pointer: DataPointer,
@@ -414,7 +427,8 @@ impl Loader {
         extra_usable_space: u32,
         preceding_free_space: u64
     ) {
-        let allocation_id = match self.allocation_map.remove( &old_pointer ) {
+        let old_key = into_key( id, old_pointer );
+        let allocation_id = match self.allocation_map.remove( &old_key ) {
             Some( id ) => id,
             None => return
         };
@@ -448,7 +462,8 @@ impl Loader {
             marker: self.marker
         };
 
-        let entry = self.allocation_map.entry( new_pointer );
+        let new_key = into_key( id, new_pointer );
+        let entry = self.allocation_map.entry( new_key );
         if let hash_map::Entry::Occupied( entry ) = entry {
             warn!( "Duplicate allocation (during realloc) of 0x{:016X}; old backtrace = {:?}, new backtrace = {:?}", new_pointer, self.allocations[ entry.get().raw() as usize ].backtrace, backtrace );
             return;
@@ -824,17 +839,32 @@ impl Loader {
             Event::Alloc { timestamp, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace ).unwrap();
-                self.handle_alloc( timestamp, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+                self.handle_alloc( event::AllocationId::UNTRACKED, timestamp, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+            },
+            Event::AllocEx { id, timestamp, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
+                let timestamp = self.shift_timestamp( timestamp );
+                let backtrace = self.lookup_backtrace( backtrace ).unwrap();
+                self.handle_alloc( id, timestamp, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
             },
             Event::Realloc { timestamp, old_pointer, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace ).unwrap();
-                self.handle_realloc( timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+                self.handle_realloc( event::AllocationId::UNTRACKED, timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+            },
+            Event::ReallocEx { id, timestamp, old_pointer, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
+                let timestamp = self.shift_timestamp( timestamp );
+                let backtrace = self.lookup_backtrace( backtrace ).unwrap();
+                self.handle_realloc( id, timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
             },
             Event::Free { timestamp, pointer, backtrace, thread } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace );
-                self.handle_free( timestamp, pointer, backtrace, thread );
+                self.handle_free( event::AllocationId::UNTRACKED, timestamp, pointer, backtrace, thread );
+            },
+            Event::FreeEx { id, timestamp, pointer, backtrace, thread } => {
+                let timestamp = self.shift_timestamp( timestamp );
+                let backtrace = self.lookup_backtrace( backtrace );
+                self.handle_free( id, timestamp, pointer, backtrace, thread );
             },
             Event::MemoryMap { timestamp, pointer, length, backtrace, requested_address, mmap_protection, mmap_flags, file_descriptor, thread, offset } => {
                 let timestamp = self.shift_timestamp( timestamp );

@@ -63,8 +63,11 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
                 write = false;
             },
             Event::Alloc { allocation: AllocBody { ref mut backtrace, .. }, .. } |
+            Event::AllocEx { allocation: AllocBody { ref mut backtrace, .. }, .. } |
             Event::Realloc { allocation: AllocBody { ref mut backtrace, .. }, .. } |
+            Event::ReallocEx { allocation: AllocBody { ref mut backtrace, .. }, .. } |
             Event::Free { ref mut backtrace, .. } |
+            Event::FreeEx { ref mut backtrace, .. } |
             Event::MemoryMap { ref mut backtrace, .. } |
             Event::MemoryUnmap { ref mut backtrace, .. } |
             Event::Mallopt { ref mut backtrace, .. } |

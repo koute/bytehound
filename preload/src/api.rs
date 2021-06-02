@@ -13,7 +13,7 @@ use common::event;
 use common::Timestamp;
 
 use crate::InternalEvent;
-use crate::event::{send_event, send_event_throttled};
+use crate::event::{InternalAllocationId, send_event, send_event_throttled};
 use crate::global::{StrongThreadHandle, on_exit};
 use crate::opt;
 use crate::syscall;
@@ -48,6 +48,8 @@ extern "C" {
     fn free_real( ptr: *mut c_void );
     #[link_name = "_rjem_memalign"]
     fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
+    #[link_name = "_rjem_malloc_usable_size"]
+    fn malloc_usable_size_real( ptr: *mut c_void ) -> size_t;
 }
 
 #[cfg(feature = "jemalloc")]
@@ -59,8 +61,6 @@ extern "C" {
     #[link_name = "__libc_fork"]
     fn fork_real() -> libc::pid_t;
 }
-
-const USING_JEMALLOC: bool = cfg!( feature = "jemalloc" );
 
 fn get_timestamp_if_enabled() -> Timestamp {
     if opt::get().precise_timestamps {
@@ -92,146 +92,223 @@ pub unsafe extern "C" fn _Exit( status: c_int ) {
     _exit( status );
 }
 
-fn get_glibc_metadata( ptr: *mut c_void, size: usize ) -> (u32, u32, u64) {
-    if USING_JEMALLOC {
-        return (0, 0, 0);
+#[derive(Debug)]
+struct Metadata {
+    flags: u32,
+    preceding_free_space: usize,
+    usable_size: usize
+}
+
+fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
+    #[cfg(feature = "jemalloc")]
+    {
+        return Metadata {
+            flags: 0,
+            preceding_free_space: 0,
+            usable_size: unsafe { malloc_usable_size_real( ptr ) }
+        }
     }
 
-    // `libc` on mips64 doesn't export this
-    extern "C" {
-        fn malloc_usable_size( ptr: *mut libc::c_void) -> libc::size_t;
+    #[cfg(not(feature = "jemalloc"))]
+    {
+        // `libc` on mips64 doesn't export this
+        extern "C" {
+            fn malloc_usable_size( ptr: *mut libc::c_void ) -> libc::size_t;
+        }
+
+        let raw_chunk_size = unsafe { *(ptr as *mut usize).offset( -1 ) };
+        let flags = raw_chunk_size & 0b111;
+        let chunk_size = raw_chunk_size & !0b111;
+
+        let is_prev_in_use = flags & 1 != 0;
+        let preceding_free_space = if !is_prev_in_use {
+            unsafe { *(ptr as *mut usize).offset( -2 ) }
+        } else {
+            0
+        };
+
+        let is_mmapped = flags & 2 != 0;
+        let usable_size = chunk_size - mem::size_of::< usize >() * if is_mmapped { 2 } else { 1 };
+        debug_assert_eq!( usable_size, unsafe { malloc_usable_size( ptr ) } );
+
+        Metadata {
+            flags: flags as u32,
+            preceding_free_space,
+            usable_size
+        }
     }
+}
 
-    let raw_chunk_size = unsafe { *(ptr as *mut usize).offset( -1 ) };
-    let flags = raw_chunk_size & 0b111;
-    let chunk_size = raw_chunk_size & !0b111;
+unsafe fn tracking_pointer( pointer: *mut c_void, usable_size: usize ) -> *mut InternalAllocationId {
+    let tracking_offset = usable_size - mem::size_of::< InternalAllocationId >();
+    (pointer as *mut u8).add( tracking_offset ) as *mut InternalAllocationId
+}
 
-    let is_prev_in_use = flags & 1 != 0;
-    let preceding_free_space = if !is_prev_in_use {
-        unsafe { *(ptr as *mut usize).offset( -2 ) }
-    } else {
-        0
-    };
-
-    let is_mmapped = flags & 2 != 0;
-    let extra_usable_space = chunk_size - size - mem::size_of::< usize >() * if is_mmapped { 2 } else { 1 };
-
-    debug_assert_eq!(
-        size + extra_usable_space,
-        unsafe { malloc_usable_size( ptr ) },
-        "chunk_size: {}, size: {}, malloc_usable_size: {}, extra_usable_space: {}",
-        chunk_size,
-        size,
-        unsafe { malloc_usable_size( ptr ) },
-        extra_usable_space,
-    );
-
-    (flags as u32, extra_usable_space as u32, preceding_free_space as u64)
+enum AllocationKind {
+    Malloc,
+    Calloc,
+    Aligned( size_t )
 }
 
 #[inline(always)]
-unsafe fn allocate( size: usize, is_calloc: bool ) -> *mut c_void {
-    let thread = StrongThreadHandle::acquire();
-    let ptr =
-        if is_calloc || opt::get().zero_memory {
-            calloc_real( size as size_t, 1 )
-        } else {
-            malloc_real( size as size_t )
-        };
-
-    let address = match NonZeroUsize::new( ptr as usize ) {
-        Some( address ) => address,
-        None => return ptr
+unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void {
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return ptr::null_mut()
     };
 
-    let mut thread = if let Some( thread ) = thread { thread } else { return ptr };
+    let thread = StrongThreadHandle::acquire();
+    let pointer =
+        match kind {
+            AllocationKind::Malloc => {
+                if opt::get().zero_memory {
+                    calloc_real( effective_size as size_t, 1 )
+                } else {
+                    malloc_real( effective_size as size_t )
+                }
+            },
+            AllocationKind::Calloc => calloc_real( effective_size as size_t, 1 ),
+            AllocationKind::Aligned( alignment ) => {
+                memalign_real( alignment, effective_size as size_t )
+            }
+        };
+
+    let address = match NonZeroUsize::new( pointer as usize ) {
+        Some( address ) => address,
+        None => return pointer
+    };
+
+    let mut metadata = get_allocation_metadata( pointer );
+    if !matches!( kind, AllocationKind::Calloc ) {
+        std::ptr::write_bytes( pointer as *mut u8, 0xee, metadata.usable_size );
+    }
+    let tracking_pointer = tracking_pointer( pointer, metadata.usable_size );
+
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        std::ptr::write_unaligned( tracking_pointer, InternalAllocationId::UNTRACKED );
+        return pointer;
+    };
+
+    let id = thread.on_new_allocation();
+    std::ptr::write_unaligned( tracking_pointer, id );
+
     let mut backtrace = Backtrace::new();
     unwind::grab( &mut thread, &mut backtrace );
 
-    let (mut flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( ptr, size );
-    if is_calloc {
-        flags |= event::ALLOC_FLAG_CALLOC;
+    if matches!( kind, AllocationKind::Calloc ) {
+        metadata.flags |= event::ALLOC_FLAG_CALLOC;
     }
 
     send_event_throttled( move || {
         InternalEvent::Alloc {
-            ptr: address,
-            size: size as usize,
+            id,
+            address,
+            size: requested_size as usize,
+            usable_size: metadata.usable_size,
+            preceding_free_space: metadata.preceding_free_space,
+            flags: metadata.flags,
             backtrace,
-            flags,
-            extra_usable_space,
-            preceding_free_space,
             timestamp: get_timestamp_if_enabled(),
             thread: thread.decay()
         }
     });
 
-    ptr
+    pointer
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn malloc( size: size_t ) -> *mut c_void {
-    allocate( size, false )
+    allocate( size, AllocationKind::Malloc )
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn calloc( count: size_t, element_size: size_t ) -> *mut c_void {
-    let size = match (count as usize).checked_mul( element_size as usize ) {
+    let size = match count.checked_mul( element_size ) {
         None => return ptr::null_mut(),
-        Some( size ) => size as size_t
+        Some( size ) => size
     };
 
-    allocate( size, true )
+    allocate( size, AllocationKind::Calloc )
 }
 
 #[inline(always)]
-unsafe fn realloc_impl( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
-    let old_address = match NonZeroUsize::new( old_ptr as usize ) {
+unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
+    let old_address = match NonZeroUsize::new( old_pointer as usize ) {
         Some( old_address ) => old_address,
-        None => return malloc( size )
+        None => return malloc( requested_size )
     };
 
-    if size == 0 {
-        free( old_ptr );
+    if requested_size == 0 {
+        free( old_pointer );
         return ptr::null_mut();
     }
 
-    let thread = StrongThreadHandle::acquire();
-    let new_ptr = realloc_real( old_ptr, size );
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return ptr::null_mut()
+    };
 
-    let mut thread = if let Some( thread ) = thread { thread } else { return new_ptr };
+    let old_metadata = get_allocation_metadata( old_pointer );
+    let old_tracking_pointer = tracking_pointer( old_pointer, old_metadata.usable_size );
+    let id = std::ptr::read_unaligned( old_tracking_pointer );
+
+    let thread = StrongThreadHandle::acquire();
+    let new_pointer = realloc_real( old_pointer, effective_size );
+
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        if new_pointer.is_null() {
+            return ptr::null_mut();
+        } else {
+            let new_metadata = get_allocation_metadata( new_pointer );
+            let new_tracking_pointer = tracking_pointer( new_pointer, new_metadata.usable_size );
+            std::ptr::write_unaligned( new_tracking_pointer, InternalAllocationId::UNTRACKED );
+
+            return new_pointer;
+        }
+    };
+
     let mut backtrace = Backtrace::new();
     unwind::grab( &mut thread, &mut backtrace );
 
     let timestamp = get_timestamp_if_enabled();
+    if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
+        let new_metadata = get_allocation_metadata( new_pointer );
+        let new_tracking_pointer = tracking_pointer( new_pointer, new_metadata.usable_size );
+        std::ptr::write_unaligned( new_tracking_pointer, id );
 
-    if let Some( new_address ) = NonZeroUsize::new( new_ptr as usize ) {
-        let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( new_ptr, size );
         send_event_throttled( move || {
             InternalEvent::Realloc {
-                old_ptr: old_address,
-                new_ptr: new_address,
-                size: size as usize,
+                id,
+                old_address,
+                new_address,
+                new_size: requested_size as usize,
+                new_usable_size: new_metadata.usable_size,
+                new_preceding_free_space: new_metadata.preceding_free_space,
+                new_flags: new_metadata.flags,
                 backtrace,
-                flags,
-                extra_usable_space,
-                preceding_free_space,
                 timestamp,
                 thread: thread.decay()
             }
         });
+
+        new_pointer
     } else {
         send_event_throttled( || {
             InternalEvent::Free {
-                ptr: old_address,
+                id,
+                address: old_address,
                 backtrace,
                 timestamp,
                 thread: thread.decay()
             }
         });
-    }
 
-    new_ptr
+        ptr::null_mut()
+    }
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -253,14 +330,18 @@ pub unsafe extern "C" fn reallocarray( old_ptr: &mut c_void, count: size_t, elem
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn free( ptr: *mut c_void ) {
-    let address = match NonZeroUsize::new( ptr as usize ) {
+pub unsafe extern "C" fn free( pointer: *mut c_void ) {
+    let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
         None => return
     };
 
+    let metadata = get_allocation_metadata( pointer );
+    let tracking_pointer = tracking_pointer( pointer, metadata.usable_size );
+    let id = std::ptr::read_unaligned( tracking_pointer );
+
     let thread = StrongThreadHandle::acquire();
-    free_real( ptr );
+    free_real( pointer );
 
     let mut thread = if let Some( thread ) = thread { thread } else { return };
     let mut backtrace = Backtrace::new();
@@ -270,7 +351,8 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
 
     send_event_throttled( || {
         InternalEvent::Free {
-            ptr: address,
+            id,
+            address,
             backtrace,
             timestamp: get_timestamp_if_enabled(),
             thread: thread.decay()
@@ -279,7 +361,7 @@ pub unsafe extern "C" fn free( ptr: *mut c_void ) {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: size_t, size: size_t ) -> c_int {
+pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: size_t, requested_size: size_t ) -> c_int {
     if memptr.is_null() {
         return libc::EINVAL;
     }
@@ -289,34 +371,14 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
         return libc::EINVAL;
     }
 
-    let thread = StrongThreadHandle::acquire();
-
-    let pointer = memalign_real( alignment, size );
+    let pointer = allocate( requested_size, AllocationKind::Aligned( alignment ) );
     *memptr = pointer;
-    let address = match NonZeroUsize::new( pointer as usize ) {
-        Some( address ) => address,
-        None => return libc::ENOMEM
-    };
 
-    let mut thread = if let Some( thread ) = thread { thread } else { return 0 };
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
-
-    let (flags, extra_usable_space, preceding_free_space) = get_glibc_metadata( pointer, size );
-    send_event_throttled( || {
-        InternalEvent::Alloc {
-            ptr: address,
-            size: size as usize,
-            backtrace,
-            flags,
-            extra_usable_space,
-            preceding_free_space,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        }
-    });
-
-    0
+    if pointer.is_null() {
+        libc::ENOMEM
+    } else {
+        0
+    }
 }
 
 #[cfg_attr(not(test), no_mangle)]
