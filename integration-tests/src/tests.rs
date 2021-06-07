@@ -290,6 +290,7 @@ fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
 
     args.extend( &[
         "-fasynchronous-unwind-tables",
+        "-Wno-unused-result",
         "-O0",
         "-pthread",
         "-ggdb3",
