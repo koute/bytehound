@@ -85,7 +85,11 @@ fn preload_path() -> PathBuf {
 }
 
 fn cli_path() -> PathBuf {
-    repository_root().join( "target" ).join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "memory-profiler-cli" )
+    if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_CLI_PATH" ) {
+        build_root().join( path ).join( "memory-profiler-cli" )
+    } else {
+        repository_root().join( "target" ).join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "memory-profiler-cli" )
+    }
 }
 
 fn target_toolchain_prefix() -> &'static str {
