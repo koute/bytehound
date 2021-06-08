@@ -199,6 +199,14 @@ fn is_from_function( alloc: &Allocation, expected: &str ) -> bool {
     })
 }
 
+fn is_from_function_fuzzy( alloc: &Allocation, expected: &str ) -> bool {
+    alloc.backtrace.iter().any( |frame| {
+        frame.raw_function.as_ref().map( |symbol| {
+            symbol.contains( expected )
+        }).unwrap_or( false )
+    })
+}
+
 impl Analysis {
     fn allocations_from_source< 'a >( &'a self, source: &'a str ) -> impl Iterator< Item = &Allocation > + 'a {
         self.response.allocations.iter().filter( move |alloc| is_from_source( alloc, source ) )
@@ -275,6 +283,17 @@ fn get_basename( path: &str ) -> &str {
     let index_slash = path.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 );
     let index_dot = path.rfind( "." ).unwrap();
     &path[ index_slash..index_dot ]
+}
+
+fn compile_with_cargo( source: &str ) {
+    let source_path = repository_root().join( "integration-tests" ).join( "test-programs" ).join( source );
+    let args: Vec< &str > = vec![ "build" ];
+    run(
+        &source_path,
+        "cargo",
+        &args,
+        EMPTY_ENV
+    ).assert_success();
 }
 
 fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
@@ -923,4 +942,54 @@ fn test_backtrace() {
 
     let analysis = analyze( "backtrace", cwd.join( "backtrace.dat" ) );
     assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123456 ) );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn test_wasmtime_linking() {
+    let cwd = repository_root().join( "integration-tests" ).join( "test-programs" ).join( "wasmtime" ).join( "target" ).join( "debug" );
+    compile_with_cargo( "wasmtime/linking" );
+
+    run_on_target(
+        &cwd,
+        "./linking",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "linking.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "linking", cwd.join( "linking.dat" ) );
+    let list: Vec< _ > = analysis.response.allocations.into_iter().filter( |alloc| is_from_function_fuzzy( alloc, "wasm_to_host_shim" ) ).collect();
+    assert!( !list.is_empty() );
+    for allocation in list {
+        assert!( is_from_function( &allocation, "main" ) );
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn test_wasmtime_interrupt() {
+    let cwd = repository_root().join( "integration-tests" ).join( "test-programs" ).join( "wasmtime" ).join( "target" ).join( "debug" );
+    compile_with_cargo( "wasmtime/interrupt" );
+
+    run_on_target(
+        &cwd,
+        "./interrupt",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "interrupt.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "interrupt", cwd.join( "interrupt.dat" ) );
+    let list: Vec< _ > = analysis.response.allocations.into_iter().filter( |alloc| is_from_function_fuzzy( alloc, "trap_handler" ) ).collect();
+    assert!( !list.is_empty() );
+    for allocation in list {
+        assert!( is_from_function( &allocation, "main" ) );
+    }
 }
