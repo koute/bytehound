@@ -74,7 +74,7 @@ int main() {
     fprintf( stderr, "start\n" );
     start( pid );
 
-    malloc( 10002 );
+    void * p = malloc( 10002 );
     thread_blocked_1 = 0;
 
     while( !thread_finished_1 ) {
@@ -85,6 +85,11 @@ int main() {
 
     fprintf( stderr, "stop\n" );
     stop( pid );
+
+    usleep( 1000 );
+    free( p );
+    usleep( 1000 );
+
     fprintf( stderr, "start\n" );
     start( pid );
 

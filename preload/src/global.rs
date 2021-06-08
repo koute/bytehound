@@ -38,7 +38,11 @@ const STATE_PERMANENTLY_DISABLED: usize = 5;
 static STATE: AtomicUsize = AtomicUsize::new( STATE_UNINITIALIZED );
 
 static THREAD_RUNNING: AtomicBool = AtomicBool::new( false );
-static ENABLED_BY_USER: AtomicBool = AtomicBool::new( false );
+
+const DESIRED_STATE_DISABLED: usize = 0;
+const DESIRED_STATE_SUSPENDED: usize = 1;
+const DESIRED_STATE_ENABLED: usize = 2;
+static DESIRED_STATE: AtomicUsize = AtomicUsize::new( DESIRED_STATE_DISABLED );
 
 static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegistry {
     enabled_for_new_threads: false,
@@ -57,14 +61,24 @@ pub fn toggle() {
         return;
     }
 
-    let value = !ENABLED_BY_USER.load( Ordering::SeqCst );
-    if value {
-        info!( "Tracing will be toggled ON" );
-    } else {
-        info!( "Tracing will be toggled OFF" );
-    }
+    let value = DESIRED_STATE.load( Ordering::SeqCst );
+    let new_value = match value {
+        DESIRED_STATE_DISABLED => {
+            info!( "Tracing will be toggled ON (for the first time)" );
+            DESIRED_STATE_ENABLED
+        },
+        DESIRED_STATE_SUSPENDED => {
+            info!( "Tracing will be toggled ON" );
+            DESIRED_STATE_ENABLED
+        },
+        DESIRED_STATE_ENABLED => {
+            info!( "Tracing will be toggled OFF" );
+            DESIRED_STATE_SUSPENDED
+        },
+        _ => unreachable!()
+    };
 
-    ENABLED_BY_USER.store( value, Ordering::SeqCst );
+    DESIRED_STATE.store( new_value, Ordering::SeqCst );
 }
 
 pub fn enable() -> bool {
@@ -72,7 +86,7 @@ pub fn enable() -> bool {
         return false;
     }
 
-    ENABLED_BY_USER.compare_exchange( false, true, Ordering::SeqCst, Ordering::SeqCst ).is_ok()
+    DESIRED_STATE.swap( DESIRED_STATE_ENABLED, Ordering::SeqCst ) != DESIRED_STATE_ENABLED
 }
 
 pub fn disable() -> bool {
@@ -80,7 +94,7 @@ pub fn disable() -> bool {
         return false;
     }
 
-    ENABLED_BY_USER.compare_exchange( true, false, Ordering::SeqCst, Ordering::SeqCst ).is_ok()
+    DESIRED_STATE.swap( DESIRED_STATE_SUSPENDED, Ordering::SeqCst ) == DESIRED_STATE_ENABLED
 }
 
 fn is_busy() -> bool {
@@ -89,9 +103,9 @@ fn is_busy() -> bool {
         return true;
     }
 
-    let is_enabled = ENABLED_BY_USER.load( Ordering::SeqCst );
+    let requested_state = DESIRED_STATE.load( Ordering::SeqCst );
     let is_thread_running = THREAD_RUNNING.load( Ordering::SeqCst );
-    if !is_enabled && is_thread_running && state == STATE_ENABLED {
+    if requested_state == DESIRED_STATE_DISABLED && is_thread_running && state == STATE_ENABLED {
         return true;
     }
 
@@ -125,7 +139,7 @@ pub extern fn on_exit() {
 
     info!( "Exit hook called" );
 
-    ENABLED_BY_USER.store( false, Ordering::SeqCst );
+    DESIRED_STATE.store( DESIRED_STATE_DISABLED, Ordering::SeqCst );
     send_event( InternalEvent::Exit );
 
     let mut count = 0;
@@ -141,7 +155,7 @@ pub extern fn on_exit() {
 
 pub unsafe extern fn on_fork() {
     STATE.store( STATE_PERMANENTLY_DISABLED, Ordering::SeqCst );
-    ENABLED_BY_USER.store( false, Ordering::SeqCst );
+    DESIRED_STATE.store( DESIRED_STATE_DISABLED, Ordering::SeqCst );
     THREAD_RUNNING.store( false, Ordering::SeqCst );
     THREAD_REGISTRY.force_unlock(); // In case we were forked when the lock was held.
     {
@@ -177,7 +191,7 @@ fn spawn_processing_thread() {
         });
 
         if result.is_err() {
-            ENABLED_BY_USER.store( false, Ordering::SeqCst );
+            DESIRED_STATE.store( DESIRED_STATE_DISABLED, Ordering::SeqCst );
         }
 
         let mut thread_registry = THREAD_REGISTRY.lock();
@@ -236,7 +250,7 @@ fn try_enable( state: usize ) -> bool {
         crate::init::startup();
     }
 
-    if !ENABLED_BY_USER.load( Ordering::Relaxed ) {
+    if DESIRED_STATE.load( Ordering::SeqCst ) == DESIRED_STATE_DISABLED {
         return false;
     }
 
@@ -282,7 +296,7 @@ fn try_enable( state: usize ) -> bool {
 }
 
 pub fn try_disable_if_requested() {
-    if ENABLED_BY_USER.load( Ordering::Relaxed ) {
+    if DESIRED_STATE.load( Ordering::SeqCst ) != DESIRED_STATE_DISABLED {
         return;
     }
 
@@ -301,6 +315,10 @@ fn throttle( tls: &RawThreadHandle ) {
     while ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
         thread::yield_now();
     }
+}
+
+pub fn is_actively_running() -> bool {
+    DESIRED_STATE.load( Ordering::Relaxed ) == DESIRED_STATE_ENABLED
 }
 
 /// A handle to per-thread storage; you can't do anything with it.

@@ -157,7 +157,7 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
         None => return ptr::null_mut()
     };
 
-    let thread = StrongThreadHandle::acquire();
+    let mut thread = StrongThreadHandle::acquire();
     let pointer =
         match kind {
             AllocationKind::Malloc => {
@@ -172,6 +172,10 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
                 memalign_real( alignment, effective_size as size_t )
             }
         };
+
+    if !crate::global::is_actively_running() {
+        thread = None;
+    }
 
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
@@ -251,8 +255,11 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
     let old_tracking_pointer = tracking_pointer( old_pointer, old_metadata.usable_size );
     let id = std::ptr::read_unaligned( old_tracking_pointer );
 
-    let thread = StrongThreadHandle::acquire();
+    let mut thread = StrongThreadHandle::acquire();
     let new_pointer = realloc_real( old_pointer, effective_size );
+    if id.is_untracked() && !crate::global::is_actively_running() {
+        thread = None;
+    }
 
     let mut thread = if let Some( thread ) = thread {
         thread
@@ -337,8 +344,12 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
     let tracking_pointer = tracking_pointer( pointer, metadata.usable_size );
     let id = std::ptr::read_unaligned( tracking_pointer );
 
-    let thread = StrongThreadHandle::acquire();
+    let mut thread = StrongThreadHandle::acquire();
     free_real( pointer );
+
+    if id.is_untracked() && !crate::global::is_actively_running() {
+        thread = None;
+    }
 
     let mut thread = if let Some( thread ) = thread { thread } else { return };
     let mut backtrace = Backtrace::new();

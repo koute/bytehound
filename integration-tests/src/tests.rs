@@ -471,42 +471,37 @@ fn test_start_stop_generic( kind: &str ) {
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
             ("MEMORY_PROFILER_LOG", "debug".into()),
-            ("MEMORY_PROFILER_OUTPUT", format!( "start-stop_{}_%n.dat", kind ).into()),
+            ("MEMORY_PROFILER_OUTPUT", format!( "start-stop_{}.dat", kind ).into()),
             ("MEMORY_PROFILER_DISABLE_BY_DEFAULT", "1".into())
         ]
     ).assert_success();
 
-    let analysis_1 = analyze( &format!( "start-stop_{}", kind ), cwd.join( format!( "start-stop_{}_0.dat", kind ) ) );
-    let analysis_2 = analyze( &format!( "start-stop_{}", kind ), cwd.join( format!( "start-stop_{}_1.dat", kind ) ) );
+    let analysis = analyze( &format!( "start-stop_{}", kind ), cwd.join( format!( "start-stop_{}.dat", kind ) ) );
 
-    {
-        let mut iter = analysis_1.allocations_from_source( "start-stop.c" );
-        let a0 = iter.next().unwrap();
-        let a1 = iter.next().unwrap();
-        let a2 = iter.next().unwrap();
+    let mut iter = analysis.allocations_from_source( "start-stop.c" );
+    let a0 = iter.next().unwrap();
+    let a1 = iter.next().unwrap();
+    let a2 = iter.next().unwrap();
+    let a3 = iter.next().unwrap();
+    let a4 = iter.next().unwrap();
 
-        assert_eq!( a0.size, 10002 );
-        assert_eq!( a1.size, 20002 );
-        assert_eq!( a2.size, 10003 );
+    assert_eq!( a0.size, 10002 );
+    assert_eq!( a1.size, 20002 );
+    assert_eq!( a2.size, 10003 );
+    assert_eq!( a3.size, 10004 );
+    assert_eq!( a4.size, 20003 );
 
-        assert_eq!( a0.thread, a2.thread );
-        assert_ne!( a0.thread, a1.thread );
+    assert_eq!( a0.thread, a2.thread );
+    assert_ne!( a0.thread, a1.thread );
+    assert_ne!( a3.thread, a4.thread );
 
-        assert_eq!( iter.next(), None );
-    }
+    assert!( a0.deallocation.is_some() );
+    assert!( a1.deallocation.is_none() );
+    assert!( a2.deallocation.is_none() );
+    assert!( a3.deallocation.is_none() );
+    assert!( a4.deallocation.is_none() );
 
-    {
-        let mut iter = analysis_2.allocations_from_source( "start-stop.c" );
-        let a0 = iter.next().unwrap();
-        let a1 = iter.next().unwrap();
-
-        assert_eq!( a0.size, 10004 );
-        assert_eq!( a1.size, 20003 );
-
-        assert_ne!( a0.thread, a1.thread );
-
-        assert_eq!( iter.next(), None );
-    }
+    assert_eq!( iter.next(), None );
 }
 
 #[test]
