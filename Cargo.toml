@@ -10,3 +10,6 @@ opt-level = 3
 lto = true
 panic = "abort"
 debug = true
+
+[patch.crates-io]
+gimli = { git = "https://github.com/gimli-rs/gimli.git", rev = "4ea297a" }
