@@ -201,6 +201,14 @@ lazy_static! {
     };
 }
 
+pub unsafe fn register_frame_by_pointer( fde: *const u8 ) {
+    AS.write().register_fde_from_pointer( fde )
+}
+
+pub fn deregister_frame_by_pointer( fde: *const u8 ) {
+    AS.write().unregister_fde_from_pointer( fde )
+}
+
 static mut PERF: Option< SpinLock< Perf > > = None;
 
 pub fn prepare_to_start_unwinding() {

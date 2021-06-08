@@ -540,3 +540,29 @@ pub unsafe extern "C" fn memory_profiler_sync() {
     sync();
     debug!( "Sync finished" );
 }
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn __register_frame( fde: *const u8 ) {
+    debug!( "Registering new frame: 0x{:016X}", fde as usize );
+
+    if let Some( original ) = crate::global::SYM_REGISTER_FRAME {
+        original( fde )
+    } else {
+        error!( "__register_frame call ignored since we couldn't find the original symbol" );
+    }
+
+    unwind::register_frame_by_pointer( fde );
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn __deregister_frame( fde: *const u8 ) {
+    debug!( "Deregistering new frame: 0x{:016X}", fde as usize );
+
+    if let Some( original ) = crate::global::SYM_DEREGISTER_FRAME {
+        original( fde )
+    } else {
+        error!( "__deregister_frame call ignored since we couldn't find the original symbol" );
+    }
+
+    unwind::deregister_frame_by_pointer( fde );
+}

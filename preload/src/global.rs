@@ -49,6 +49,9 @@ static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegist
 
 static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () > > > = SpinLock::new( None );
 
+pub static mut SYM_REGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
+pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
+
 pub fn toggle() {
     if STATE.load( Ordering::SeqCst ) == STATE_PERMANENTLY_DISABLED {
         return;
@@ -206,6 +209,25 @@ fn spawn_processing_thread() {
     *thread_handle = Some( new_handle );
 }
 
+fn resolve_original_syms() {
+    unsafe {
+        let register_frame = libc::dlsym( libc::RTLD_NEXT, b"__register_frame\0".as_ptr() as *const libc::c_char );
+        let deregister_frame = libc::dlsym( libc::RTLD_NEXT, b"__deregister_frame\0".as_ptr() as *const libc::c_char );
+        if register_frame.is_null() || deregister_frame.is_null() {
+            if register_frame.is_null() {
+                warn!( "Failed to find `__register_frame` symbol" );
+            }
+            if deregister_frame.is_null() {
+                warn!( "Failed to find `__deregister_frame` symbol" );
+            }
+            return;
+        }
+
+        crate::global::SYM_REGISTER_FRAME = Some( std::mem::transmute( register_frame ) );
+        crate::global::SYM_DEREGISTER_FRAME = Some( std::mem::transmute( deregister_frame ) );
+    }
+}
+
 #[cold]
 #[inline(never)]
 fn try_enable( state: usize ) -> bool {
@@ -250,6 +272,8 @@ fn try_enable( state: usize ) -> bool {
             tls.set_enabled( true );
         }
     }
+
+    resolve_original_syms();
 
     STATE.store( STATE_ENABLED, Ordering::SeqCst );
     info!( "Tracing was enabled" );
