@@ -179,9 +179,6 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
     };
 
     let mut metadata = get_allocation_metadata( pointer );
-    if !matches!( kind, AllocationKind::Calloc ) {
-        std::ptr::write_bytes( pointer as *mut u8, 0xee, metadata.usable_size );
-    }
     let tracking_pointer = tracking_pointer( pointer, metadata.usable_size );
 
     let mut thread = if let Some( thread ) = thread {
