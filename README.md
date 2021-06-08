@@ -7,6 +7,8 @@
    * Can be used to analyze memory leaks, see where exactly the memory is being
      consumed, identify temporary allocations and investigate excessive memory fragmentation
    * Gathers every allocation and deallocation, along with full stack traces
+   * Can dynamically cull temporary allocations allowing you to profile over a long
+     period of time
    * Uses a custom, tailor-made stack unwinding implementation which makes it
      a lot cheaper than other similar tools, potentially up to orders of magnitude
      faster in some cases
@@ -33,7 +35,7 @@
 
 ## Building
 
-1. Install GCC, Rust and the Yarn package manager (for building the GUI)
+1. Install GCC, Rust nightly and the Yarn package manager (for building the GUI)
 2. Build it:
 
         $ cargo build --release -p memory-profiler
@@ -45,6 +47,7 @@
 
 ### Basic usage
 
+    $ export MEMORY_PROFILER_LOG=warn
     $ LD_PRELOAD=./libmemory_profiler.so ./your_application
     $ ./memory-profiler-cli server memory-profiling_*.dat
 
@@ -204,6 +207,41 @@ be emitted to stderr (if they're enabled with `MEMORY_PROFILER_LOG`).
 
 This supports placeholders similar to `MEMORY_PROFILER_OUTPUT` (except `%n`).
 
+### `MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS`
+
+Default: `0`
+
+When set to `1` the profiler will cull temporary allocations
+and omit them from the output.
+
+Use this if you only care about memory leaks or you want
+to do long term profiling over several days.
+
+### `MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD`
+
+Default: `10000`
+
+The minimum lifetime of an allocation, in milliseconds, to **not** be
+considered a temporary allocation, and hence not get culled.
+
+Only makes sense when `MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS` is turned on.
+
+### `MEMORY_PROFILER_TEMPORARY_ALLOCATION_PENDING_THRESHOLD`
+
+Default: `65536`
+
+The maximum number of allocations to be kept in memory when tracking which
+allocations are temporary and which are not.
+
+Every allocation whose lifetime hasn't yet crossed the temporary allocation interval
+will be temporarily kept in a buffer, and removed from it once it either gets deallocated
+or its lifetime crosses the temporary allocation interval.
+
+If the number of allocations stored in this buffer exceeds the value set here the buffer will be
+cleared and all of the allocations contained within will be written to disk, regardless of their lifetime.
+
+Only makes sense when `MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS` is turned on.
+
 ### `MEMORY_PROFILER_DISABLE_BY_DEFAULT`
 
 Default: `0`
@@ -216,9 +254,6 @@ Default: `1`
 
 When set to `1` the profiler will register a `SIGUSR1` signal handler
 which can be used to toggle (enable or disable) profiling.
-
-If disabled and reenabled a new data file will be created according
-to the pattern set in `MEMORY_PROFILER_OUTPUT`.
 
 ### `MEMORY_PROFILER_REGISTER_SIGUSR2`
 
@@ -234,7 +269,7 @@ Default: `0`
 When set to `1` the profiled process will start an embedded server which can
 be used to stream the profiling data through TCP using `memory-profiler-cli gather` and `memory-profiler-gather`.
 
-This server will only be started when the profiling is enabled.
+This server will only be started when profiling is first enabled.
 
 ### `MEMORY_PROFILER_BASE_SERVER_PORT`
 
@@ -281,6 +316,20 @@ hunt down the original binaries.
 Default: `0`
 
 Decides whenever `malloc` will behave like `calloc` and fill the memory it returns with zeros.
+
+### `MEMORY_PROFILER_BACKTRACE_CACHE_SIZE`
+
+Default: `32768`
+
+Controls the size of the internal backtrace cache used to deduplicate emitted stack traces.
+
+### `MEMORY_PROFILER_GATHER_MMAP_CALLS`
+
+Default: `0`
+
+Controls whenever the profiler will also gather calls to `mmap` and `munmap`.
+
+(Those are *not* treated as allocations and are only available under the `/mmaps` API endpoint.)
 
 ### `MEMORY_PROFILER_USE_SHADOW_STACK`
 
