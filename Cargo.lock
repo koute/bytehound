@@ -309,9 +309,9 @@ dependencies = [
 
 [[package]]
 name = "addr2line"
-version = "0.15.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03345e98af8f3d786b6d9f656ccfa6ac316d954e92bc4841f0bba20789d5fb5a"
+checksum = "e7a2e47a1fbe209ee101dd6d61285226744c6c8d3c21c8dc878ba6cb9f467f3a"
 dependencies = [
  "gimli 0.24.0",
 ]
@@ -443,11 +443,11 @@ dependencies = [
 
 [[package]]
 name = "backtrace"
-version = "0.3.59"
+version = "0.3.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4717cfcbfaa661a0fd48f8453951837ae7e8f81e481fbb136e3202d72805a744"
+checksum = "b7815ea54e4d821e791162e078acbebfd6d8c8939cd559c9335dceb1c8ca7282"
 dependencies = [
- "addr2line 0.15.1",
+ "addr2line 0.15.2",
  "cc",
  "cfg-if 1.0.0",
  "libc",
@@ -940,8 +940,11 @@ dependencies = [
 [[package]]
 name = "gimli"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4075386626662786ddb0ec9081e7c7eeb1ba31951f447ca780ef9f5d568189"
+source = "git+https://github.com/gimli-rs/gimli.git?rev=4ea297a#4ea297a35db98ca2aa19f1a8105ab2992f29422f"
+dependencies = [
+ "fallible-iterator",
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "glob"
@@ -1011,9 +1014,9 @@ dependencies = [
 
 [[package]]
 name = "heck"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87cbf45460356b7deeb5e3415b5563308c0a9b057c85e12b06ad551f98d0a6ac"
+checksum = "6d621efb26863f0e9924c6ac577e8275e5e6b77455db64ffa6c65c904e9e132c"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -1319,7 +1322,7 @@ dependencies = [
  "log",
  "lru",
  "memmap",
- "nwind 0.1.0 (git+https://github.com/koute/not-perf.git?rev=fcc8a5d)",
+ "nwind 0.1.0 (git+https://github.com/koute/not-perf.git?rev=38c1a6a)",
  "parking_lot 0.11.1",
  "perf_event_open",
  "sc",
@@ -1485,6 +1488,26 @@ dependencies = [
 [[package]]
 name = "nwind"
 version = "0.1.0"
+source = "git+https://github.com/koute/not-perf.git?rev=38c1a6a#38c1a6a7e2ac3514f7061d19151bf14676317e4c"
+dependencies = [
+ "addr2line 0.15.2",
+ "byteorder",
+ "cc",
+ "cpp_demangle 0.3.2",
+ "gimli 0.24.0",
+ "goblin",
+ "libc",
+ "log",
+ "lru",
+ "memmap",
+ "proc-maps 0.1.0 (git+https://github.com/koute/not-perf.git?rev=38c1a6a)",
+ "scroll",
+ "speedy",
+]
+
+[[package]]
+name = "nwind"
+version = "0.1.0"
 source = "git+https://github.com/koute/not-perf.git?rev=dde87e7#dde87e7b2c46501acf2ffd035f6609c00ebc3be8"
 dependencies = [
  "addr2line 0.14.1",
@@ -1504,30 +1527,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "nwind"
-version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=fcc8a5d#fcc8a5d558c2863a86568a05e13c82f97bf84c4a"
-dependencies = [
- "addr2line 0.14.1",
- "byteorder",
- "cc",
- "cpp_demangle 0.3.2",
- "gimli 0.23.0",
- "goblin",
- "libc",
- "log",
- "lru",
- "memmap",
- "proc-maps 0.1.0 (git+https://github.com/koute/not-perf.git?rev=fcc8a5d)",
- "scroll",
- "speedy",
-]
-
-[[package]]
 name = "object"
-version = "0.24.0"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a5b3dd1c072ee7963717671d1ca129f1048fda25edea6b752bfc71ac8854170"
+checksum = "f8bc1d42047cf336f0f939c99e97183cf31551bf0f2865a2ec9c8d91fd4ffb5e"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "once_cell"
@@ -1628,7 +1634,7 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 [[package]]
 name = "perf_event_open"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=fcc8a5d#fcc8a5d558c2863a86568a05e13c82f97bf84c4a"
+source = "git+https://github.com/koute/not-perf.git?rev=38c1a6a#38c1a6a7e2ac3514f7061d19151bf14676317e4c"
 dependencies = [
  "byteorder",
  "libc",
@@ -1675,12 +1681,12 @@ dependencies = [
 [[package]]
 name = "proc-maps"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=dde87e7#dde87e7b2c46501acf2ffd035f6609c00ebc3be8"
+source = "git+https://github.com/koute/not-perf.git?rev=38c1a6a#38c1a6a7e2ac3514f7061d19151bf14676317e4c"
 
 [[package]]
 name = "proc-maps"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=fcc8a5d#fcc8a5d558c2863a86568a05e13c82f97bf84c4a"
+source = "git+https://github.com/koute/not-perf.git?rev=dde87e7#dde87e7b2c46501acf2ffd035f6609c00ebc3be8"
 
 [[package]]
 name = "quick-error"
@@ -2149,9 +2155,9 @@ checksum = "2579985fda508104f7587689507983eadd6a6e84dd35d6d115361f530916fa0d"
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16f1d0fef1604ba8f7a073c7e701f213e056707210e9020af4528e0101ce11a6"
+checksum = "e51e73328dc4ac0c7ccbda3a494dfa03df1de2f46018127f60c693f2648455b0"
 dependencies = [
  "libc",
 ]
@@ -2556,9 +2562,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-normalization"
-version = "0.1.17"
+version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07fbfce1c8a97d547e8b5334978438d9d6ec8c20e38f56d4a4374d181493eaef"
+checksum = "d54590932941a9e9266f0832deed84ebe1bf2e4c9e4a3554d393d18f5e854bf9"
 dependencies = [
  "tinyvec",
 ]
