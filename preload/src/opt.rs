@@ -46,10 +46,10 @@ static mut OPTS: Opts = Opts {
     write_binaries_to_output: true,
     zero_memory: false,
     gather_mmap_calls: false,
-    backtrace_cache_size: 16384,
+    backtrace_cache_size: 32768,
     cull_temporary_allocations: false,
     temporary_allocation_lifetime_threshold: 10000,
-    temporary_allocation_pending_threshold: 32768,
+    temporary_allocation_pending_threshold: 65536,
 };
 
 trait ParseVar: Sized {
