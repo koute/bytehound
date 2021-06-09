@@ -1,4 +1,5 @@
-/target/
+target
+target-docker
 **/*.rs.bk
 webui/.cache
 webui/dist

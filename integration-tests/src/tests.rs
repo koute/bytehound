@@ -88,7 +88,7 @@ fn cli_path() -> PathBuf {
     if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_CLI_PATH" ) {
         build_root().join( path ).join( "memory-profiler-cli" )
     } else {
-        repository_root().join( "target" ).join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "memory-profiler-cli" )
+        build_root().join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "memory-profiler-cli" )
     }
 }
 
@@ -226,13 +226,7 @@ fn assert_allocation_backtrace( alloc: &Allocation, expected: &[&str] ) {
 }
 
 fn workdir() -> PathBuf {
-    let path = repository_root().join( "target" );
-    let workdir = if let Some( target ) = target() {
-        path.join( target )
-    } else {
-        path
-    };
-
+    let workdir = build_root();
     std::fs::create_dir_all( &workdir ).unwrap();
     workdir
 }
@@ -285,15 +279,20 @@ fn get_basename( path: &str ) -> &str {
     &path[ index_slash..index_dot ]
 }
 
-fn compile_with_cargo( source: &str ) {
+fn compile_with_cargo( source: &str ) -> PathBuf {
     let source_path = repository_root().join( "integration-tests" ).join( "test-programs" ).join( source );
     let args: Vec< &str > = vec![ "build" ];
+    let target_dir = build_root().join( "test-programs" );
     run(
         &source_path,
         "cargo",
         &args,
-        EMPTY_ENV
+        &[
+            ("CARGO_TARGET_DIR", target_dir.clone())
+        ]
     ).assert_success();
+
+    target_dir.join( "debug" )
 }
 
 fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
@@ -939,11 +938,11 @@ fn test_backtrace() {
     assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123456 ) );
 }
 
+#[cfg(feature = "test-wasmtime")]
 #[cfg(target_arch = "x86_64")]
 #[test]
 fn test_wasmtime_linking() {
-    let cwd = repository_root().join( "integration-tests" ).join( "test-programs" ).join( "wasmtime" ).join( "target" ).join( "debug" );
-    compile_with_cargo( "wasmtime/linking" );
+    let cwd = compile_with_cargo( "wasmtime/linking" );
 
     run_on_target(
         &cwd,
@@ -964,11 +963,11 @@ fn test_wasmtime_linking() {
     }
 }
 
+#[cfg(feature = "test-wasmtime")]
 #[cfg(target_arch = "x86_64")]
 #[test]
 fn test_wasmtime_interrupt() {
-    let cwd = repository_root().join( "integration-tests" ).join( "test-programs" ).join( "wasmtime" ).join( "target" ).join( "debug" );
-    compile_with_cargo( "wasmtime/interrupt" );
+    let cwd = compile_with_cargo( "wasmtime/interrupt" );
 
     run_on_target(
         &cwd,

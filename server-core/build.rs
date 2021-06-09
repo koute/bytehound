@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::env;
+use std::ffi::OsString;
 
 fn grab_paths< P: AsRef< Path > >( path: P, output: &mut Vec< PathBuf > ) {
     let path = path.as_ref();
@@ -21,12 +22,25 @@ fn grab_paths< P: AsRef< Path > >( path: P, output: &mut Vec< PathBuf > ) {
     }
 }
 
+fn check_command( command: &str ) -> bool {
+    match Command::new( command ).args( &[ "--version" ] ).status() {
+        Err( ref error ) if error.kind() == io::ErrorKind::NotFound => {
+            false
+        },
+        Err( error ) => {
+            panic!( "Cannot launch `{}`: {}", command, error );
+        },
+        Ok( _ ) => true
+    }
+}
+
 fn main() {
     let src_out_dir: PathBuf = env::var_os( "OUT_DIR" ).expect( "missing OUT_DIR" ).into();
     let crate_root: PathBuf = env::var_os( "CARGO_MANIFEST_DIR" ).expect( "missing CARGO_MANIFEST_DIR" ).into();
+    let target_dir: PathBuf = env::var_os( "CARGO_TARGET_DIR" ).map( |directory| directory.into() ).unwrap_or( crate_root.join( ".." ).join( "target" ) );
 
     let webui_dir = crate_root.join( ".." ).join( "webui" );
-    let webui_out_dir = crate_root.join( ".." ).join( "target" ).join( "webui" );
+    let webui_out_dir = target_dir.join( "webui" );
 
     struct Lock {
         semaphore: Option< semalock::Semalock >
@@ -38,7 +52,7 @@ fn main() {
         }
     }
 
-    let lock_path = crate_root.join( ".." ).join( "target" ).join( ".webui-lock" );
+    let lock_path = target_dir.join( ".webui-lock" );
     let mut lock = Lock {
         semaphore: Some( semalock::Semalock::new( &lock_path ).expect( "failed to acquire a semaphore" ) )
     };
@@ -46,18 +60,16 @@ fn main() {
     lock.semaphore.as_mut().unwrap().with( |_| {
         let _ = fs::remove_dir_all( &webui_out_dir );
 
-        match Command::new( "yarn" ).args( &[ "--version" ] ).status() {
-            Err( ref error ) if error.kind() == io::ErrorKind::NotFound => {
+        let mut yarn = "yarn";
+        if !check_command( yarn ) {
+            yarn = "yarnpkg";
+            if !check_command( yarn ) {
                 panic!( "Yarn not found; you need to install it before you can build the WebUI" );
-            },
-            Err( error ) => {
-                panic!( "Cannot launch Yarn: {}", error );
-            },
-            Ok( _ ) => {}
+            }
         }
 
         if !webui_dir.join( "node_modules" ).exists() {
-            let mut child = Command::new( "yarn" )
+            let mut child = Command::new( yarn )
                 .args( &[ "install" ] )
                 .current_dir( &webui_dir )
                 .spawn()
@@ -76,8 +88,12 @@ fn main() {
 
         assert!( webui_dir.join( "node_modules" ).exists() );
 
+        let mut parcel_build_cmd = OsString::new();
+        parcel_build_cmd.push( format!( "$({} bin)/parcel build src/index.html -d ", yarn ) );
+        parcel_build_cmd.push( &webui_out_dir );
+
         let mut child = Command::new( "/bin/sh" )
-            .args( &[ "-c", "$(yarn bin)/parcel build src/index.html -d ../target/webui" ] )
+            .args( &[ OsString::from( String::from( "-c" ) ), parcel_build_cmd ] )
             .current_dir( &webui_dir )
             .spawn()
             .expect( "cannot launch a child process to build the WebUI" );

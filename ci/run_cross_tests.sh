@@ -3,22 +3,23 @@
 set -euo pipefail
 cd "$(dirname $(readlink -f "$0"))/.."
 
-set +e
-echo "$(rustc --version)" | grep -q "nightly"
-if [ "$?" = "0" ]; then
-    echo "Running on nightly!"
-    EXTRA_ARGS="--features nightly"
-else
-    EXTRA_ARGS=""
-fi
-set -e
+source ./ci/check_if_nightly.sh
 
 export MEMORY_PROFILER_TEST_TARGET=$1
 export MEMORY_PROFILER_TEST_RUNNER=/usr/local/bin/runner
-export CARGO_TARGET_DIR="target/cross"
 
-cargo build --target=$MEMORY_PROFILER_TEST_TARGET -p memory-profiler $EXTRA_ARGS
-MEMORY_PROFILER_TEST_PRELOAD_PATH=$MEMORY_PROFILER_TEST_TARGET/debug cargo test -p integration-tests
+cd preload
+cargo build --target=$MEMORY_PROFILER_TEST_TARGET $FEATURES_NIGHTLY
+cd ..
 
-cargo build --target=$MEMORY_PROFILER_TEST_TARGET --release -p memory-profiler
-MEMORY_PROFILER_TEST_PRELOAD_PATH=$MEMORY_PROFILER_TEST_TARGET/release cargo test -p integration-tests
+cd integration-tests
+MEMORY_PROFILER_TEST_PRELOAD_PATH=$MEMORY_PROFILER_TEST_TARGET/debug cargo test --no-default-features
+cd ..
+
+cd preload
+cargo build --target=$MEMORY_PROFILER_TEST_TARGET $FEATURES_NIGHTLY --release
+cd ..
+
+cd integration-tests
+MEMORY_PROFILER_TEST_PRELOAD_PATH=$MEMORY_PROFILER_TEST_TARGET/release cargo test --no-default-features
+cd ..

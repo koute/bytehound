@@ -5,10 +5,11 @@ set -euo pipefail
 set +e
 echo "$TARGET_LIST" | grep -q "$1"
 R=$?
+shift
 set -e
 
 if [[ "$R" == "0" ]]; then
-    /bin/bash -c "set -euo pipefail ; $2"
+    /bin/bash -c "set -euo pipefail ; $@"
     exit $?
 fi
 
