@@ -1,5 +1,3 @@
-[![Build Status](https://api.travis-ci.org/koute/memory-profiler.svg)](https://travis-ci.org/koute/memory-profiler)
-
 # A memory profiler for Linux
 
 ## Features
