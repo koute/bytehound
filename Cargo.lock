@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "cli-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ahash 0.7.4",
  "bitflags",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "byteorder",
  "libc",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "memory-profiler"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "common",
  "glob 0.2.11",
@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "memory-profiler-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "cli-core",
  "env_logger 0.6.2",
@@ -1341,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "memory-profiler-gather"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "clap",
@@ -2126,7 +2126,7 @@ dependencies = [
 
 [[package]]
 name = "server-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "actix",
  "actix-cors",
