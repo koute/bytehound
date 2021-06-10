@@ -559,7 +559,9 @@ pub unsafe extern "C" fn __register_frame( fde: *const u8 ) {
         error!( "__register_frame call ignored since we couldn't find the original symbol" );
     }
 
+    let thread = StrongThreadHandle::acquire();
     unwind::register_frame_by_pointer( fde );
+    std::mem::drop( thread );
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -572,5 +574,7 @@ pub unsafe extern "C" fn __deregister_frame( fde: *const u8 ) {
         error!( "__deregister_frame call ignored since we couldn't find the original symbol" );
     }
 
+    let thread = StrongThreadHandle::acquire();
     unwind::deregister_frame_by_pointer( fde );
+    std::mem::drop( thread );
 }
