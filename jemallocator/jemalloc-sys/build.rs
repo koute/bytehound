@@ -194,12 +194,12 @@ fn main() {
     }
 
     if use_prefix {
-        cmd.arg("--with-jemalloc-prefix=_rjem_");
+        cmd.arg("--with-jemalloc-prefix=_rjem_mp_");
         println!("cargo:rustc-cfg=prefixed");
-        println!("JEMALLOC PREFIX SET TO: _rjem_");
+        println!("JEMALLOC PREFIX SET TO: _rjem_mp_");
     }
 
-    cmd.arg("--with-private-namespace=_rjem_");
+    cmd.arg("--with-private-namespace=_rjem_mp_");
 
     if env::var_os("CARGO_FEATURE_DEBUG").is_some() {
         println!("CARGO_FEATURE_DEBUG set");

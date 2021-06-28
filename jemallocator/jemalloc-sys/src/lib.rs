@@ -135,7 +135,7 @@ extern "C" {
     ///
     /// If the space cannot be allocated, a null pointer is returned and `errno`
     /// is set to `ENOMEM`.
-    #[cfg_attr(prefixed, link_name = "_rjem_malloc")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_malloc")]
     pub fn malloc(size: size_t) -> *mut c_void;
     /// Allocates zero-initialized space for an array of `number` objects, each
     /// of whose size is `size`.
@@ -146,7 +146,7 @@ extern "C" {
     ///
     /// Note: zero-initialized memory need not be the same as the
     /// representation of floating-point zero or a null pointer constant.
-    #[cfg_attr(prefixed, link_name = "_rjem_calloc")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_calloc")]
     pub fn calloc(number: size_t, size: size_t) -> *mut c_void;
 
     /// Allocates `size` bytes of memory at an address which is a multiple of
@@ -170,7 +170,7 @@ extern "C" {
     /// The behavior is _undefined_ if:
     ///
     /// * `ptr` is null.
-    #[cfg_attr(prefixed, link_name = "_rjem_posix_memalign")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_posix_memalign")]
     pub fn posix_memalign(ptr: *mut *mut c_void, alignment: size_t, size: size_t) -> c_int;
 
     /// Allocates `size` bytes of memory at an address which is a multiple of
@@ -190,7 +190,7 @@ extern "C" {
     ///
     /// * `alignment` is not a power-of-two
     /// * `size` is not an integral multiple of `alignment`
-    #[cfg_attr(prefixed, link_name = "_rjem_aligned_alloc")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_aligned_alloc")]
     pub fn aligned_alloc(alignment: size_t, size: size_t) -> *mut c_void;
 
     /// Resizes the previously-allocated memory region referenced by `ptr` to
@@ -229,7 +229,7 @@ extern "C" {
     /// * `ptr` does not match a pointer previously returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_realloc")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_realloc")]
     pub fn realloc(ptr: *mut c_void, size: size_t) -> *mut c_void;
 
     /// Deallocates previously-allocated memory region referenced by `ptr`.
@@ -245,7 +245,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_free")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_free")]
     pub fn free(ptr: *mut c_void);
 
     /// Allocates at least `size` bytes of memory according to `flags`.
@@ -265,7 +265,7 @@ extern "C" {
     /// # Safety
     ///
     /// The behavior is _undefined_ if `size == 0`.
-    #[cfg_attr(prefixed, link_name = "_rjem_mallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_mallocx")]
     pub fn mallocx(size: size_t, flags: c_int) -> *mut c_void;
 
     /// Resizes the previously-allocated memory region referenced by `ptr` to be
@@ -298,7 +298,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by
     ///   the memory allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_rallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_rallocx")]
     pub fn rallocx(ptr: *mut c_void, size: size_t, flags: c_int) -> *mut c_void;
 
     /// Resizes the previously-allocated memory region referenced by `ptr` _in
@@ -339,7 +339,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_xallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_xallocx")]
     pub fn xallocx(ptr: *mut c_void, size: size_t, extra: size_t, flags: c_int) -> size_t;
 
     /// Returns the real size of the previously-allocated memory region
@@ -354,7 +354,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_sallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_sallocx")]
     pub fn sallocx(ptr: *const c_void, flags: c_int) -> size_t;
 
     /// Deallocates previously-allocated memory region referenced by `ptr`.
@@ -370,7 +370,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_dallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_dallocx")]
     pub fn dallocx(ptr: *mut c_void, flags: c_int);
 
     /// Deallocates previously-allocated memory region referenced by `ptr` with
@@ -391,7 +391,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_sdallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_sdallocx")]
     pub fn sdallocx(ptr: *mut c_void, size: size_t, flags: c_int);
 
     /// Returns the real size of the allocation that would result from a
@@ -405,7 +405,7 @@ extern "C" {
     /// # Safety
     ///
     /// The behavior is _undefined_ if `size == 0`.
-    #[cfg_attr(prefixed, link_name = "_rjem_nallocx")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_nallocx")]
     pub fn nallocx(size: size_t, flags: c_int) -> size_t;
 
     /// Returns the real size of the previously-allocated memory region
@@ -430,7 +430,7 @@ extern "C" {
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
     /// * the memory region referenced by `ptr` has been deallocated.
-    #[cfg_attr(prefixed, link_name = "_rjem_malloc_usable_size")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_malloc_usable_size")]
     pub fn malloc_usable_size(ptr: *const c_void) -> size_t;
 
     /// General interface for introspecting the memory allocator, as well as
@@ -463,7 +463,7 @@ extern "C" {
     /// directly related to `mallctl` read/write processing.
     ///
     /// [jemalloc_mallctl]: http://jemalloc.net/jemalloc.3.html#mallctl_namespace
-    #[cfg_attr(prefixed, link_name = "_rjem_mallctl")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_mallctl")]
     pub fn mallctl(name: *const c_char,
                    oldp: *mut c_void,
                    oldlenp: *mut size_t,
@@ -484,11 +484,11 @@ extern "C" {
     /// a complete MIB. For name components that are integers (e.g. the 2 in
     /// arenas.bin.2.size), the corresponding MIB component will always be that
     /// integer.
-    #[cfg_attr(prefixed, link_name = "_rjem_mallctlnametomib")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_mallctlnametomib")]
     pub fn mallctlnametomib(name: *const c_char, mibp: *mut size_t, miblenp: *mut size_t) -> c_int;
 
     /// Like [`mallctl`] but taking a `mib` as input instead of a name.
-    #[cfg_attr(prefixed, link_name = "_rjem_mallctlbymib")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_mallctlbymib")]
     pub fn mallctlbymib(mib: *const size_t,
                         miblen: size_t,
                         oldp: *mut c_void,
@@ -524,7 +524,7 @@ extern "C" {
     /// Note that thread caching may prevent some statistics from being
     /// completely up to date, since extra locking would be required to merge
     /// counters that track thread cache operations.
-    #[cfg_attr(prefixed, link_name = "_rjem_malloc_stats_print")]
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_malloc_stats_print")]
     pub fn malloc_stats_print(write_cb: extern "C" fn(*mut c_void, *const c_char),
                               cbopaque: *mut c_void,
                               opts: *const c_char);

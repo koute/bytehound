@@ -38,17 +38,17 @@ extern "C" {
 
 #[cfg(feature = "jemalloc")]
 extern "C" {
-    #[link_name = "_rjem_malloc"]
+    #[link_name = "_rjem_mp_malloc"]
     fn malloc_real( size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_calloc"]
+    #[link_name = "_rjem_mp_calloc"]
     fn calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_realloc"]
+    #[link_name = "_rjem_mp_realloc"]
     fn realloc_real( ptr: *mut c_void, size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_free"]
+    #[link_name = "_rjem_mp_free"]
     fn free_real( ptr: *mut c_void );
-    #[link_name = "_rjem_memalign"]
+    #[link_name = "_rjem_mp_memalign"]
     fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_malloc_usable_size"]
+    #[link_name = "_rjem_mp_malloc_usable_size"]
     fn malloc_usable_size_real( ptr: *mut c_void ) -> size_t;
 }
 
