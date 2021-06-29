@@ -1024,9 +1024,10 @@ fn handler_tree( req: HttpRequest ) -> Result< HttpResponse > {
 
 fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
     let backtrace_format: protocol::BacktraceFormat = query( &req )?;
+    let filter: protocol::MmapFilter = query( &req )?;
     let body = async_data_handler( &req, move |data, tx| {
         let factory = || {
-            data.mmap_operations().iter().map( |op| {
+            data.mmap_operations().iter().flat_map( |op| {
                 match *op {
                     MmapOperation::Mmap( MemoryMap {
                         timestamp,
@@ -1040,8 +1041,18 @@ fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
                         thread,
                         offset
                     }) => {
+                        if let Some( min ) = filter.size_min {
+                            if length < min {
+                                return None;
+                            }
+                        }
+                        if let Some( max ) = filter.size_max {
+                            if length > max {
+                                return None;
+                            }
+                        }
                         let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
-                        protocol::MmapOperation::Mmap {
+                        Some( protocol::MmapOperation::Mmap {
                             timestamp: timestamp.into(),
                             pointer,
                             pointer_s: format!( "{:016}", pointer ),
@@ -1064,7 +1075,7 @@ fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
                             offset,
                             file_descriptor: file_descriptor as i32,
                             thread
-                        }
+                        })
                     },
                     MmapOperation::Munmap( MemoryUnmap {
                         timestamp,
@@ -1073,8 +1084,18 @@ fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
                         backtrace: backtrace_id,
                         thread
                     }) => {
+                        if let Some( min ) = filter.size_min {
+                            if length < min {
+                                return None;
+                            }
+                        }
+                        if let Some( max ) = filter.size_max {
+                            if length > max {
+                                return None;
+                            }
+                        }
                         let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
-                        protocol::MmapOperation::Munmap {
+                        Some(protocol::MmapOperation::Munmap {
                             timestamp: timestamp.into(),
                             pointer,
                             pointer_s: format!( "{:016}", pointer ),
@@ -1082,7 +1103,7 @@ fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
                             backtrace,
                             backtrace_id: backtrace_id.raw(),
                             thread
-                        }
+                        })
                     }
                 }
             })

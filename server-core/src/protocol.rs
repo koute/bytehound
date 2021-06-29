@@ -571,6 +571,12 @@ impl< 'de > serde::Deserialize< 'de > for NumberOrPercentage {
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
+pub struct MmapFilter {
+    pub size_min: Option< u64 >,
+    pub size_max: Option< u64 >,
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
 pub struct AllocFilter {
     pub from: Option< TimestampFilter< TimestampMin > >,
     pub to: Option< TimestampFilter< TimestampMax > >,
