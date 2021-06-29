@@ -56,6 +56,8 @@ static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () >
 pub static mut SYM_REGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
 pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
 
+pub static MMAP_LOCK: SpinLock< () > = SpinLock::new(());
+
 pub fn toggle() {
     if STATE.load( Ordering::SeqCst ) == STATE_PERMANENTLY_DISABLED {
         return;

@@ -391,16 +391,25 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    let thread = StrongThreadHandle::acquire();
-
-    let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
-    if ptr == libc::MAP_FAILED || !opt::get().gather_mmap_calls {
-        return ptr;
+    let mut thread = StrongThreadHandle::acquire();
+    if !opt::get().gather_mmap_calls {
+        thread = None;
     }
 
-    let mut thread = if let Some( thread ) = thread { thread } else { return ptr };
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        return syscall::mmap( addr, length, prot, flags, fildes, off );
+    };
+
     let mut backtrace = Backtrace::new();
     unwind::grab( &mut thread, &mut backtrace );
+
+    let _lock = crate::global::MMAP_LOCK.lock();
+    let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
+    if ptr == libc::MAP_FAILED {
+        return ptr;
+    }
 
     send_event_throttled( || InternalEvent::Mmap {
         pointer: ptr as usize,
@@ -420,16 +429,22 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
-    let thread = StrongThreadHandle::acquire();
-    let result = syscall::munmap( ptr, length );
-
+    let mut thread = StrongThreadHandle::acquire();
     if !opt::get().gather_mmap_calls {
-        return result;
+        thread = None;
     }
 
-    let mut thread = if let Some( thread ) = thread { thread } else { return result };
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        return syscall::munmap( ptr, length );
+    };
+
     let mut backtrace = Backtrace::new();
     unwind::grab( &mut thread, &mut backtrace );
+
+    let _lock = crate::global::MMAP_LOCK.lock();
+    let result = syscall::munmap( ptr, length );
 
     if !ptr.is_null() {
         send_event_throttled( || InternalEvent::Munmap {
