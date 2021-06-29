@@ -3,7 +3,7 @@ extern crate log;
 #[macro_use]
 extern crate serde_derive;
 
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::error::Error;
 use std::sync::Arc;
@@ -300,50 +300,6 @@ fn handler_list( req: HttpRequest ) -> HttpResponse {
 }
 
 fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationTimeline {
-    use std::ops::Range;
-
-    #[derive(Clone)]
-    struct Entry( Range< u64 > );
-    impl PartialEq for Entry {
-        #[inline(always)]
-        fn eq( &self, lhs: &Entry ) -> bool {
-            self.0.start == lhs.0.start
-        }
-    }
-    impl Eq for Entry {}
-    impl PartialOrd for Entry {
-        #[inline(always)]
-        fn partial_cmp( &self, rhs: &Entry ) -> Option< Ordering > {
-            Some( self.cmp( rhs ) )
-        }
-    }
-    impl Ord for Entry {
-        #[inline(always)]
-        fn cmp( &self, rhs: &Entry ) -> Ordering {
-            self.0.start.cmp( &rhs.0.start )
-        }
-    }
-
-    #[inline(always)]
-    fn get_min( set: &BTreeSet< Entry > ) -> u64 {
-        if set.is_empty() {
-            return -1_i32 as u64;
-        }
-
-        let range = (Unbounded as Bound< Entry >, Unbounded);
-        set.range( range ).next().unwrap().0.start
-    }
-
-    #[inline(always)]
-    fn get_max( set: &BTreeSet< Entry > ) -> u64 {
-        if set.is_empty() {
-            return 0;
-        }
-
-        let range = (Unbounded as Bound< Entry >, Unbounded);
-        set.range( range ).next_back().unwrap().0.end
-    }
-
     #[inline(always)]
     fn is_matched( allocation: &Allocation ) -> bool {
         allocation.in_main_arena() && !allocation.is_mmaped()
@@ -355,9 +311,53 @@ fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationT
 
     let mut current_used_address_space = 0;
     let mut fragmentation = Vec::with_capacity( maximum_len );
-    let mut set: BTreeSet< Entry > = BTreeSet::new();
-    let mut current_address_min = get_min( &set );
-    let mut current_address_max = get_max( &set );
+    let mut address_map: BTreeMap< u64, i64 > = BTreeMap::new();
+    let mut current_address_min = std::u64::MAX;
+    let mut current_address_max = 0;
+
+    fn trim_front( address_map: &mut BTreeMap< u64, i64 > ) {
+        while let Some( (&address, &count) ) = address_map.range( (Unbounded as Bound< u64 >, Unbounded) ).next() {
+            if count == 0 {
+                address_map.remove( &address );
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn trim_back( address_map: &mut BTreeMap< u64, i64 > ) {
+        while let Some( (&address, &count) ) = address_map.range( (Unbounded as Bound< u64 >, Unbounded) ).rev().next() {
+            if count == 0 {
+                address_map.remove( &address );
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn min( address_map: &BTreeMap< u64, i64 > ) -> u64 {
+        for (&address, &count) in address_map.range( (Unbounded as Bound< u64 >, Unbounded) ) {
+            if count == 0 {
+                continue;
+            }
+
+            return address;
+        }
+
+        std::u64::MAX
+    }
+
+    fn max( address_map: &BTreeMap< u64, i64 > ) -> u64 {
+        for (&address, &count) in address_map.range( (Unbounded as Bound< u64 >, Unbounded) ).rev() {
+            if count == 0 {
+                continue;
+            }
+
+            return address;
+        }
+
+        0
+    }
 
     for op in data.operations() {
         let timestamp = match op {
@@ -367,9 +367,8 @@ fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationT
                 }
 
                 let range = allocation.actual_range( &data );
-                let entry = Entry( range.clone() );
-                debug_assert!( !set.contains( &entry ) );
-                set.insert( entry );
+                *address_map.entry( range.start ).or_insert( 0 ) += 1;
+                *address_map.entry( range.end ).or_insert( 0 ) += 1;
                 current_used_address_space += range.end - range.start;
 
                 if range.start < current_address_min {
@@ -388,16 +387,18 @@ fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationT
                 }
 
                 let range = allocation.actual_range( &data );
-                let was_removed = set.remove( &Entry( range.clone() ) );
-                assert!( was_removed );
-
+                *address_map.entry( range.start ).or_insert( 0 ) -= 1;
+                *address_map.entry( range.end ).or_insert( 0 ) -= 1;
                 current_used_address_space -= range.end - range.start;
 
                 if range.start == current_address_min {
-                    current_address_min = get_min( &set );
+                    trim_front( &mut address_map );
+                    current_address_min = min( &address_map );
                 }
+
                 if range.end == current_address_max {
-                    current_address_max = get_max( &set );
+                    trim_back( &mut address_map );
+                    current_address_max = max( &address_map );
                 }
 
                 deallocation.timestamp
@@ -409,29 +410,40 @@ fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationT
 
                 if is_matched( old_allocation ) {
                     let old_range = old_allocation.actual_range( &data );
-                    let was_removed = set.remove( &Entry( old_range.clone() ) );
-                    assert!( was_removed );
+                    *address_map.entry( old_range.start ).or_insert( 0 ) -= 1;
+                    *address_map.entry( old_range.end ).or_insert( 0 ) -= 1;
 
                     current_used_address_space -= old_range.end - old_range.start;
+
+                    if old_range.start == current_address_min {
+                        trim_front( &mut address_map );
+                        current_address_min = min( &address_map );
+                    }
+
+                    if old_range.end == current_address_max {
+                        trim_back( &mut address_map );
+                        current_address_max = max( &address_map );
+                    }
                 }
 
                 if is_matched( new_allocation ) {
                     let new_range = new_allocation.actual_range( &data );
-                    let entry = Entry( new_range.clone() );
-                    debug_assert!( !set.contains( &entry ) );
-                    set.insert( entry );
+                    *address_map.entry( new_range.start ).or_insert( 0 ) += 1;
+                    *address_map.entry( new_range.end ).or_insert( 0 ) += 1;
                     current_used_address_space += new_range.end - new_range.start;
-                }
 
-                current_address_min = get_min( &set );
-                current_address_max = get_max( &set );
+                    if new_range.start < current_address_min {
+                        current_address_min = new_range.start;
+                    }
+
+                    if new_range.end > current_address_max {
+                        current_address_max = new_range.end;
+                    }
+                }
 
                 new_allocation.timestamp
             }
         };
-
-        debug_assert_eq!( current_address_min, get_min( &set ) );
-        debug_assert_eq!( current_address_max, get_max( &set ) );
 
         let timestamp = timestamp.as_secs();
         if timestamp != x {
