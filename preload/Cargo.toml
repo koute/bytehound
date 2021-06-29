@@ -18,6 +18,7 @@ glob = "0.2"
 lru = { version = "0.6", default-features = false }
 jemallocator = { path = "../jemallocator", default-features = false }
 jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
+goblin = "0.0.24"
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"

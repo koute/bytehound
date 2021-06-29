@@ -52,6 +52,29 @@ extern "C" {
     fn malloc_usable_size_real( ptr: *mut c_void ) -> size_t;
 }
 
+extern "C" {
+    #[link_name = "_rjem_mp_mallocx"]
+    fn jem_mallocx_real( size: size_t, flags: c_int ) -> *mut c_void;
+    #[link_name = "_rjem_mp_calloc"]
+    fn jem_calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
+    #[link_name = "_rjem_mp_sdallocx"]
+    fn jem_sdallocx_real( pointer: *mut c_void, _size: size_t, _flags: c_int );
+    #[link_name = "_rjem_mp_rallocx"]
+    fn jem_rallocx_real( old_pointer: *mut c_void, size: size_t, _flags: c_int ) -> *mut c_void;
+    #[link_name = "_rjem_mp_xallocx"]
+    fn jem_xallocx_real( pointer: *mut c_void, size: size_t, extra: size_t, _flags: c_int ) -> size_t;
+    #[link_name = "_rjem_mp_nallocx"]
+    fn jem_nallocx_real( size: size_t, _flags: c_int ) -> size_t;
+    #[link_name = "_rjem_mp_malloc_usable_size"]
+    fn jem_malloc_usable_size_real( pointer: *const c_void ) -> size_t;
+    #[link_name = "_rjem_mp_mallctlnametomib"]
+    fn jem_mallctlnametomib_real( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int;
+    #[link_name = "_rjem_mallctlbymib"]
+    fn jem_mallctlbymib_real( mib: *const size_t, miblen: size_t, oldp: *mut c_void, oldpenp: *mut size_t, newp: *mut c_void, newlen: size_t ) -> c_int;
+    #[link_name = "_rjem_mp_malloc_stats_print"]
+    fn jem_malloc_stats_print_real( write_cb: Option< unsafe extern "C" fn( *mut c_void, *const libc::c_char ) >, cbopaque: *mut c_void, opts: *const libc::c_char );
+}
+
 #[cfg(feature = "jemalloc")]
 unsafe fn mallopt_real( _: c_int, _: c_int ) -> c_int {
     1
@@ -105,7 +128,7 @@ fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
         return Metadata {
             flags: 0,
             preceding_free_space: 0,
-            usable_size: unsafe { malloc_usable_size_real( ptr ) }
+            usable_size: unsafe { jem_malloc_usable_size_real( ptr ) }
         }
     }
 
@@ -366,6 +389,373 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
             thread: thread.decay()
         }
     });
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_malloc( requested_size: size_t ) -> *mut c_void {
+    _rjem_mallocx( requested_size, 0 )
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_void {
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return ptr::null_mut()
+    };
+
+    let mut thread = StrongThreadHandle::acquire();
+    let pointer = jem_mallocx_real( effective_size, flags );
+
+    if !crate::global::is_actively_running() {
+        thread = None;
+    }
+
+    let address = match NonZeroUsize::new( pointer as usize ) {
+        Some( address ) => address,
+        None => return pointer
+    };
+
+    let usable_size = jem_malloc_usable_size_real( pointer );
+    let tracking_pointer = tracking_pointer( pointer, usable_size );
+
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        std::ptr::write_unaligned( tracking_pointer, InternalAllocationId::UNTRACKED );
+        return pointer;
+    };
+
+    let id = thread.on_new_allocation();
+    std::ptr::write_unaligned( tracking_pointer, id );
+
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut thread, &mut backtrace );
+    send_event_throttled( move || {
+        InternalEvent::Alloc {
+            id,
+            address,
+            size: requested_size as usize,
+            usable_size,
+            preceding_free_space: 0,
+            flags: 0,
+            backtrace,
+            timestamp: get_timestamp_if_enabled(),
+            thread: thread.decay()
+        }
+    });
+
+    pointer
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void {
+    let requested_size = match count.checked_mul( element_size ) {
+        None => return ptr::null_mut(),
+        Some( size ) => size
+    };
+
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return ptr::null_mut()
+    };
+
+    let mut thread = StrongThreadHandle::acquire();
+    let pointer = jem_calloc_real( 1, effective_size );
+
+    if !crate::global::is_actively_running() {
+        thread = None;
+    }
+
+    let address = match NonZeroUsize::new( pointer as usize ) {
+        Some( address ) => address,
+        None => return pointer
+    };
+
+    let usable_size = jem_malloc_usable_size_real( pointer );
+    let tracking_pointer = tracking_pointer( pointer, usable_size );
+
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        std::ptr::write_unaligned( tracking_pointer, InternalAllocationId::UNTRACKED );
+        return pointer;
+    };
+
+    let id = thread.on_new_allocation();
+    std::ptr::write_unaligned( tracking_pointer, id );
+
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut thread, &mut backtrace );
+    send_event_throttled( move || {
+        InternalEvent::Alloc {
+            id,
+            address,
+            size: requested_size as usize,
+            usable_size,
+            preceding_free_space: 0,
+            flags: event::ALLOC_FLAG_CALLOC,
+            backtrace,
+            timestamp: get_timestamp_if_enabled(),
+            thread: thread.decay()
+        }
+    });
+
+    pointer
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flags: c_int ) {
+    let address = match NonZeroUsize::new( pointer as usize ) {
+        Some( address ) => address,
+        None => return
+    };
+
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return
+    };
+
+    let usable_size = jem_malloc_usable_size_real( pointer );
+    let tracking_pointer = tracking_pointer( pointer, usable_size );
+    let id = std::ptr::read_unaligned( tracking_pointer );
+
+    let mut thread = StrongThreadHandle::acquire();
+    jem_sdallocx_real( pointer, effective_size, flags );
+
+    if id.is_untracked() && !crate::global::is_actively_running() {
+        thread = None;
+    }
+
+    let mut thread = if let Some( thread ) = thread { thread } else { return };
+    let mut backtrace = Backtrace::new();
+    if opt::get().grab_backtraces_on_free {
+        unwind::grab( &mut thread, &mut backtrace );
+    }
+
+    send_event_throttled( || {
+        InternalEvent::Free {
+            id,
+            address,
+            backtrace,
+            timestamp: get_timestamp_if_enabled(),
+            thread: thread.decay()
+        }
+    });
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_realloc( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
+    _rjem_rallocx( old_pointer, requested_size, 0 )
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, flags: c_int ) -> *mut c_void {
+    let old_address = match NonZeroUsize::new( old_pointer as usize ) {
+        Some( old_address ) => old_address,
+        None => return _rjem_mallocx( requested_size, flags )
+    };
+
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return ptr::null_mut()
+    };
+
+    let old_usable_size = jem_malloc_usable_size_real( old_pointer );
+    let old_tracking_pointer = tracking_pointer( old_pointer, old_usable_size );
+    let id = std::ptr::read_unaligned( old_tracking_pointer );
+
+    let mut thread = StrongThreadHandle::acquire();
+    let new_pointer = jem_rallocx_real( old_pointer, effective_size, flags );
+    if id.is_untracked() && !crate::global::is_actively_running() {
+        thread = None;
+    }
+
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        if new_pointer.is_null() {
+            return ptr::null_mut();
+        } else {
+            let new_usable_size = jem_malloc_usable_size_real( new_pointer );
+            let new_tracking_pointer = tracking_pointer( new_pointer, new_usable_size );
+            std::ptr::write_unaligned( new_tracking_pointer, InternalAllocationId::UNTRACKED );
+
+            return new_pointer;
+        }
+    };
+
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut thread, &mut backtrace );
+
+    let timestamp = get_timestamp_if_enabled();
+    if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
+        let new_usable_size = jem_malloc_usable_size_real( new_pointer );
+        let new_tracking_pointer = tracking_pointer( new_pointer, new_usable_size );
+        std::ptr::write_unaligned( new_tracking_pointer, id );
+
+        send_event_throttled( move || {
+            InternalEvent::Realloc {
+                id,
+                old_address,
+                new_address,
+                new_size: requested_size as usize,
+                new_usable_size,
+                new_preceding_free_space: 0,
+                new_flags: 0,
+                backtrace,
+                timestamp,
+                thread: thread.decay()
+            }
+        });
+
+        new_pointer
+    } else {
+        send_event_throttled( || {
+            InternalEvent::Free {
+                id,
+                address: old_address,
+                backtrace,
+                timestamp,
+                thread: thread.decay()
+            }
+        });
+
+        ptr::null_mut()
+    }
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra: size_t, flags: c_int ) -> size_t {
+    let address = match NonZeroUsize::new( pointer as usize ) {
+        Some( address ) => address,
+        None => return 0
+    };
+
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return _rjem_malloc_usable_size( pointer )
+    };
+
+    let old_usable_size = jem_malloc_usable_size_real( pointer );
+    let old_tracking_pointer = tracking_pointer( pointer, old_usable_size );
+    let id = std::ptr::read_unaligned( old_tracking_pointer );
+
+    let mut thread = StrongThreadHandle::acquire();
+    let new_effective_size = jem_xallocx_real( pointer, effective_size, extra, flags );
+    let new_requested_size = new_effective_size - mem::size_of::< InternalAllocationId >();
+    if id.is_untracked() && !crate::global::is_actively_running() {
+        thread = None;
+    }
+
+    let mut thread = if let Some( thread ) = thread {
+        thread
+    } else {
+        let new_usable_size = jem_malloc_usable_size_real( pointer );
+        let new_tracking_pointer = tracking_pointer( pointer, new_usable_size );
+        std::ptr::write_unaligned( new_tracking_pointer, InternalAllocationId::UNTRACKED );
+
+        return new_requested_size;
+    };
+
+    let mut backtrace = Backtrace::new();
+    unwind::grab( &mut thread, &mut backtrace );
+
+    let timestamp = get_timestamp_if_enabled();
+
+    let new_usable_size = jem_malloc_usable_size_real( pointer );
+    let new_tracking_pointer = tracking_pointer( pointer, new_usable_size );
+    std::ptr::write_unaligned( new_tracking_pointer, id );
+
+    send_event_throttled( move || {
+        InternalEvent::Realloc {
+            id,
+            old_address: address,
+            new_address: address,
+            new_size: new_requested_size as usize,
+            new_usable_size,
+            new_preceding_free_space: 0,
+            new_flags: 0,
+            backtrace,
+            timestamp,
+            thread: thread.decay()
+        }
+    });
+
+    new_requested_size
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -> size_t {
+    let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => return 0
+    };
+
+    jem_nallocx_real( effective_size, flags ) - mem::size_of::< InternalAllocationId >()
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_malloc_usable_size( pointer: *const c_void ) -> size_t {
+    let usable_size = jem_malloc_usable_size_real( pointer );
+    (usable_size - mem::size_of::< InternalAllocationId >()) as usize
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_mallctl( name: *const libc::c_char, _oldp: *mut c_void, _oldlenp: *mut size_t, _newp: *mut c_void, _newlen: size_t ) -> c_int {
+    warn!( "unimplemented: rjem_mallctl called: name={:?}", std::ffi::CStr::from_ptr( name ) );
+
+    0
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_posix_memalign( _pointer: *mut *mut c_void, _alignment: size_t, _size: size_t ) -> c_int {
+    todo!( "_rjem_posix_memalign" );
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
+    todo!( "_rjem_aligned_alloc" );
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe fn _rjem_free( _pointer: *mut c_void ) {
+    todo!( "_rjem_free" );
+}
+
+#[cfg_attr(prefixed, link_name = "_rjem_sallocx")]
+pub unsafe fn _rjem_sallocx( _pointer: *const c_void, _flags: c_int ) -> size_t {
+    todo!( "_rjem_dallocx" );
+}
+
+#[cfg_attr(prefixed, link_name = "_rjem_dallocx")]
+pub unsafe fn _rjem_dallocx( _pointer: *mut c_void, _flags: c_int ) {
+    todo!( "_rjem_dallocx" );
+}
+
+#[cfg_attr(prefixed, link_name = "_rjem_mallctlnametomib")]
+pub unsafe fn _rjem_mallctlnametomib( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int {
+    jem_mallctlnametomib_real( name, mibp, miblenp )
+}
+
+#[cfg_attr(prefixed, link_name = "_rjem_mallctlbymib")]
+pub unsafe fn _rjem_mallctlbymib(
+    mib: *const size_t,
+    miblen: size_t,
+    oldp: *mut c_void,
+    oldpenp: *mut size_t,
+    newp: *mut c_void,
+    newlen: size_t,
+) -> c_int {
+    jem_mallctlbymib_real( mib, miblen, oldp, oldpenp, newp, newlen )
+}
+
+#[cfg_attr(prefixed, link_name = "_rjem_malloc_stats_print")]
+pub unsafe fn _rjem_malloc_stats_print(
+    write_cb: Option< unsafe extern "C" fn( *mut c_void, *const libc::c_char ) >,
+    cbopaque: *mut c_void,
+    opts: *const libc::c_char,
+) {
+    jem_malloc_stats_print_real( write_cb, cbopaque, opts )
 }
 
 #[cfg_attr(not(test), no_mangle)]

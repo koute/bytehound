@@ -225,6 +225,160 @@ fn spawn_processing_thread() {
     *thread_handle = Some( new_handle );
 }
 
+#[cfg(target_arch = "x86_64")]
+fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
+    let mut addresses = [0; N];
+
+    unsafe {
+        use goblin::elf64::header::Header;
+        use goblin::elf64::section_header::SectionHeader;
+        use goblin::elf::section_header::SHT_SYMTAB;
+        use goblin::elf::sym::sym64::Sym;
+
+        let path = libc::getauxval( libc::AT_EXECFN ) as *const libc::c_char;
+        let fd = libc::open( path, libc::O_RDONLY );
+        if fd < 0 {
+            panic!( "failed to open {:?}: {}", std::ffi::CStr::from_ptr( path ), std::io::Error::last_os_error() );
+        }
+
+        let mut buf: libc::stat64 = std::mem::zeroed();
+        if libc::fstat64( fd as _, &mut buf ) != 0 {
+            panic!( "couldn't fstat the executable: {}", std::io::Error::last_os_error() );
+        }
+
+        let size = buf.st_size as usize;
+        let executable = syscall::mmap( std::ptr::null_mut(), size, libc::PROT_READ, libc::MAP_PRIVATE, fd, 0 );
+        assert_ne!( executable, libc::MAP_FAILED );
+
+        let elf_header = *(executable as *const Header);
+        let address_offset = libc::getauxval( libc::AT_PHDR ) as usize - elf_header.e_phoff as usize;
+
+        assert_eq!( elf_header.e_shentsize as usize, std::mem::size_of::< SectionHeader >() );
+        let section_headers = std::slice::from_raw_parts(
+            ((executable as *const u8).add( elf_header.e_shoff as usize )) as *const SectionHeader,
+            elf_header.e_shnum as usize
+        );
+
+        for section_header in section_headers {
+            if section_header.sh_type != SHT_SYMTAB {
+                continue;
+            }
+            let strtab_key = section_header.sh_link as usize;
+            let strtab_section_header = section_headers[ strtab_key ];
+            let strtab_bytes = std::slice::from_raw_parts( (executable as *const u8).add( strtab_section_header.sh_offset as usize ), strtab_section_header.sh_size as usize );
+
+            let syms = std::slice::from_raw_parts(
+                (executable as *const u8).add( section_header.sh_offset as usize ) as *const Sym,
+                section_header.sh_size as usize / std::mem::size_of::< Sym >()
+            );
+
+            for sym in syms {
+                let bytes = &strtab_bytes[ sym.st_name as usize.. ];
+                let name = &bytes[ ..bytes.iter().position( |&byte| byte == 0 ).unwrap_or( bytes.len() ) ];
+                for (target_name, output_address) in names.iter().zip( addresses.iter_mut() ) {
+                    if name == target_name.as_bytes() {
+                        if let Some( address ) = address_offset.checked_add( sym.st_value as usize ) {
+                            info!( "Found '{}' at: 0x{:016X}", target_name, address );
+                            *output_address = address;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            break;
+        }
+
+        if syscall::munmap( executable, size ) != 0 {
+            warn!( "munmap failed: {}", std::io::Error::last_os_error() );
+        }
+    }
+
+    addresses
+}
+
+#[cfg(target_arch = "x86_64")]
+fn hook_jemalloc() {
+    let names = [
+        "_rjem_malloc",
+        "_rjem_mallocx",
+        "_rjem_calloc",
+        "_rjem_sdallocx",
+        "_rjem_realloc",
+        "_rjem_rallocx",
+        "_rjem_nallocx",
+        "_rjem_xallocx",
+        "_rjem_malloc_usable_size",
+        "_rjem_mallctl",
+        "_rjem_posix_memalign",
+        "_rjem_aligned_alloc",
+        "_rjem_free",
+        "_rjem_sallocx",
+        "_rjem_dallocx",
+        "_rjem_mallctlnametomib",
+        "_rjem_mallctlbymib",
+        "_rjem_malloc_stats_print",
+    ];
+
+    let replacements = [
+        crate::api::_rjem_malloc as usize,
+        crate::api::_rjem_mallocx as usize,
+        crate::api::_rjem_calloc as usize,
+        crate::api::_rjem_sdallocx as usize,
+        crate::api::_rjem_realloc as usize,
+        crate::api::_rjem_rallocx as usize,
+        crate::api::_rjem_nallocx as usize,
+        crate::api::_rjem_xallocx as usize,
+        crate::api::_rjem_malloc_usable_size as usize,
+        crate::api::_rjem_mallctl as usize,
+        crate::api::_rjem_posix_memalign as usize,
+        crate::api::_rjem_aligned_alloc as usize,
+        crate::api::_rjem_free as usize,
+        crate::api::_rjem_sallocx as usize,
+        crate::api::_rjem_dallocx as usize,
+        crate::api::_rjem_mallctlnametomib as usize,
+        crate::api::_rjem_mallctlbymib as usize,
+        crate::api::_rjem_malloc_stats_print as usize,
+    ];
+
+    let addresses = find_internal_syms( &names );
+    if addresses.iter().all( |&address| address == 0 ) {
+        info!( "Couldn't find jemalloc the executable's address space" );
+        return;
+    }
+
+    assert_eq!( names.len(), replacements.len() );
+    assert_eq!( names.len(), addresses.len() );
+
+    for ((name, replacement), address) in names.iter().zip( replacements ).zip( addresses ) {
+        if address == 0 {
+            info!( "Symbol not found: \"{}\"", name );
+            continue;
+        }
+
+        let page = (address as usize & !(4096 - 1)) as *mut libc::c_void;
+        unsafe {
+            if libc::mprotect( page, 4096, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC ) < 0 {
+                panic!( "mprotect failed: {}", std::io::Error::last_os_error() );
+            }
+
+            // Write a `jmp` instruction with a RIP-relative addressing mode, with a zero displacement.
+            let mut p = address as *mut u8;
+            std::ptr::write_unaligned( p, 0xFF ); p = p.add( 1 );
+            std::ptr::write_unaligned( p, 0x25 ); p = p.add( 1 );
+            std::ptr::write_unaligned( p, 0x00 ); p = p.add( 1 );
+            std::ptr::write_unaligned( p, 0x00 ); p = p.add( 1 );
+            std::ptr::write_unaligned( p, 0x00 ); p = p.add( 1 );
+            std::ptr::write_unaligned( p, 0x00 ); p = p.add( 1 );
+            std::ptr::write_unaligned( p as *mut usize, replacement );
+
+            if libc::mprotect( page, 4096, libc::PROT_READ | libc::PROT_EXEC ) < 0 {
+                warn!( "mprotect failed: {}", std::io::Error::last_os_error() );
+            }
+        }
+    }
+}
+
 fn resolve_original_syms() {
     unsafe {
         let register_frame = libc::dlsym( libc::RTLD_NEXT, b"__register_frame\0".as_ptr() as *const libc::c_char );
@@ -290,6 +444,9 @@ fn try_enable( state: usize ) -> bool {
     }
 
     resolve_original_syms();
+
+    #[cfg(target_arch = "x86_64")]
+    hook_jemalloc();
 
     STATE.store( STATE_ENABLED, Ordering::SeqCst );
     info!( "Tracing was enabled" );
