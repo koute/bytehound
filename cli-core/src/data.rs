@@ -37,7 +37,7 @@ impl string_interner::Symbol for StringId {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct AllocationId( u64 );
 
 impl AllocationId {
