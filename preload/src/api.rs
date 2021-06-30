@@ -652,7 +652,7 @@ pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra
 
     let mut thread = StrongThreadHandle::acquire();
     let new_effective_size = jem_xallocx_real( pointer, effective_size, extra, flags );
-    let new_requested_size = new_effective_size - mem::size_of::< InternalAllocationId >();
+    let new_requested_size = new_effective_size.checked_sub( mem::size_of::< InternalAllocationId >() ).expect( "_rjem_xallocx: underflow" );
     if id.is_untracked() && !crate::global::is_actively_running() {
         thread = None;
     }
@@ -703,13 +703,16 @@ pub unsafe fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -> size_t {
         None => return 0
     };
 
-    jem_nallocx_real( effective_size, flags ) - mem::size_of::< InternalAllocationId >()
+    jem_nallocx_real( effective_size, flags ).checked_sub( mem::size_of::< InternalAllocationId >() ).expect( "_rjem_nallocx: underflow" )
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe fn _rjem_malloc_usable_size( pointer: *const c_void ) -> size_t {
     let usable_size = jem_malloc_usable_size_real( pointer );
-    (usable_size - mem::size_of::< InternalAllocationId >()) as usize
+    match usable_size.checked_sub( mem::size_of::< InternalAllocationId >() ) {
+        Some( size ) => size,
+        None => panic!( "_rjem_malloc_usable_size: underflow (pointer=0x{:016X}, usable_size={})", pointer as usize , usable_size )
+    }
 }
 
 #[cfg_attr(not(test), no_mangle)]
