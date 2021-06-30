@@ -69,7 +69,7 @@ extern "C" {
     fn jem_malloc_usable_size_real( pointer: *const c_void ) -> size_t;
     #[link_name = "_rjem_mp_mallctlnametomib"]
     fn jem_mallctlnametomib_real( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int;
-    #[link_name = "_rjem_mallctlbymib"]
+    #[link_name = "_rjem_mp_mallctlbymib"]
     fn jem_mallctlbymib_real( mib: *const size_t, miblen: size_t, oldp: *mut c_void, oldpenp: *mut size_t, newp: *mut c_void, newlen: size_t ) -> c_int;
     #[link_name = "_rjem_mp_malloc_stats_print"]
     fn jem_malloc_stats_print_real( write_cb: Option< unsafe extern "C" fn( *mut c_void, *const libc::c_char ) >, cbopaque: *mut c_void, opts: *const libc::c_char );
