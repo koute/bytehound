@@ -523,6 +523,10 @@ impl BacktraceCache {
                 if entry.backtrace == thread_state.current_backtrace {
                     return (entry.id, None);
                 } else {
+                    if cfg!( debug_assertions ) {
+                        info!( "Backtrace cache conflict detected!" );
+                    }
+
                     let id = self.next_id;
                     self.next_id += 1;
 
