@@ -480,12 +480,19 @@ impl BacktraceCache {
 
         let thread_state = self.thread_state.entry( tid ).or_insert_with( BacktraceCacheThreadState::default );
 
-        let mut key = 0;
+        // These are taken from FNV.
+        #[cfg(target_pointer_width = "32")]
+        const PRIME: usize = 16777619;
+        #[cfg(target_pointer_width = "64")]
+        const PRIME: usize = 1099511628211;
+
+        let mut key: usize = 0;
         match backtrace.stale_count {
             None => {
                 thread_state.current_backtrace.clear();
                 thread_state.current_backtrace.reserve( backtrace.frames.len() );
                 for &frame in &backtrace.frames {
+                    key = key.wrapping_mul( PRIME );
                     key ^= frame;
                     thread_state.current_backtrace.push( frame );
                 }
@@ -495,10 +502,12 @@ impl BacktraceCache {
                 self.buffer.reserve( backtrace.frames.len() + thread_state.current_backtrace[ count.. ].len() );
 
                 for &frame in &backtrace.frames {
+                    key = key.wrapping_mul( PRIME );
                     key ^= frame;
                     self.buffer.push( frame );
                 }
                 for &frame in &thread_state.current_backtrace[ count.. ] {
+                    key = key.wrapping_mul( PRIME );
                     key ^= frame;
                     self.buffer.push( frame );
                 }
