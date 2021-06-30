@@ -558,14 +558,48 @@ impl BacktraceCache {
     }
 }
 
+struct BufferedAllocation {
+    timestamp: Timestamp,
+    allocation: AllocBody
+}
+
 struct AllocationBucket {
-    events: Vec< Event< 'static > >,
-    timestamp: Timestamp
+    id: common::event::AllocationId,
+    events: smallvec::SmallVec< [BufferedAllocation; 1] >
 }
 
 impl AllocationBucket {
     fn is_long_lived( &self, now: Timestamp ) -> bool {
-        now.as_usecs() >= self.timestamp.as_usecs() + opt::get().temporary_allocation_lifetime_threshold * 1000
+        now.as_usecs() >= self.events[0].timestamp.as_usecs() + opt::get().temporary_allocation_lifetime_threshold * 1000
+    }
+
+    fn emit( &mut self, fp: &mut impl Write ) -> Result< (), std::io::Error > {
+        if self.events.len() == 0 {
+            return Ok(());
+        }
+
+        let mut iter = self.events.drain( .. );
+
+        let BufferedAllocation { timestamp, allocation } = iter.next().unwrap();
+        let mut old_pointer = allocation.pointer;
+        Event::AllocEx {
+            id: self.id,
+            timestamp,
+            allocation
+        }.write_to_stream( &mut *fp )?;
+
+        while let Some( BufferedAllocation { timestamp, allocation } ) = iter.next() {
+            let new_pointer = allocation.pointer;
+            Event::ReallocEx {
+                id: self.id,
+                timestamp,
+                old_pointer,
+                allocation
+            }.write_to_stream( &mut *fp )?;
+            old_pointer = new_pointer;
+        }
+
+        Ok(())
     }
 }
 
@@ -667,12 +701,10 @@ pub(crate) fn thread_main() {
                 }
 
                 let mut bucket = allocations.remove( &key ).unwrap();
-                for event in &bucket.events {
-                    let _ = event.write_to_stream( &mut output_writer );
-                }
+                let _ = bucket.emit( &mut output_writer );
                 bucket.events.clear();
-                if bucket_cache.len() < bucket_cache_maximum_size {
-                    bucket_cache.push( bucket.events );
+                if bucket.events.spilled() && bucket_cache.len() < bucket_cache_maximum_size {
+                    bucket_cache.push( bucket.events.into_vec() );
                 }
             }
         }
@@ -719,33 +751,32 @@ pub(crate) fn thread_main() {
                     mem::drop( thread );
 
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        let event = Event::AllocEx {
-                            id: id.into(),
-                            timestamp,
-                            allocation: AllocBody {
-                                pointer: address.get() as u64,
-                                size: size as u64,
-                                backtrace,
-                                thread: tid,
-                                flags,
-                                extra_usable_space: (usable_size - size) as u32,
-                                preceding_free_space: preceding_free_space as u64
-                            }
+                        let allocation = AllocBody {
+                            pointer: address.get() as u64,
+                            size: size as u64,
+                            backtrace,
+                            thread: tid,
+                            flags,
+                            extra_usable_space: (usable_size - size) as u32,
+                            preceding_free_space: preceding_free_space as u64
                         };
 
                         if running && opt::get().cull_temporary_allocations && !id.is_untracked() {
                             let mut bucket = AllocationBucket {
-                                events: bucket_cache.pop().unwrap_or_else( Vec::new ),
-                                timestamp
+                                id: id.into(),
+                                events: Default::default()
                             };
 
-                            bucket.events.push( event );
-
+                            bucket.events.push( BufferedAllocation { timestamp, allocation } );
                             if allocations.insert( (id.thread, id.allocation), bucket ).is_some() {
                                 error!( "Duplicate allocation 0x{:08X} with ID {}; this should never happen", address.get(), id );
                             }
                         } else {
-                            let _ = event.write_to_stream( &mut *serializer );
+                            let _ = Event::AllocEx {
+                                id: id.into(),
+                                timestamp,
+                                allocation
+                            }.write_to_stream( &mut *serializer );
                         }
                     }
                 },
@@ -780,29 +811,50 @@ pub(crate) fn thread_main() {
                     mem::drop( thread );
 
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        let event = Event::ReallocEx {
-                            id: id.into(),
-                            timestamp,
-                            old_pointer: old_address.get() as u64,
-                            allocation: AllocBody {
-                                pointer: new_address.get() as u64,
-                                size: new_size as u64,
-                                backtrace,
-                                thread: tid,
-                                flags: new_flags,
-                                extra_usable_space: (new_usable_size - new_size) as u32,
-                                preceding_free_space: new_preceding_free_space as u64
-                            }
+                        let allocation = AllocBody {
+                            pointer: new_address.get() as u64,
+                            size: new_size as u64,
+                            backtrace,
+                            thread: tid,
+                            flags: new_flags,
+                            extra_usable_space: (new_usable_size - new_size) as u32,
+                            preceding_free_space: new_preceding_free_space as u64
                         };
 
-                        let mut event = Some( event );
+                        let mut allocation = Some( allocation );
                         if running && opt::get().cull_temporary_allocations && !id.is_untracked() && id.is_valid() {
                             if let Some( bucket ) = allocations.get_mut( &(id.thread, id.allocation) ) {
-                                bucket.events.push( event.take().unwrap() );
+                                if bucket.events.len() == bucket.events.inline_size() {
+                                    if let Some( mut cached ) = bucket_cache.pop() {
+                                        cached.extend( bucket.events.drain( .. ) );
+                                        bucket.events = smallvec::SmallVec::from_vec( cached );
+                                    } else {
+                                        if cfg!( debug_assertions ) {
+                                            debug!( "Bucket cache underflow" );
+                                        }
+                                    }
+                                }
+
+                                if bucket.events.last().unwrap().allocation.pointer != old_address.get() as u64 {
+                                    error!(
+                                        "Reallocation with ID {} has old pointer 0x{:016X} while it should have 0x{:016X}; this should never happen",
+                                        id,
+                                        old_address.get(),
+                                        new_address.get()
+                                    );
+                                }
+
+                                bucket.events.push( BufferedAllocation { timestamp, allocation: allocation.take().unwrap() } );
                             }
                         }
 
-                        if let Some( event ) = event.take() {
+                        if let Some( allocation ) = allocation.take() {
+                            let event = Event::ReallocEx {
+                                id: id.into(),
+                                timestamp,
+                                old_pointer: old_address.get() as u64,
+                                allocation
+                            };
                             let _ = event.write_to_stream( &mut *serializer );
                         }
                     }
@@ -833,33 +885,30 @@ pub(crate) fn thread_main() {
                     mem::drop( thread );
 
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        let event = Event::FreeEx {
-                            id: id.into(),
-                            timestamp,
-                            pointer: address.get() as u64,
-                            backtrace,
-                            thread: tid
-                        };
                         let mut should_write = true;
-
                         if running && opt::get().cull_temporary_allocations && !id.is_untracked() && id.is_valid() {
                             if let Some( mut bucket ) = allocations.remove( &(id.thread, id.allocation) ) {
                                 if bucket.is_long_lived( coarse_timestamp ) {
-                                    for event in &bucket.events {
-                                        let _ = event.write_to_stream( &mut *serializer );
-                                    }
+                                    let _ = bucket.emit( &mut *serializer );
                                 } else {
                                     should_write = false;
                                 }
+
                                 bucket.events.clear();
-                                if bucket_cache.len() < bucket_cache_maximum_size {
-                                    bucket_cache.push( bucket.events );
+                                if bucket.events.spilled() && bucket_cache.len() < bucket_cache_maximum_size {
+                                    bucket_cache.push( bucket.events.into_vec() );
                                 }
                             }
                         }
 
                         if should_write {
-                            let _ = event.write_to_stream( &mut *serializer );
+                            let _ = Event::FreeEx {
+                                id: id.into(),
+                                timestamp,
+                                pointer: address.get() as u64,
+                                backtrace,
+                                thread: tid
+                            }.write_to_stream( &mut *serializer );
                         }
                     }
                 },
@@ -931,10 +980,8 @@ pub(crate) fn thread_main() {
                 },
                 InternalEvent::Exit => {
                     if running && opt::get().cull_temporary_allocations {
-                        while let Some( (_, bucket) ) = allocations.pop_front() {
-                            for event in &bucket.events {
-                                let _ = event.write_to_stream( &mut *serializer );
-                            }
+                        while let Some( (_, mut bucket) ) = allocations.pop_front() {
+                            let _ = bucket.emit( &mut *serializer );
                         }
                     }
 
