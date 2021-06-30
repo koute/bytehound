@@ -235,7 +235,16 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
         use goblin::elf::section_header::SHT_SYMTAB;
         use goblin::elf::sym::sym64::Sym;
 
-        let path = libc::getauxval( libc::AT_EXECFN ) as *const libc::c_char;
+        let mut path = libc::getauxval( libc::AT_EXECFN ) as *const libc::c_char;
+        let mut path_buffer: [libc::c_char; libc::PATH_MAX as usize] = [0; libc::PATH_MAX as usize];
+        if path.is_null() {
+            if libc::realpath( b"/proc/self/exe\0".as_ptr() as _, path_buffer.as_mut_ptr() ).is_null() {
+                panic!( "couldn't find path to itself: {}", std::io::Error::last_os_error() );
+            } else {
+                path = path_buffer.as_ptr();
+            }
+        }
+
         let fd = libc::open( path, libc::O_RDONLY );
         if fd < 0 {
             panic!( "failed to open {:?}: {}", std::ffi::CStr::from_ptr( path ), std::io::Error::last_os_error() );
