@@ -633,6 +633,10 @@ pub(crate) fn thread_main() {
         crate::global::garbage_collect_dead_threads( coarse_timestamp );
 
         if running && opt::get().cull_temporary_allocations {
+            if allocations.len() > opt::get().temporary_allocation_pending_threshold {
+                debug!( "Too many queued allocations; flushing..." );
+            }
+
             while let Some( key ) = allocations.front_key() {
                 let bucket = allocations.get( &key ).unwrap();
                 let should_flush =
