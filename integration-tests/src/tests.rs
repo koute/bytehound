@@ -777,6 +777,7 @@ fn test_gather_initial_killed() {
     });
 }
 
+#[ignore]
 #[test]
 fn test_gather_partial_graceful() {
     test_gather_generic( 2, |handle| {
