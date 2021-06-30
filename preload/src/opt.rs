@@ -46,7 +46,7 @@ static mut OPTS: Opts = Opts {
     write_binaries_to_output: true,
     zero_memory: false,
     gather_mmap_calls: false,
-    backtrace_cache_size: 32768,
+    backtrace_cache_size: 320 * 1024,
     cull_temporary_allocations: false,
     temporary_allocation_lifetime_threshold: 10000,
     temporary_allocation_pending_threshold: 320 * 1024,
