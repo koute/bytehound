@@ -394,12 +394,12 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_malloc( requested_size: size_t ) -> *mut c_void {
+pub unsafe extern "C" fn _rjem_malloc( requested_size: size_t ) -> *mut c_void {
     _rjem_mallocx( requested_size, 0 )
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_void {
+pub unsafe extern "C" fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_void {
     let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
         Some( size ) => size,
         None => return ptr::null_mut()
@@ -451,7 +451,7 @@ pub unsafe fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_vo
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void {
+pub unsafe extern "C" fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void {
     let requested_size = match count.checked_mul( element_size ) {
         None => return ptr::null_mut(),
         Some( size ) => size
@@ -508,7 +508,7 @@ pub unsafe fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flags: c_int ) {
+pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flags: c_int ) {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
         None => return
@@ -550,12 +550,12 @@ pub unsafe fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flag
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_realloc( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
+pub unsafe extern "C" fn _rjem_realloc( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
     _rjem_rallocx( old_pointer, requested_size, 0 )
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, flags: c_int ) -> *mut c_void {
+pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, flags: c_int ) -> *mut c_void {
     let old_address = match NonZeroUsize::new( old_pointer as usize ) {
         Some( old_address ) => old_address,
         None => return _rjem_mallocx( requested_size, flags )
@@ -634,7 +634,7 @@ pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, f
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra: size_t, flags: c_int ) -> size_t {
+pub unsafe extern "C" fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra: size_t, flags: c_int ) -> size_t {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
         None => return 0
@@ -697,7 +697,7 @@ pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -> size_t {
+pub unsafe extern "C" fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -> size_t {
     let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
         Some( size ) => size,
         None => return 0
@@ -707,7 +707,7 @@ pub unsafe fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -> size_t {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_malloc_usable_size( pointer: *const c_void ) -> size_t {
+pub unsafe extern "C" fn _rjem_malloc_usable_size( pointer: *const c_void ) -> size_t {
     let usable_size = jem_malloc_usable_size_real( pointer );
     match usable_size.checked_sub( mem::size_of::< InternalAllocationId >() ) {
         Some( size ) => size,
@@ -716,44 +716,44 @@ pub unsafe fn _rjem_malloc_usable_size( pointer: *const c_void ) -> size_t {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_mallctl( name: *const libc::c_char, _oldp: *mut c_void, _oldlenp: *mut size_t, _newp: *mut c_void, _newlen: size_t ) -> c_int {
+pub unsafe extern "C" fn _rjem_mallctl( name: *const libc::c_char, _oldp: *mut c_void, _oldlenp: *mut size_t, _newp: *mut c_void, _newlen: size_t ) -> c_int {
     warn!( "unimplemented: rjem_mallctl called: name={:?}", std::ffi::CStr::from_ptr( name ) );
 
     0
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_posix_memalign( _pointer: *mut *mut c_void, _alignment: size_t, _size: size_t ) -> c_int {
+pub unsafe extern "C" fn _rjem_posix_memalign( _pointer: *mut *mut c_void, _alignment: size_t, _size: size_t ) -> c_int {
     todo!( "_rjem_posix_memalign" );
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
+pub unsafe extern "C" fn _rjem_aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
     todo!( "_rjem_aligned_alloc" );
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe fn _rjem_free( _pointer: *mut c_void ) {
+pub unsafe extern "C" fn _rjem_free( _pointer: *mut c_void ) {
     todo!( "_rjem_free" );
 }
 
-#[cfg_attr(prefixed, link_name = "_rjem_sallocx")]
-pub unsafe fn _rjem_sallocx( _pointer: *const c_void, _flags: c_int ) -> size_t {
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_sallocx( _pointer: *const c_void, _flags: c_int ) -> size_t {
     todo!( "_rjem_dallocx" );
 }
 
-#[cfg_attr(prefixed, link_name = "_rjem_dallocx")]
-pub unsafe fn _rjem_dallocx( _pointer: *mut c_void, _flags: c_int ) {
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_dallocx( _pointer: *mut c_void, _flags: c_int ) {
     todo!( "_rjem_dallocx" );
 }
 
-#[cfg_attr(prefixed, link_name = "_rjem_mallctlnametomib")]
-pub unsafe fn _rjem_mallctlnametomib( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int {
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_mallctlnametomib( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int {
     jem_mallctlnametomib_real( name, mibp, miblenp )
 }
 
-#[cfg_attr(prefixed, link_name = "_rjem_mallctlbymib")]
-pub unsafe fn _rjem_mallctlbymib(
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_mallctlbymib(
     mib: *const size_t,
     miblen: size_t,
     oldp: *mut c_void,
@@ -764,8 +764,8 @@ pub unsafe fn _rjem_mallctlbymib(
     jem_mallctlbymib_real( mib, miblen, oldp, oldpenp, newp, newlen )
 }
 
-#[cfg_attr(prefixed, link_name = "_rjem_malloc_stats_print")]
-pub unsafe fn _rjem_malloc_stats_print(
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_malloc_stats_print(
     write_cb: Option< unsafe extern "C" fn( *mut c_void, *const libc::c_char ) >,
     cbopaque: *mut c_void,
     opts: *const libc::c_char,
