@@ -440,7 +440,7 @@ pub unsafe fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_vo
             size: requested_size as usize,
             usable_size,
             preceding_free_space: 0,
-            flags: 0,
+            flags: event::ALLOC_FLAG_JEMALLOC,
             backtrace,
             timestamp: get_timestamp_if_enabled(),
             thread: thread.decay()
@@ -497,7 +497,7 @@ pub unsafe fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void
             size: requested_size as usize,
             usable_size,
             preceding_free_space: 0,
-            flags: event::ALLOC_FLAG_CALLOC,
+            flags: event::ALLOC_FLAG_JEMALLOC | event::ALLOC_FLAG_CALLOC,
             backtrace,
             timestamp: get_timestamp_if_enabled(),
             thread: thread.decay()
@@ -610,7 +610,7 @@ pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, f
                 new_size: requested_size as usize,
                 new_usable_size,
                 new_preceding_free_space: 0,
-                new_flags: 0,
+                new_flags: event::ALLOC_FLAG_JEMALLOC,
                 backtrace,
                 timestamp,
                 thread: thread.decay()
@@ -686,7 +686,7 @@ pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra
             new_size: new_requested_size as usize,
             new_usable_size,
             new_preceding_free_space: 0,
-            new_flags: 0,
+            new_flags: event::ALLOC_FLAG_JEMALLOC,
             backtrace,
             timestamp,
             thread: thread.decay()

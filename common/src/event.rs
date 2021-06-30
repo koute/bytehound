@@ -62,6 +62,7 @@ fn test_data_id_string_conversions() {
     assert_eq!( id_before, id_after );
 }
 
+pub const ALLOC_FLAG_JEMALLOC: u32 = 1 << 30;
 pub const ALLOC_FLAG_CALLOC: u32 = 1 << 31;
 
 // These are the same as glibc's allocator flags.
