@@ -1,24 +1,34 @@
-This is a fork of https://github.com/alexcrichton/jemallocator that includes a modified copy
-of jemalloc which instead of using `mmap` and `munmap` uses our own wrappers for those functions.
-
 # jemallocator
 
-[![Build Status](https://travis-ci.org/alexcrichton/jemallocator.svg?branch=master)](https://travis-ci.org/alexcrichton/jemallocator) [![Build Status](https://ci.appveyor.com/api/projects/status/github/alexcrichton/jemallocator?branch=master&svg=true)](https://ci.appveyor.com/project/alexcrichton/jemallocator/branch/master)
+[![Travis-CI Status]][travis] [![Appveyor Status]][appveyor] [![Latest Version]][crates.io] [![docs]][docs.rs]
 
-[Documentation](https://docs.rs/jemallocator)
+> Links against `jemalloc` and provides a `Jemalloc` unit type that implements
+> the allocator APIs and can be set as the `#[global_allocator]`
 
-A Rust allocator crate which links to [jemalloc](http://jemalloc.net/)
-and provides a `Jemalloc` unit type for use with the `#[global_allocator]` attribute.
+## Overview
 
-Usage:
+The `jemalloc` support ecosystem consists of the following crates:
+
+* `jemalloc-sys`: builds and links against `jemalloc` exposing raw C bindings to it.
+* `jemallocator`: provides the `Jemalloc` type which implements the
+  `GlobalAlloc` and `Alloc` traits. 
+* `jemalloc-ctl`: high-level wrapper over `jemalloc`'s control and introspection
+  APIs (the `mallctl*()` family of functions and the _MALLCTL NAMESPACE_)'
+
+## Documentation
+
+* [Latest release (docs.rs)][docs.rs]
+* [Master branch][master_docs]
+
+To use `jemallocator` add it as a dependency:
 
 ```toml
 # Cargo.toml
 [dependencies]
-jemallocator = "0.1.8"
+jemallocator = "0.3.0"
 ```
 
-Rust:
+To set `jemallocator::Jemalloc` as the global allocator add this to your project:
 
 ```rust
 extern crate jemallocator;
@@ -30,32 +40,51 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 And that's it! Once you've defined this `static` then jemalloc will be used for
 all allocations requested by Rust code in the same program.
 
+## Platform support
 
-# Feature flags
+The following table describes the supported platforms: 
 
-This crate has some Cargo feature flags:
+* `build`: does the library compile for the target?
+* `run`: do `jemallocator` and `jemalloc-sys` tests pass on the target?
+* `jemalloc`: do `jemalloc`'s tests pass on the target?
+* `valgrind`: do the tests pass under valgrind?
 
-* `profiling`: configure `jemalloc` with `--enable-prof`.
+Tier 1 targets are tested on all Rust channels (stable, beta, and nightly). All
+other targets are only tested on Rust nightly.
 
-* `stats`: configure `jemalloc` with `--enable-stats`.
+| Linux targets:                      | build     | run     | jemalloc     | valgrind     |
+|-------------------------------------|-----------|---------|--------------|--------------|
+| `aarch64-unknown-linux-gnu`         | ✓         | ✓       | ✗            | ✗            |
+| `arm-unknown-linux-gnueabi`         | ✓         | ✓       | ✗            | ✗            |
+| `armv7-unknown-linux-gnueabi`       | ✓         | ✓       | ✗            | ✗            |
+| `i586-unknown-linux-gnu`            | ✓         | ✓       | ✓            | ✗            |
+| `i686-unknown-linux-gnu` (tier 1)   | ✓         | ✓       | ✓            | ✗            |
+| `mips-unknown-linux-gnu`            | ✓         | ✓       | ✗            | ✗            |
+| `mipsel-unknown-linux-musl`         | ✓         | ✓       | ✗            | ✗            |
+| `mips64-unknown-linux-gnuabi64`     | ✓         | ✓       | ✗            | ✗            |
+| `mips64el-unknown-linux-gnuabi64`   | ✓         | ✓       | ✗            | ✗            |
+| `powerpc-unknown-linux-gnu`         | ✓         | ✓       | ✗            | ✗            |
+| `powerpc64-unknown-linux-gnu`       | ✓         | ✓       | ✗            | ✗            |
+| `powerpc64le-unknown-linux-gnu`     | ✓         | ✓       | ✗            | ✗            |
+| `x86_64-unknown-linux-gnu` (tier 1) | ✓         | ✓       | ✓            | ✓            |
+| **MacOSX targets:**                 | **build** | **run** | **jemalloc** | **valgrind** |
+| `x86_64-apple-darwin` (tier 1)      | ✓         | ✓       | ✗            | ✗            |
+| `i686-apple-darwin` (tier 1)        | ✓         | ✓       | ✗            | ✗            |
+| **Windows targets:**                | **build** | **run** | **jemalloc** | **valgrind** |
+| `x86_64-pc-windows-msvc` (tier 1)   | ✗         | ✗       | ✗            | ✗            |
+| `i686-pc-windows-msvc` (tier 1)     | ✗         | ✗       | ✗            | ✗            |
+| `x86_64-pc-windows-gnu` (tier 1)    | ✓         | ✓       | ✗            | ✗            |
+| `i686-pc-windows-gnu` (tier 1)      | ✓         | ✓       | ✗            | ✗            |
+| **Android targets:**                | **build** | **run** | **jemalloc** | **valgrind** |
+| `aarch64-linux-android`             | ✓         | ✓       | ✗            | ✗            |
+| `x86_64-linux-android`              | ✓         | ✓       | ✓            | ✗            |
 
-* `debug`: configure `jemalloc` with `--enable-debug`.
+## Features
 
-* `bg_thread` (enabled by default): when disabled, configure `jemalloc` with
-  `--with-malloc-conf=background_thread:false`.
+The `jemallocator` crate re-exports the [features of the `jemalloc-sys`
+dependency](https://github.com/gnzlbg/jemallocator/blob/master/jemalloc-sys/README.md).
 
-* `unprefixed_malloc_on_supported_platforms`:
-  when disabled, configure `jemalloc` with `--with-jemalloc-prefix=_rjem_`.
-  Enabling this causes symbols like `malloc` to be emitted without a prefix,
-  overriding the ones defined by libc.
-  This usually causes C and C++ code linked in the same program to use `jemalloc` as well.
-
-  On some platforms prefixes are always used
-  because unprefixing is known to cause segfaults due to allocator mismatches.
-
-See [`jemalloc/INSTALL.md`](https://github.com/jemalloc/jemalloc/blob/dev/INSTALL.md#advanced-configuration).
-
-# License
+## License
 
 This project is licensed under either of
 
@@ -66,8 +95,18 @@ This project is licensed under either of
 
 at your option.
 
-### Contribution
+## Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in `jemallocator` by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
+for inclusion in `jemallocator` by you, as defined in the Apache-2.0 license,
+shall be dual licensed as above, without any additional terms or conditions.
+
+[travis]: https://travis-ci.com/gnzlbg/jemallocator
+[Travis-CI Status]: https://travis-ci.com/gnzlbg/jemallocator.svg?branch=master
+[appveyor]: https://ci.appveyor.com/project/gnzlbg/jemallocator/branch/master
+[Appveyor Status]: https://ci.appveyor.com/api/projects/status/github/gnzlbg/jemallocator?branch=master&svg=true
+[Latest Version]: https://img.shields.io/crates/v/jemallocator.svg
+[crates.io]: https://crates.io/crates/jemallocator
+[docs]: https://docs.rs/jemallocator/badge.svg
+[docs.rs]: https://docs.rs/jemallocator/
+[master_docs]: https://gnzlbg.github.io/jemallocator/jemallocator

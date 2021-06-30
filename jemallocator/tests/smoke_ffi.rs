@@ -1,7 +1,7 @@
-extern crate jemallocator;
 extern crate jemalloc_sys;
+extern crate jemallocator;
 
-// Work around https://github.com/alexcrichton/jemallocator/issues/19
+// Work around https://github.com/gnzlbg/jemallocator/issues/19
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
