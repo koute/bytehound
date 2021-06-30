@@ -519,6 +519,12 @@ impl BacktraceCache {
 
         let id = match self.cache.get_mut( &key ) {
             None => {
+                if cfg!( debug_assertions ) {
+                    if self.cache.len() >= self.cache.cap() {
+                        debug!( "Backtrace cache overflow" );
+                    }
+                }
+
                 let id = self.next_id;
                 self.next_id += 1;
                 self.cache.put( key, BacktraceCacheEntry {
