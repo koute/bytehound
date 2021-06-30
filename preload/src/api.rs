@@ -277,6 +277,7 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
     let old_metadata = get_allocation_metadata( old_pointer );
     let old_tracking_pointer = tracking_pointer( old_pointer, old_metadata.usable_size );
     let id = std::ptr::read_unaligned( old_tracking_pointer );
+    debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
     let new_pointer = realloc_real( old_pointer, effective_size );
@@ -366,6 +367,7 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
     let metadata = get_allocation_metadata( pointer );
     let tracking_pointer = tracking_pointer( pointer, metadata.usable_size );
     let id = std::ptr::read_unaligned( tracking_pointer );
+    debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
     free_real( pointer );
@@ -416,6 +418,7 @@ pub unsafe fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_vo
     };
 
     let usable_size = jem_malloc_usable_size_real( pointer );
+    debug_assert!( usable_size >= effective_size );
     let tracking_pointer = tracking_pointer( pointer, usable_size );
 
     let mut thread = if let Some( thread ) = thread {
@@ -472,6 +475,7 @@ pub unsafe fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void
     };
 
     let usable_size = jem_malloc_usable_size_real( pointer );
+    debug_assert!( usable_size >= effective_size );
     let tracking_pointer = tracking_pointer( pointer, usable_size );
 
     let mut thread = if let Some( thread ) = thread {
@@ -516,8 +520,10 @@ pub unsafe fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flag
     };
 
     let usable_size = jem_malloc_usable_size_real( pointer );
+    debug_assert!( usable_size >= effective_size );
     let tracking_pointer = tracking_pointer( pointer, usable_size );
     let id = std::ptr::read_unaligned( tracking_pointer );
+    debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
     jem_sdallocx_real( pointer, effective_size, flags );
@@ -563,6 +569,7 @@ pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, f
     let old_usable_size = jem_malloc_usable_size_real( old_pointer );
     let old_tracking_pointer = tracking_pointer( old_pointer, old_usable_size );
     let id = std::ptr::read_unaligned( old_tracking_pointer );
+    debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
     let new_pointer = jem_rallocx_real( old_pointer, effective_size, flags );
@@ -577,6 +584,7 @@ pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, f
             return ptr::null_mut();
         } else {
             let new_usable_size = jem_malloc_usable_size_real( new_pointer );
+            debug_assert!( new_usable_size >= effective_size );
             let new_tracking_pointer = tracking_pointer( new_pointer, new_usable_size );
             std::ptr::write_unaligned( new_tracking_pointer, InternalAllocationId::UNTRACKED );
 
@@ -590,6 +598,7 @@ pub unsafe fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, f
     let timestamp = get_timestamp_if_enabled();
     if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
         let new_usable_size = jem_malloc_usable_size_real( new_pointer );
+        debug_assert!( new_usable_size >= effective_size );
         let new_tracking_pointer = tracking_pointer( new_pointer, new_usable_size );
         std::ptr::write_unaligned( new_tracking_pointer, id );
 
@@ -639,6 +648,7 @@ pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra
     let old_usable_size = jem_malloc_usable_size_real( pointer );
     let old_tracking_pointer = tracking_pointer( pointer, old_usable_size );
     let id = std::ptr::read_unaligned( old_tracking_pointer );
+    debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
     let new_effective_size = jem_xallocx_real( pointer, effective_size, extra, flags );
@@ -651,6 +661,7 @@ pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra
         thread
     } else {
         let new_usable_size = jem_malloc_usable_size_real( pointer );
+        debug_assert!( new_usable_size >= effective_size );
         let new_tracking_pointer = tracking_pointer( pointer, new_usable_size );
         std::ptr::write_unaligned( new_tracking_pointer, InternalAllocationId::UNTRACKED );
 
@@ -663,6 +674,7 @@ pub unsafe fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra
     let timestamp = get_timestamp_if_enabled();
 
     let new_usable_size = jem_malloc_usable_size_real( pointer );
+    debug_assert!( new_usable_size >= effective_size );
     let new_tracking_pointer = tracking_pointer( pointer, new_usable_size );
     std::ptr::write_unaligned( new_tracking_pointer, id );
 
