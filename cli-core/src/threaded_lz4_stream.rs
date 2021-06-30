@@ -18,9 +18,9 @@ pub struct Lz4Reader< F: io::Read + Send > {
     error: Arc< Mutex< Option< io::Error > > >
 }
 
-fn read_chunk( fp: &mut impl io::Read, buffer: &mut Vec< u8 > ) -> Result< Vec< u8 >, io::Error > {
+fn read_chunk( fp: &mut impl io::Read, buffer: &mut Vec< u8 > ) -> Result< (Vec< u8 >, bool), io::Error > {
     let kind = fp.read_u8()?;
-    if kind != 1 {
+    if kind != 1 && kind != 2 {
         unimplemented!();
     }
 
@@ -32,7 +32,7 @@ fn read_chunk( fp: &mut impl io::Read, buffer: &mut Vec< u8 > ) -> Result< Vec< 
 
     fp.read_exact( buffer )?;
     let chunk = mem::replace( buffer, Vec::new() );
-    Ok( chunk )
+    Ok( (chunk, kind == 1) )
 }
 
 impl< F: io::Read + Send + 'static > Lz4Reader< F > {
@@ -43,11 +43,12 @@ impl< F: io::Read + Send + 'static > Lz4Reader< F > {
         let error_arc = Arc::new( Mutex::new( None ) );
         let error_arc_clone = error_arc.clone();
 
+        let output_tx_clone = output_tx.clone();
         thread::spawn( move || {
             let mut buffer = Vec::new();
             let mut counter = 0;
             loop {
-                let chunk = match read_chunk( &mut fp, &mut buffer ) {
+                let (chunk, is_compressed) = match read_chunk( &mut fp, &mut buffer ) {
                     Ok( chunk ) => chunk,
                     Err( ref error ) if error.kind() == io::ErrorKind::UnexpectedEof => {
                         break;
@@ -58,8 +59,14 @@ impl< F: io::Read + Send + 'static > Lz4Reader< F > {
                     }
                 };
 
-                if decompress_tx.send( (counter, chunk) ).is_err() {
-                    break;
+                if is_compressed {
+                    if decompress_tx.send( (counter, chunk) ).is_err() {
+                        break;
+                    }
+                } else {
+                    if output_tx_clone.send( (counter, chunk) ).is_err() {
+                        break;
+                    }
                 }
 
                 counter += 1;

@@ -88,6 +88,9 @@ enum Opt {
     },
     #[structopt(name = "repack", raw(setting = "structopt::clap::AppSettings::Hidden"))]
     Repack {
+        #[structopt(long)]
+        disable_compression: bool,
+
         #[structopt(long, short = "o", parse(from_os_str))]
         output: PathBuf,
 
@@ -135,10 +138,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             };
             cli_core::squeeze_data( ifp, ofp, tmpfile.as_ref() )?;
         },
-        Opt::Repack { input, output } => {
+        Opt::Repack { disable_compression, input, output } => {
             let ifp = File::open( &input )?;
             let ofp = File::create( output )?;
-            cli_core::repack( ifp, ofp )?;
+            cli_core::repack( disable_compression, ifp, ofp )?;
         }
     }
 

@@ -97,6 +97,12 @@ impl< F: io::Write > Lz4Writer< F > {
         }
     }
 
+    pub fn disable_compression( &mut self ) -> io::Result< () > {
+        self.flush()?;
+        self.is_compressed = false;
+        Ok(())
+    }
+
     pub fn replace_inner( &mut self, fp: F ) -> io::Result< () > {
         self.flush()?;
         self.fp = Some( fp );
