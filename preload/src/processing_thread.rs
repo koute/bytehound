@@ -716,9 +716,9 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        mem::drop( thread );
+                    mem::drop( thread );
 
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
                         let event = Event::AllocEx {
                             id: id.into(),
                             timestamp,
@@ -777,8 +777,9 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
+                    mem::drop( thread );
+
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        mem::drop( thread );
                         let event = Event::ReallocEx {
                             id: id.into(),
                             timestamp,
@@ -829,8 +830,9 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
+                    mem::drop( thread );
+
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        mem::drop( thread );
                         let event = Event::FreeEx {
                             id: id.into(),
                             timestamp,
@@ -872,8 +874,9 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
+                    mem::drop( thread );
+
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        mem::drop( thread );
                         let event = Event::MemoryMap {
                             timestamp,
                             pointer: pointer as u64,
@@ -901,8 +904,9 @@ pub(crate) fn thread_main() {
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
+                    mem::drop( thread );
+
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        mem::drop( thread );
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
@@ -918,8 +922,9 @@ pub(crate) fn thread_main() {
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
                     let tid = thread.tid();
+                    mem::drop( thread );
+
                     if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, tid, backtrace, &mut backtrace_cache ) {
-                        mem::drop( thread );
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread: tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
