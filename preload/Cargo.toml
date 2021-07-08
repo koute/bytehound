@@ -23,7 +23,7 @@ smallvec = { version = "1", features = ["union"] }
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"
-rev = "38c1a6a"
+rev = "2d8a5ee"
 features = ["log", "local-unwinding"]
 default-features = false
 
