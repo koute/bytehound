@@ -343,7 +343,7 @@ pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
         }
     };
 
-    let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && address_space.is_shadow_stack_enabled();
+    let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && !address_space.is_shadow_stack_enabled();
     if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
         address_space.unwind( unwind_ctx, |address| {
             out.frames.push( address );
