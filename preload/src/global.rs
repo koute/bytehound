@@ -352,7 +352,7 @@ fn hook_jemalloc() {
 
     let addresses = find_internal_syms( &names );
     if addresses.iter().all( |&address| address == 0 ) {
-        info!( "Couldn't find jemalloc the executable's address space" );
+        info!( "Couldn't find jemalloc in the executable's address space" );
         return;
     }
 
