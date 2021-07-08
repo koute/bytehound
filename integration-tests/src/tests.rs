@@ -295,6 +295,25 @@ fn compile_with_cargo( source: &str ) -> PathBuf {
     target_dir.join( "debug" )
 }
 
+fn compile_with_rustc( source: &str ) -> PathBuf {
+    let cwd = workdir();
+    let source_path = repository_root().join( "integration-tests" ).join( "test-programs" ).join( source );
+    let output_path = PathBuf::from( get_basename( source ) );
+
+    run(
+        &cwd,
+        "rustc",
+        &[
+            source_path.as_os_str(),
+            std::ffi::OsStr::new( "-o" ),
+            output_path.as_os_str()
+        ],
+        EMPTY_ENV
+    ).assert_success();
+
+    output_path
+}
+
 fn compile_with_flags( source: &str, extra_flags: &[&str] ) {
     let cwd = workdir();
     let basename = get_basename( source );
@@ -936,6 +955,46 @@ fn test_backtrace() {
     ).assert_success();
 
     let analysis = analyze( "backtrace", cwd.join( "backtrace.dat" ) );
+    assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123456 ) );
+}
+
+#[test]
+fn test_return_opt_u128() {
+    let cwd = workdir();
+    compile_with_rustc( "return-opt-u128.rs" );
+
+    run_on_target(
+        &cwd,
+        "./return-opt-u128",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "return-opt-u128.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "return-opt-u128", cwd.join( "return-opt-u128.dat" ) );
+    assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123456 ) );
+}
+
+#[test]
+fn test_return_f64() {
+    let cwd = workdir();
+    compile_with_rustc( "return-f64.rs" );
+
+    run_on_target(
+        &cwd,
+        "./return-f64",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "return-f64.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "return-f64", cwd.join( "return-f64.dat" ) );
     assert!( analysis.response.allocations.iter().any( |alloc| alloc.size == 123456 ) );
 }
 
