@@ -70,7 +70,7 @@ pub const ALLOC_FLAG_PREV_IN_USE: u32 = 1;
 pub const ALLOC_FLAG_MMAPED: u32 = 2;
 pub const ALLOC_FLAG_NON_MAIN_ARENA: u32 = 4;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Readable, Writable)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Readable, Writable)]
 pub struct AllocationId {
     pub thread: u64,
     pub allocation: u64
