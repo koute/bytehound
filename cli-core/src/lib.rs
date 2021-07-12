@@ -8,6 +8,7 @@ extern crate bitflags;
 extern crate quickcheck;
 
 pub mod cmd_gather;
+pub mod cmd_analyze_size;
 
 mod util;
 mod tree;

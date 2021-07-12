@@ -96,6 +96,10 @@ enum Opt {
 
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
+    },
+    #[structopt(name = "analyze-size", raw(setting = "structopt::clap::AppSettings::Hidden"))]
+    AnalyzeSize {
+        input: PathBuf
     }
 }
 
@@ -142,6 +146,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let ifp = File::open( &input )?;
             let ofp = File::create( output )?;
             cli_core::repack( disable_compression, ifp, ofp )?;
+        },
+        Opt::AnalyzeSize { input } => {
+            let ifp = File::open( &input )?;
+            cli_core::cmd_analyze_size::analyze_size( ifp )?;
         }
     }
 
