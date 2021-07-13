@@ -63,7 +63,7 @@ struct GroupStatistics {
     max_size: u64
 }
 
-pub fn squeeze_data< F, G >( input_fp: F, output_fp: G ) -> Result< (), io::Error >
+pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 > ) -> Result< (), io::Error >
     where F: Read + Send + 'static,
           G: Write + Send + 'static
 {
@@ -71,6 +71,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G ) -> Result< (), io::Erro
 
     let mut ofp = Lz4Writer::new( output_fp );
     Event::Header( header ).write_to_stream( &mut ofp )?;
+    let threshold = threshold.map( Timestamp::from_secs );
 
     {
         let mut previous_backtrace_on_thread = HashMap::new();
@@ -255,7 +256,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G ) -> Result< (), io::Erro
                     entry.push( BufferedAllocation { timestamp, allocation } );
                     continue;
                 },
-                Event::FreeEx { pointer, id, .. } => {
+                Event::FreeEx { id, timestamp, pointer, backtrace, thread } => {
                     let entry;
                     if !id.is_invalid() && !id.is_untracked() {
                         entry = allocations_by_id.remove( &id );
@@ -267,6 +268,20 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G ) -> Result< (), io::Erro
                     }
 
                     if let Some( entry ) = entry {
+                        if timestamp < entry[0].timestamp {
+                            warn!( "Deallocation in the past of address: 0x{:016X}", pointer );
+                        } else {
+                            if let Some( threshold ) = threshold {
+                                let lifetime = timestamp - entry[0].timestamp;
+                                if lifetime > threshold {
+                                    emit( id, entry, &mut ofp )?;
+                                    let event = Event::FreeEx { id, timestamp, pointer, backtrace, thread };
+                                    event.write_to_stream( &mut ofp )?;
+                                    continue;
+                                }
+                            }
+                        }
+
                         for buffered in entry {
                             let usable_size = buffered.allocation.size + buffered.allocation.extra_usable_space as u64;
                             let stats = stats_by_backtrace.get_mut( &buffered.allocation.backtrace ).unwrap();

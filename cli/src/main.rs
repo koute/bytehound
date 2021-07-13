@@ -73,12 +73,16 @@ enum Opt {
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
     },
-    /// Generates a new data file with all temporary allocations stripped away
+    /// Generates a new data file with temporary allocations stripped away
     #[structopt(name = "squeeze")]
     Squeeze {
         /// The file to which the squeezed data will be written
         #[structopt(long, short = "o", parse(from_os_str))]
         output: PathBuf,
+
+        /// The minimum lifetime threshold, in seconds, of which allocations to keep
+        #[structopt(long, short = "t")]
+        threshold: Option< u64 >,
 
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
@@ -130,10 +134,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let ofp = File::create( output )?;
             postprocess( ifp, ofp, debug_symbols )?;
         },
-        Opt::Squeeze { output, input } => {
+        Opt::Squeeze { output, input, threshold } => {
             let ifp = File::open( &input )?;
             let ofp = File::create( output )?;
-            cli_core::squeeze_data( ifp, ofp )?;
+            cli_core::squeeze_data( ifp, ofp, threshold )?;
         },
         Opt::Repack { disable_compression, input, output } => {
             let ifp = File::open( &input )?;
