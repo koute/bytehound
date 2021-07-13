@@ -558,6 +558,15 @@ impl BacktraceCache {
     }
 }
 
+struct GroupStatistics {
+    first_allocation: Timestamp,
+    last_allocation: Timestamp,
+    free_count: u64,
+    free_size: u64,
+    min_size: u64,
+    max_size: u64
+}
+
 struct BufferedAllocation {
     timestamp: Timestamp,
     allocation: AllocBody
@@ -649,6 +658,9 @@ pub(crate) fn thread_main() {
     let mut bucket_cache = Vec::new();
     let bucket_cache_maximum_size = 8192;
     let mut allocations: OrderedMap< (u64, u64), AllocationBucket > = OrderedMap::default();
+    let mut stats_by_backtrace: HashMap< u64, GroupStatistics > = HashMap::new();
+    let mut stats_by_backtrace_updated = false;
+    let mut last_stats_by_backtrace_flush = get_timestamp();
     loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
@@ -707,6 +719,24 @@ pub(crate) fn thread_main() {
                     bucket_cache.push( bucket.events.into_vec() );
                 }
             }
+        }
+
+        if stats_by_backtrace_updated && (!running || coarse_timestamp - last_stats_by_backtrace_flush > Timestamp::from_secs( 10 )) {
+            stats_by_backtrace_updated = false;
+            for (backtrace, stats) in stats_by_backtrace.drain() {
+                let event = Event::GroupStatistics {
+                    backtrace,
+                    first_allocation: stats.first_allocation,
+                    last_allocation: stats.last_allocation,
+                    free_count: stats.free_count,
+                    free_size: stats.free_size,
+                    min_size: stats.min_size,
+                    max_size: stats.max_size
+                };
+                let _ = event.write_to_stream( &mut output_writer );
+            }
+
+            last_stats_by_backtrace_flush = coarse_timestamp;
         }
 
         if events.is_empty() && !running {
@@ -892,6 +922,28 @@ pub(crate) fn thread_main() {
                                     let _ = bucket.emit( &mut *serializer );
                                 } else {
                                     should_write = false;
+
+                                    for event in &bucket.events {
+                                        let usable_size = event.allocation.size + event.allocation.extra_usable_space as u64;
+                                        let stats = stats_by_backtrace.entry( event.allocation.backtrace ).or_insert_with( || {
+                                            GroupStatistics {
+                                                first_allocation: timestamp,
+                                                last_allocation: timestamp,
+                                                free_count: 0,
+                                                free_size: 0,
+                                                min_size: usable_size,
+                                                max_size: usable_size
+                                            }
+                                        });
+
+                                        stats.first_allocation = std::cmp::min( stats.first_allocation, event.timestamp );
+                                        stats.last_allocation = std::cmp::max( stats.last_allocation, event.timestamp );
+                                        stats.free_count += 1;
+                                        stats.free_size += usable_size;
+                                        stats.min_size = std::cmp::min( stats.min_size, usable_size );
+                                        stats.max_size = std::cmp::max( stats.max_size, usable_size );
+                                        stats_by_backtrace_updated = true;
+                                    }
                                 }
 
                                 bucket.events.clear();

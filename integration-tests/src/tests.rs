@@ -179,8 +179,39 @@ struct ResponseAllocations {
     pub total_count: u64
 }
 
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct AllocationGroupData {
+    pub size: u64,
+    pub min_size: u64,
+    pub max_size: u64,
+    pub min_timestamp: Timeval,
+    pub min_timestamp_relative: Timeval,
+    pub min_timestamp_relative_p: f32,
+    pub max_timestamp: Timeval,
+    pub max_timestamp_relative: Timeval,
+    pub max_timestamp_relative_p: f32,
+    pub interval: Timeval,
+    pub leaked_count: u64,
+    pub allocated_count: u64
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct AllocationGroup {
+    pub all: AllocationGroupData,
+    pub only_matched: AllocationGroupData,
+    pub backtrace_id: u32,
+    pub backtrace: Vec< Frame >
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ResponseAllocationGroups {
+    pub allocations: Vec< AllocationGroup >,
+    pub total_count: u64
+}
+
 struct Analysis {
-    response: ResponseAllocations
+    response: ResponseAllocations,
+    groups: ResponseAllocationGroups
 }
 
 fn is_from_source( alloc: &Allocation, expected: &str ) -> bool {
@@ -270,7 +301,12 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     assert_eq!( *response.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
     let response: ResponseAllocations = serde_json::from_str( &response.text().unwrap() ).unwrap();
 
-    Analysis { response }
+    let groups = attohttpc::get( &format!( "http://localhost:{}/data/last/allocation_groups", port ) ).send().unwrap();
+    assert_eq!( groups.status(), attohttpc::StatusCode::OK );
+    assert_eq!( *groups.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
+    let groups: ResponseAllocationGroups = serde_json::from_str( &groups.text().unwrap() ).unwrap();
+
+    Analysis { response, groups }
 }
 
 fn get_basename( path: &str ) -> &str {
@@ -1046,4 +1082,40 @@ fn test_wasmtime_interrupt() {
     for allocation in list {
         assert!( is_from_function( &allocation, "main" ) );
     }
+}
+
+#[test]
+fn test_cull() {
+    let cwd = workdir();
+
+    compile( "cull.c" );
+
+    run_on_target(
+        &cwd,
+        "./cull",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-cull.dat".into()),
+            ("MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS", "1".into()),
+            ("MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD", "100".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "cull", cwd.join( "memory-profiling-cull.dat" ) );
+    let mut iter = analysis.allocations_from_source( "cull.c" );
+
+    let a0 = iter.next().unwrap();
+    let a1 = iter.next().unwrap();
+    assert!( a0.deallocation.is_some() );
+    assert!( a1.deallocation.is_none() );
+    assert_eq!( a0.size, 1235 );
+    assert_eq!( a1.size, 1236 );
+
+    let g0 = analysis.groups.allocations.iter().find( |group| group.backtrace_id == a0.backtrace_id ).unwrap();
+    assert_eq!( g0.all.leaked_count, 1 );
+    assert_eq!( g0.all.allocated_count, 3 );
+
+    assert_eq!( iter.next(), None );
 }
