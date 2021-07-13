@@ -80,9 +80,6 @@ enum Opt {
         #[structopt(long, short = "o", parse(from_os_str))]
         output: PathBuf,
 
-        #[structopt(long, parse(from_os_str))]
-        tmpfile: Option< PathBuf >,
-
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf
     },
@@ -133,14 +130,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let ofp = File::create( output )?;
             postprocess( ifp, ofp, debug_symbols )?;
         },
-        Opt::Squeeze { output, tmpfile, input } => {
+        Opt::Squeeze { output, input } => {
             let ifp = File::open( &input )?;
             let ofp = File::create( output )?;
-            let tmpfile = match tmpfile {
-                Some( tmpfile ) => tmpfile,
-                None => format!( "{}.tmp", input.to_str().unwrap() ).into()
-            };
-            cli_core::squeeze_data( ifp, ofp, tmpfile.as_ref() )?;
+            cli_core::squeeze_data( ifp, ofp )?;
         },
         Opt::Repack { disable_compression, input, output } => {
             let ifp = File::open( &input )?;

@@ -5,6 +5,7 @@ authors = ["Jan Bujak <j@exia.io>"]
 edition = "2018"
 
 [dependencies]
+smallvec = "1"
 byteorder = "1"
 ctrlc = "3"
 goblin = "0.0.24"
