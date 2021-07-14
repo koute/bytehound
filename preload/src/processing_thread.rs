@@ -721,7 +721,7 @@ pub(crate) fn thread_main() {
             }
         }
 
-        if stats_by_backtrace_updated && (!running || coarse_timestamp - last_stats_by_backtrace_flush > Timestamp::from_secs( 10 )) {
+        if stats_by_backtrace_updated && (!running || coarse_timestamp - last_stats_by_backtrace_flush > Timestamp::from_secs( 300 ) || stats_by_backtrace.len() > 512 * 1024) {
             stats_by_backtrace_updated = false;
             for (backtrace, stats) in stats_by_backtrace.drain() {
                 let event = Event::GroupStatistics {
