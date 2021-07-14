@@ -23,7 +23,8 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
     const S_FREE: usize = 3;
     const S_BACKTRACE: usize = 4;
     const S_FILE: usize = 5;
-    const S_MAX: usize = 6;
+    const S_STATS: usize = 6;
+    const S_MAX: usize = 7;
 
     const SIZE_TO_NAME: &[&str] = &[
         "Other",
@@ -31,7 +32,8 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
         "Realloc",
         "Free",
         "Backtrace",
-        "Files"
+        "Files",
+        "GroupStatistics"
     ];
 
     #[derive(Default)]
@@ -98,6 +100,7 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
             | Event::PartialBacktrace32 { .. }
             | Event::Backtrace32 { .. } => S_BACKTRACE,
             | Event::File { .. } => S_FILE,
+            | Event::GroupStatistics { .. } => S_STATS,
             _ => S_OTHER
         };
 
