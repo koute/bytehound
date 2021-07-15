@@ -121,15 +121,22 @@ h1, h2, h3, .h1, .h2, .h3 {
 }
 
 .Switcher button {
-    background-color: white !important;
     color: #aaa !important;
-    border-left: 0;
-    border-right: 0;
+}
+
+.Switcher button:hover {
+    color: #fff !important;
+    background-color: #84BEEB;
+    border-color: #84AEDB;
+}
+
+.Switcher button:focus {
+    box-shadow: none !important;
+
 }
 
 .Switcher button.active {
-    background-color: white !important;
-    color: #000 !important;
+    color: #fff !important;
 }
 
 div.-sort-desc {
@@ -269,4 +276,11 @@ div.-sort-asc {
     color: #000;
     padding-right: 1em;
     text-align: right;
+}
+
+#subpage-list {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    gap: 0.1rem;
 }

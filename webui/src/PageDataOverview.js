@@ -96,7 +96,7 @@ export default class PageDataOverview extends React.Component {
                                 <td>{this.state.general.unique_backtrace_count}</td>
                             </tr>
                             <tr>
-                                <td>Maximum backtrace depth</td>
+                                <td>Max. backtrace depth</td>
                                 <td>{this.state.general.maximum_backtrace_depth}</td>
                             </tr>
                         </tbody>
@@ -243,7 +243,6 @@ export default class PageDataOverview extends React.Component {
             );
         }
 
-        const leaked_filter = "?group_allocations=true&group_allocations_min=2&group_interval_min=10%25&lifetime=only_whole_group_leaked&from=10%25&page=1&show_full_backtraces=false&sort_by=all.interval&order=dsc";
         const prefix = (this.props.sourceUrl || "") + "/data/" + this.props.id;
 
         return (
@@ -260,26 +259,33 @@ export default class PageDataOverview extends React.Component {
                     </div>
                 </div>
                 <div className="pt-4 px-4">
-                    {general}
+                    <div className="d-flex justify-content-between flex-wrap" style={{gap: "1rem"}}>
+                        {general}
+                        <div id="subpage-list">
+                            <div>List of allocations</div>
+                            <div style={{marginLeft: "1rem"}}>
+                                <div><Link to={"/allocations/" + this.props.id}>Everything</Link></div>
+                                <div>
+                                    <Link to={"/allocations/" + this.props.id + "?lifetime=only_leaked"}>Only leaked</Link>
+                                    &nbsp;(<a href={prefix + "/export/flamegraph/flame.svg?lifetime=only_leaked"}>flamegraph</a>)
+                                </div>
+                            </div>
+                            <div>Download</div>
+                            <div style={{marginLeft: "1rem"}}>
+                                <div><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/export/heaptrack/heaptrack.dat"}>...as Heaptrack data</a></div>
+                            </div>
+                            <div><Link to={"/address_space/" + this.props.id + "?lifetime=only_not_deallocated_in_current_range&mmaped=no"}>Address space fragmentation</Link></div>
+                            <div>
+                                <a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_constants_ascii_tree/dynamic_constants_" + this.props.id + ".txt"}>Dynamically allocated constants</a>
+                                &nbsp;(<a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_constants/dynamic_constants_" + this.props.id + ".json"}>.json</a>)
+                            </div>
+                            <div>
+                                <a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics_ascii_tree/dynamic_statics_" + this.props.id + ".txt"}>Dynamically allocated statics</a>
+                                &nbsp;(<a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics/dynamic_statics_" + this.props.id + ".json"}>.json</a>)
+                            </div>
+                        </div>
+                    </div>
                     <br />
-                    Subpages:
-                    <ul>
-                        <li><Link to={"/allocations/" + this.props.id}>All allocations</Link></li>
-                        <li>
-                            <Link to={"/allocations/" + this.props.id + leaked_filter}>Potentially leaked allocations</Link>
-                            &nbsp;(<a href={prefix + "/export/flamegraph/flame.svg" + leaked_filter}>flamegraph</a>)
-                        </li>
-                        <li>
-                            <Link to={"/allocations/" + this.props.id + "?lifetime=only_leaked"}>Leaked allocations</Link>
-                            &nbsp;(<a href={prefix + "/export/flamegraph/flame.svg?lifetime=only_leaked"}>flamegraph</a>)
-                        </li>
-                        <li><Link to={"/address_space/" + this.props.id + "?lifetime=only_not_deallocated_in_current_range&mmaped=no"}>Address space fragmentation</Link></li>
-                        <li><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_constants_ascii_tree/dynamic_constants_" + this.props.id + ".txt"}>Dynamically allocated constants (as ASCII tree)</a></li>
-                        <li><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics_ascii_tree/dynamic_statics_" + this.props.id + ".txt"}>Dynamically allocated statics (as ASCII tree)</a></li>
-                        <li><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_constants/dynamic_constants_" + this.props.id + ".json"}>Download dynamically constants (as JSON)</a></li>
-                        <li><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics/dynamic_statics_" + this.props.id + ".json"}>Download dynamically statics (as JSON)</a></li>
-                        <li><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/export/heaptrack/heaptrack.dat"}>Download as a Heaptrack data file</a></li>
-                    </ul>
                     <br />
                     {inner}
                     <ContextMenuTrigger id="overview_context_menu" ref={c => this.context_trigger = c}></ContextMenuTrigger>
