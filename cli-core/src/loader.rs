@@ -312,6 +312,10 @@ impl Loader {
             allocation_flags |= AllocationFlags::IS_CALLOC;
         }
 
+        if flags & event::ALLOC_FLAG_JEMALLOC != 0 {
+            allocation_flags |= AllocationFlags::IS_JEMALLOC;
+        }
+
         if self.shared_ptr_backtraces.contains( &backtrace ) {
             allocation_flags |= AllocationFlags::IS_SHARED_PTR;
         }

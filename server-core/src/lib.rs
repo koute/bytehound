@@ -302,7 +302,7 @@ fn handler_list( req: HttpRequest ) -> HttpResponse {
 fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationTimeline {
     #[inline(always)]
     fn is_matched( allocation: &Allocation ) -> bool {
-        allocation.in_main_arena() && !allocation.is_mmaped()
+        allocation.in_main_arena() && !allocation.is_mmaped() && !allocation.is_jemalloc()
     }
 
     let maximum_len = (data.last_timestamp().as_secs() - data.initial_timestamp().as_secs()) as usize;

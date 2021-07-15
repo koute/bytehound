@@ -207,6 +207,7 @@ bitflags! {
         const IS_PREV_IN_USE    = 1 << 0;
         const IS_MMAPED         = 1 << 1;
         const IN_NON_MAIN_ARENA = 1 << 2;
+        const IS_JEMALLOC       = 1 << 5;
         const IS_SHARED_PTR     = 1 << 6;
         const IS_CALLOC         = 1 << 7;
     }
@@ -341,6 +342,11 @@ impl Allocation {
     #[inline]
     pub fn in_main_arena( &self ) -> bool {
         !self.in_non_main_arena()
+    }
+
+    #[inline]
+    pub fn is_jemalloc( &self ) -> bool {
+        self.flags.contains( AllocationFlags::IS_JEMALLOC )
     }
 
     #[inline]
