@@ -407,19 +407,14 @@ pub fn match_allocation( data: &Data, allocation: &Allocation, filter: &Filter )
         return false;
     }
 
-    if let Some( ref deallocation ) = allocation.deallocation {
-        let lifetime = deallocation.timestamp - allocation.timestamp;
-        if lifetime < lifetime_min.0 {
-            return false;
-        }
+    let lifetime_end = allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
+    let lifetime = lifetime_end - allocation.timestamp;
+    if lifetime < lifetime_min.0 {
+        return false;
+    }
 
-        if let Some( lifetime_max ) = lifetime_max {
-            if lifetime > lifetime_max.0 {
-                return false;
-            }
-        }
-    } else {
-        if lifetime_max.is_some() {
+    if let Some( lifetime_max ) = lifetime_max {
+        if lifetime > lifetime_max.0 {
             return false;
         }
     }
