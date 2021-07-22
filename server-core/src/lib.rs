@@ -118,7 +118,7 @@ struct AllocationGroupsKey {
 }
 
 struct State {
-    data: HashMap< DataId, Data >,
+    data: HashMap< DataId, Arc< Data > >,
     data_ids: Vec< DataId >,
     allocation_group_cache: Mutex< LruCache< AllocationGroupsKey, Arc< AllocationGroups > > >
 }
@@ -138,7 +138,7 @@ impl State {
         }
 
         self.data_ids.push( data.id() );
-        self.data.insert( data.id(), data );
+        self.data.insert( data.id(), Arc::new( data ) );
     }
 
     fn last_id( &self ) -> Option< DataId > {
@@ -176,7 +176,7 @@ fn get_data_id( req: &HttpRequest ) -> Result< DataId > {
     Ok( id )
 }
 
-fn get_data( req: &HttpRequest ) -> Result< &Data > {
+fn get_data( req: &HttpRequest ) -> Result< &Arc< Data > > {
     let id = get_data_id( req )?;
     req.state().data.get( &id ).ok_or_else( || ErrorNotFound( "data not found" ) )
 }
