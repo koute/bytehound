@@ -38,6 +38,7 @@ use serde::Serialize;
 use itertools::Itertools;
 use lru::LruCache;
 use parking_lot::Mutex;
+use rayon::prelude::*;
 
 use cli_core::{
     Loader,
@@ -82,15 +83,32 @@ struct AllocationGroups {
 }
 
 impl AllocationGroups {
-    fn new< 'a, T: IntoIterator< Item = (AllocationId, &'a Allocation) > >( iter: T ) -> Self {
-        let mut grouped = HashMap::new();
-        for (id, allocation) in iter {
-            let allocations = grouped.entry( allocation.backtrace ).or_insert( Vec::new() );
-            allocations.push( id );
-        }
+    fn new< 'a, T: ParallelIterator< Item = (AllocationId, &'a Allocation) > >( iter: T ) -> Self {
+        let grouped = iter
+            .fold_with(
+                HashMap::new(),
+                |mut grouped, (id, allocation)| {
+                    grouped.entry( allocation.backtrace ).or_insert_with( Vec::new ).push( id );
+                    grouped
+                }
+            )
+            .reduce(
+                || HashMap::new(),
+                |mut a, mut b| {
+                    if b.len() > a.len() {
+                        std::mem::swap( &mut a, &mut b );
+                    }
+
+                    for (backtrace, ids) in b {
+                        a.entry( backtrace ).or_insert_with( Vec::new ).extend( ids );
+                    }
+
+                    a
+                }
+            );
 
         let mut grouped: Vec< (BacktraceId, Vec< AllocationId >) > = grouped.into_iter().collect();
-        grouped.sort_by_key( |&(backtrace_id, _)| backtrace_id );
+        grouped.par_sort_by_key( |&(backtrace_id, _)| backtrace_id );
 
         let mut allocations = VecVec::new();
         for (backtrace_id, allocation_ids) in grouped {
@@ -887,7 +905,8 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
     if let Some( groups ) = groups {
         allocation_groups = groups;
     } else {
-        let iter = prefiltered_allocation_ids( data, Default::default(), &filter ).iter()
+        let iter = prefiltered_allocation_ids( data, Default::default(), &filter )
+            .par_iter()
             .map( |&allocation_id| (allocation_id, data.get_allocation( allocation_id )) )
             .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) );
 
