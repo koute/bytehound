@@ -482,8 +482,8 @@ pub struct CountAndSize {
 
 #[inline]
 fn binary_search_range< 'a, T, V, W, F >( array: &'a [T], min: Option< V >, max: Option< V >, callback: F ) -> Range< usize >
-    where V: Ord + 'a,
-          W: Borrow< V > + 'a,
+    where V: Ord,
+          W: Borrow< V >,
           F: Fn( &'a T ) -> W
 {
     if array.is_empty() {
@@ -600,23 +600,36 @@ impl Data {
     }
 
     #[inline]
-    fn sorted_by< 'a, T: Ord + 'a, F: Fn( &'a Allocation ) -> &'a T >( &'a self, array: &'a [AllocationId], min: Option< T >, max: Option< T >, callback: F ) -> impl SliceLikeIterator< Item = (AllocationId, &'a Allocation) > {
+    fn sorted_by< 'a, T, F >(
+        &'a self,
+        array: &'a [AllocationId],
+        min: Option< T >,
+        max: Option< T >,
+        callback: F
+    ) -> &'a [AllocationId]
+        where T: Ord + 'a,
+              F: Fn( &'a Allocation ) -> &T
+    {
+        if min.is_none() && max.is_none() {
+            return array;
+        }
+
         let range = binary_search_range( array, min, max, move |&id| callback( &self.allocations[ id.raw() as usize ] ) );
-        array[ range ].iter().map( move |&id| (id, &self.allocations[ id.raw() as usize ]) )
+        &array[ range ]
     }
 
     #[inline]
-    pub fn alloc_sorted_by_timestamp( &self, min: Option< Timestamp >, max: Option< Timestamp > ) -> impl SliceLikeIterator< Item = (AllocationId, &Allocation) > {
+    pub fn alloc_sorted_by_timestamp( &self, min: Option< Timestamp >, max: Option< Timestamp > ) -> &[AllocationId] {
         self.sorted_by( &self.sorted_by_timestamp, min, max, |alloc| &alloc.timestamp )
     }
 
     #[inline]
-    pub fn alloc_sorted_by_size( &self, min: Option< u64 >, max: Option< u64 > ) -> impl SliceLikeIterator< Item = (AllocationId, &Allocation) > {
+    pub fn alloc_sorted_by_size( &self, min: Option< u64 >, max: Option< u64 > ) -> &[AllocationId] {
         self.sorted_by( &self.sorted_by_size, min, max, |alloc| &alloc.size )
     }
 
     #[inline]
-    pub fn alloc_sorted_by_address( &self, min: Option< u64 >, max: Option< u64 > ) -> impl SliceLikeIterator< Item = (AllocationId, &Allocation) > {
+    pub fn alloc_sorted_by_address( &self, min: Option< u64 >, max: Option< u64 > ) -> &[AllocationId] {
         self.sorted_by( &self.sorted_by_address, min, max, |alloc| &alloc.pointer )
     }
 

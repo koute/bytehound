@@ -617,20 +617,33 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().json( timeline ) )
 }
 
-fn allocations_iter< 'a >( data: &'a Data, sort_by: protocol::AllocSortBy, order: protocol::Order, filter: &Filter ) -> impl DoubleEndedIterator< Item = (AllocationId, &'a Allocation) > {
-    fn box_iter< 'a, I: 'a, U: 'a >( iter: I, order: protocol::Order ) -> Box< dyn DoubleEndedIterator< Item = U > + 'a >
-        where I: DoubleEndedIterator< Item = U >
-    {
-        match order {
-            protocol::Order::Asc => Box::new( iter ),
-            protocol::Order::Dsc => Box::new( iter.rev() )
-        }
-    }
-
+fn prefiltered_allocation_ids< 'a >(
+    data: &'a Data,
+    sort_by: protocol::AllocSortBy,
+    filter: &Filter
+ ) -> &'a [AllocationId] {
     match sort_by {
-        protocol::AllocSortBy::Timestamp => box_iter( data.alloc_sorted_by_timestamp( filter.timestamp_start_opt(), filter.timestamp_end_opt() ), order ),
-        protocol::AllocSortBy::Address => box_iter( data.alloc_sorted_by_address( None, None ), order ),
-        protocol::AllocSortBy::Size => box_iter( data.alloc_sorted_by_size( filter.size_min_opt(), filter.size_max_opt() ), order )
+        protocol::AllocSortBy::Timestamp => data.alloc_sorted_by_timestamp( filter.timestamp_start_opt(), filter.timestamp_end_opt() ),
+        protocol::AllocSortBy::Address => data.alloc_sorted_by_address( None, None ),
+        protocol::AllocSortBy::Size => data.alloc_sorted_by_size( filter.size_min_opt(), filter.size_max_opt() )
+    }
+}
+
+fn allocations_iter< 'a >(
+    data: &'a Data,
+    array: &'a [AllocationId],
+    order: protocol::Order,
+    filter: Filter
+) -> Box< dyn DoubleEndedIterator< Item = (AllocationId, &'a Allocation) > + 'a > {
+    match order {
+        protocol::Order::Asc => Box::new( array.iter()
+            .map( move |&id| (id, data.get_allocation( id )) )
+            .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) )
+        ),
+        protocol::Order::Dsc => Box::new( array.iter().rev()
+            .map( move |&id| (id, data.get_allocation( id )) )
+            .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) )
+        )
     }
 }
 
@@ -646,21 +659,21 @@ fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceF
     let sort_by = params.sort_by.unwrap_or( protocol::AllocSortBy::Timestamp );
     let order = params.order.unwrap_or( protocol::Order::Asc );
 
+    let allocation_ids = prefiltered_allocation_ids( data, sort_by, &filter );
     let total_count =
-        allocations_iter( data, sort_by, order, &filter )
-        .map( |(_, allocation)| allocation )
-        .filter( |allocation| match_allocation( data, allocation, &filter ) ).count() as u64;
+        allocation_ids
+        .iter()
+        .filter( |&&id| match_allocation( data, data.get_allocation( id ), &filter ) )
+        .count() as u64;
 
     let allocations = move || {
         let backtrace_format = backtrace_format.clone();
         let filter = filter.clone();
 
-        allocations_iter( data, sort_by, order, &filter )
-            .map( |(_, allocation)| allocation )
-            .filter( move |allocation| match_allocation( data, allocation, &filter ) )
+        allocations_iter( data, allocation_ids, order, filter )
             .skip( skip )
             .take( remaining )
-            .map( move |allocation| {
+            .map( move |(_, allocation)| {
                 let backtrace = data.get_backtrace( allocation.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
                 protocol::Allocation {
                     address: allocation.pointer,
@@ -874,9 +887,9 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
     if let Some( groups ) = groups {
         allocation_groups = groups;
     } else {
-        let iter =
-            allocations_iter( data, Default::default(), Default::default(), &filter )
-                .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) );
+        let iter = prefiltered_allocation_ids( data, Default::default(), &filter ).iter()
+            .map( |&allocation_id| (allocation_id, data.get_allocation( allocation_id )) )
+            .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) );
 
         let mut groups = AllocationGroups::new( iter );
         match key.sort_by {
@@ -932,13 +945,13 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
 
 fn handler_raw_allocations( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
-    let iter = data.alloc_sorted_by_timestamp( None, None );
+    let iter = data.alloc_sorted_by_timestamp( None, None ).iter().map( |&id| data.get_allocation( id ) );
 
     let mut output = String::new();
     output.push_str( "[" );
 
     let mut is_first = true;
-    for (_, allocation) in iter {
+    for allocation in iter {
         if !is_first {
             output.push_str( "," );
         } else {
@@ -1184,14 +1197,16 @@ fn handler_backtraces( req: HttpRequest ) -> Result< HttpResponse > {
 
 fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a Data, filter: F ) -> impl Serialize + 'a {
     let main_heap_start = data.alloc_sorted_by_address( None, None )
-        .map( |(_, allocation)| allocation )
+        .iter()
+        .map( |&id| data.get_allocation( id ) )
         .filter( |allocation| !allocation.is_mmaped() && allocation.in_main_arena() )
         .map( |allocation| allocation.actual_range( data ).start )
         .next()
         .unwrap_or( 0 );
 
     let main_heap_end = data.alloc_sorted_by_address( None, None )
-        .map( |(_, allocation)| allocation )
+        .iter()
+        .map( |&id| data.get_allocation( id ) )
         .rev()
         .filter( |allocation| !allocation.is_mmaped() && allocation.in_main_arena() )
         .map( |allocation| allocation.actual_range( data ).end )
@@ -1201,7 +1216,8 @@ fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a 
     let regions = move || {
         let filter = filter.clone();
         data.alloc_sorted_by_address( None, None )
-            .map( |(_, allocation)| allocation )
+            .iter()
+            .map( move |&id| data.get_allocation( id ) )
             .filter( move |allocation| filter( allocation ) )
             .map( move |allocation| allocation.actual_range( data ) )
             .coalesce( |mut range, next_range| {
