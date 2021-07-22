@@ -88,11 +88,17 @@ pub struct Frame< 'a > {
     pub address: u64,
     pub address_s: String,
     pub count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub library: Option< &'a str >,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub function: Option< Cow< 'a, str > >,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_function: Option< &'a str >,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option< &'a str >,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option< u32 >,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub column: Option< u32 >,
     pub is_inline: bool
 }
@@ -118,6 +124,7 @@ pub struct Allocation< 'a > {
     pub thread: u32,
     pub size: u64,
     pub backtrace_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub deallocation: Option< Deallocation >,
     pub backtrace: Vec< Frame< 'a > >,
     pub is_mmaped: bool,
@@ -156,6 +163,7 @@ pub struct Mallopt< 'a > {
     pub backtrace_id: u32,
     pub backtrace: Vec< Frame< 'a > >,
     pub raw_param: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub param: Option< String >,
     pub value: i32,
     pub result: i32

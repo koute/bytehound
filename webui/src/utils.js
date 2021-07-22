@@ -277,7 +277,7 @@ function format_frame( index, frame ) {
     const key = "frame_" + index;
     if( frame.function || frame.raw_function ) {
         let f = frame.function || frame.raw_function;
-        if( frame.source !== null && frame.line !== null ) {
+        if( frame.source && frame.line ) {
             f += " [" + frame.source.match( /[^\/]*$/ )[ 0 ] + ":" + frame.line + "]";
         }
         return <div key={key}>#{index} [{frame.library}] {f}</div>;

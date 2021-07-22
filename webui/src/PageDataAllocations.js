@@ -802,7 +802,7 @@ export default class PageDataAllocations extends React.Component {
                 id: "lifetime",
                 Header: "Lifetime",
                 accessor: entry => {
-                    if( entry.deallocation === null ) {
+                    if( !entry.deallocation ) {
                         return "∞";
                     } else {
                         let interval = {
