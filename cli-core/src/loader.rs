@@ -15,6 +15,7 @@ use byteorder::{BigEndian, LittleEndian, ByteOrder};
 use nwind::{arch, BinaryData, AddressSpace, IAddressSpace, DebugInfoIndex};
 use nwind::proc_maps::Region;
 use nwind::proc_maps::parse as parse_maps;
+use rayon::prelude::*;
 
 use common::event::{
     self,
@@ -1001,15 +1002,16 @@ impl Loader {
         }
 
         let mut sorted_by_timestamp = indices.clone();
-        sorted_by_timestamp.sort_by( |&a_id, &b_id| cmp_by_time( &self.allocations, a_id, b_id ) );
-
         let mut sorted_by_address = indices.clone();
-        sorted_by_address.sort_by_key( |index| self.allocations[ index.raw() as usize ].pointer );
-
         let mut sorted_by_size = indices;
-        sorted_by_size.sort_by_key( |index| self.allocations[ index.raw() as usize ].size );
+        {
+            let allocations = &self.allocations;
+            sorted_by_timestamp.par_sort_by( |&a_id, &b_id| cmp_by_time( allocations, a_id, b_id ) );
+            sorted_by_address.par_sort_by_key( |index| allocations[ index.raw() as usize ].pointer );
+            sorted_by_size.par_sort_by_key( |index| allocations[ index.raw() as usize ].size );
+        }
 
-        self.operations.sort_by_key( |(timestamp, _)| *timestamp );
+        self.operations.par_sort_by_key( |(timestamp, _)| *timestamp );
         let operations: Vec< _ > = self.operations.into_iter().map( |(_, op)| op ).collect();
 
         self.allocations.shrink_to_fit();
