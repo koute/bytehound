@@ -118,7 +118,8 @@ pub struct Loader {
     mmap_operations: Vec< MmapOperation >,
     maximum_backtrace_depth: u32,
     previous_backtrace_on_thread: HashMap< u32, Vec< u64 > >,
-    string_id_map: HashMap< u32, StringId >
+    string_id_map: HashMap< u32, StringId >,
+    last_timestamp: Timestamp
 }
 
 fn address_to_frame< F: FnMut( Frame ) >( address_space: &dyn IAddressSpace, interner: &mut StringInterner, address: u64, mut callback: F ) {
@@ -244,7 +245,8 @@ impl Loader {
             mmap_operations: Default::default(),
             maximum_backtrace_depth: 0,
             previous_backtrace_on_thread: Default::default(),
-            string_id_map: Default::default()
+            string_id_map: Default::default(),
+            last_timestamp: Timestamp::min()
         };
 
         loader.update_timestamp_to_wall_clock( timestamp, wall_clock_secs, wall_clock_nsecs );
@@ -335,6 +337,8 @@ impl Loader {
         extra_usable_space: u32,
         preceding_free_space: u64
     ) {
+        self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+
         let flags = self.parse_flags( backtrace, flags );
         let allocation_id = AllocationId::new( self.allocations.len() as _ );
         let allocation = Allocation {
@@ -391,6 +395,8 @@ impl Loader {
         backtrace: Option< BacktraceId >,
         thread: ThreadId
     ) {
+        self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+
         let key = into_key( id, pointer );
         let allocation_id = match self.allocation_map.remove( &key ) {
             Some( id ) => id,
@@ -431,6 +437,8 @@ impl Loader {
         extra_usable_space: u32,
         preceding_free_space: u64
     ) {
+        self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+
         let old_key = into_key( id, old_pointer );
         let allocation_id = match self.allocation_map.remove( &old_key ) {
             Some( id ) => id,
@@ -1026,6 +1034,7 @@ impl Loader {
         allocations_by_backtrace.shrink_to_fit();
 
         let last_timestamp = self.group_stats.iter().map( |stats| stats.last_allocation ).max().unwrap_or( initial_timestamp );
+        let last_timestamp = std::cmp::max( self.last_timestamp, last_timestamp );
         Data {
             id: self.id,
             initial_timestamp,
