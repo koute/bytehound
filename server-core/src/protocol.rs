@@ -116,6 +116,7 @@ pub struct Deallocation {
 
 #[derive(Serialize)]
 pub struct Allocation< 'a > {
+    pub id: u64,
     pub address: u64,
     pub address_s: String,
     pub timestamp: Timeval,
@@ -129,7 +130,11 @@ pub struct Allocation< 'a > {
     pub backtrace: Vec< Frame< 'a > >,
     pub is_mmaped: bool,
     pub in_main_arena: bool,
-    pub extra_space: u32
+    pub extra_space: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain_lifetime: Option< Timeval >,
+    pub position_in_chain: u32,
+    pub chain_length: u32,
 }
 
 #[derive(Serialize)]
@@ -593,6 +598,10 @@ pub struct AllocFilter {
     pub address_max: Option< u64 >,
     pub size_min: Option< u64 >,
     pub size_max: Option< u64 >,
+    pub first_size_min: Option< u64 >,
+    pub first_size_max: Option< u64 >,
+    pub last_size_min: Option< u64 >,
+    pub last_size_max: Option< u64 >,
     pub lifetime_min: Option< Interval >,
     pub lifetime_max: Option< Interval >,
     pub backtrace_depth_min: Option< u32 >,
@@ -610,7 +619,11 @@ pub struct AllocFilter {
     pub group_leaked_allocations_min: Option< NumberOrPercentage >,
     pub group_leaked_allocations_max: Option< NumberOrPercentage >,
     pub group_allocations_min: Option< u32 >,
-    pub group_allocations_max: Option< u32 >
+    pub group_allocations_max: Option< u32 >,
+    pub chain_length_min: Option< u32 >,
+    pub chain_length_max: Option< u32 >,
+    pub chain_lifetime_min: Option< Interval >,
+    pub chain_lifetime_max: Option< Interval >,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]

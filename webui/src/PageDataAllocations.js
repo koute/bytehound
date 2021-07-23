@@ -220,15 +220,45 @@ const FIELDS = {
         label: "To",
         badge: value => "Living at most " + fmt_duration_for_display( value )
     },
+    chain_lifetime_min: {
+        ...DURATION_FIELD,
+        label: "From (whole chain)",
+        badge: value => "Chain living at least " + fmt_duration_for_display( value )
+    },
+    chain_lifetime_max: {
+        ...DURATION_FIELD,
+        label: "To (whole chain)",
+        badge: value => "Chain living at most " + fmt_duration_for_display( value )
+    },
     size_min: {
         ...SIZE_FIELD,
         label: "Min size",
-        badge: value => "At least " + fmt_size( value, false )
+        badge: value => "At least " + fmt_size( value, false ) + "B"
     },
     size_max: {
         ...SIZE_FIELD,
         label: "Max size",
-        badge: value => "At most " + fmt_size( value, false )
+        badge: value => "At most " + fmt_size( value, false ) + "B"
+    },
+    first_size_min: {
+        ...SIZE_FIELD,
+        label: "Min size (first in chain)",
+        badge: value => "First at least " + fmt_size( value, false ) + "B"
+    },
+    first_size_max: {
+        ...SIZE_FIELD,
+        label: "Max size (first in chain)",
+        badge: value => "First at most " + fmt_size( value, false ) + "B"
+    },
+    last_size_min: {
+        ...SIZE_FIELD,
+        label: "Min size (last in chain)",
+        badge: value => "Last at least " + fmt_size( value, false ) + "B"
+    },
+    last_size_max: {
+        ...SIZE_FIELD,
+        label: "Max size (last in chain)",
+        badge: value => "Last at most " + fmt_size( value, false ) + "B"
     },
     backtrace_depth_min: {
         ...POSITIVE_INTEGER_FIELD,
@@ -293,6 +323,16 @@ const FIELDS = {
         ...POSITIVE_INTEGER_OR_PERCENTAGE_FIELD,
         label: "Max leaked allocations",
         badge: value => "At most " + value + " leaked allocations"
+    },
+    chain_length_min: {
+        ...POSITIVE_INTEGER_FIELD,
+        label: "Min chain length",
+        badge: value => "At least " + value + " allocations in chain"
+    },
+    chain_length_max: {
+        ...POSITIVE_INTEGER_FIELD,
+        label: "Max chain length",
+        badge: value => "At most " + value + " allocations in chain"
     },
     lifetime: {
         ...RADIO_FIELD,
@@ -414,15 +454,36 @@ class FilterEditor extends React.Component {
                     <div className="px-2" />
                     {this.field("to")}
                 </div>
-                <div title="By size" className="d-flex">
-                    {this.field("size_min")}
-                    <div className="px-2" />
-                    {this.field("size_max")}
+                <div title="By size" className="d-flex flex-column">
+                    <div className="d-flex flex-row">
+                        {this.field("size_min")}
+                        <div className="px-2" />
+                        {this.field("size_max")}
+                    </div>
+                    <div className="d-flex flex-row">
+                        {this.field("first_size_min")}
+                        <div className="px-2" />
+                        {this.field("first_size_max")}
+                    </div>
+                    <div className="d-flex flex-row">
+                        {this.field("last_size_min")}
+                        <div className="px-2" />
+                        {this.field("last_size_max")}
+                    </div>
                 </div>
                 <div title="By lifetime" className="d-flex">
-                    {this.field("lifetime_min")}
-                    <div className="px-2" />
-                    {this.field("lifetime_max")}
+                    <div className="d-flex flex-column">
+                        <div className="d-flex flex-row">
+                            {this.field("lifetime_min")}
+                            <div className="px-2" />
+                            {this.field("lifetime_max")}
+                        </div>
+                        <div className="d-flex flex-row">
+                            {this.field("chain_lifetime_min")}
+                            <div className="px-2" />
+                            {this.field("chain_lifetime_max")}
+                        </div>
+                    </div>
                     <div className="px-2" />
                     {this.field("lifetime")}
                 </div>
@@ -457,7 +518,13 @@ class FilterEditor extends React.Component {
                         <div className="px-2" />
                         {this.field("group_interval_max")}
                     </div>
-
+                </div>
+                <div title="By realloc." className="d-flex flex-column">
+                    <div className="d-flex flex-row">
+                        {this.field("chain_length_min")}
+                        <div className="px-2" />
+                        {this.field("chain_length_max")}
+                    </div>
                 </div>
                 <div title="Misc" className="d-flex">
                     {this.field("mmaped")}
@@ -818,7 +885,27 @@ export default class PageDataAllocations extends React.Component {
                         return fmt_uptime_timeval( interval );
                     }
                 },
-                maxWidth: 60,
+                maxWidth: 90,
+                sortable: false,
+                view: "allocations"
+            },
+            {
+                id: "chain_lifetime",
+                Header: "Lifetime (realloc.)",
+                accessor: entry => {
+                    if( !entry.chain_lifetime ) {
+                        return "∞";
+                    } else {
+                        const interval = entry.chain_lifetime;
+                        if( interval.fract_nsecs < 0 ) {
+                            interval.secs -= 1;
+                            interval.fract_nsecs += 1000000000;
+                        }
+
+                        return fmt_uptime_timeval( interval );
+                    }
+                },
+                maxWidth: 120,
                 sortable: false,
                 view: "allocations"
             },
@@ -847,6 +934,33 @@ export default class PageDataAllocations extends React.Component {
                 accessor: "size",
                 maxWidth: 85,
                 view: "allocations"
+            },
+            {
+                Header: "Realloc.",
+                Cell: cell => {
+                    if( cell.original.chain_length === 1 ) {
+                        return "";
+                    } else {
+                        let value = "";
+                        switch( cell.original.position_in_chain ) {
+                            case 0:
+                                value = "1st";
+                                break;
+                            case 1:
+                                value = "2nd";
+                                break;
+                            case 3:
+                                value = "3rd";
+                                break;
+                            default:
+                                value = cell.original.position_in_chain + "th";
+                        }
+
+                        return <div>{value}<br />({cell.original.chain_length} total)</div>;
+                    }
+                },
+                view: "allocations",
+                maxWidth: 70
             },
             {
                 Header: "Mmaped",

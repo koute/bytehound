@@ -138,7 +138,8 @@ pub struct Data {
     pub(crate) mallopts: Vec< Mallopt >,
     pub(crate) mmap_operations: Vec< MmapOperation >,
     pub(crate) maximum_backtrace_depth: u32,
-    pub(crate) group_stats: Vec< GroupStatistics >
+    pub(crate) group_stats: Vec< GroupStatistics >,
+    pub(crate) chains: HashMap< AllocationId, AllocationChain >
 }
 
 pub type DataPointer = u64;
@@ -213,6 +214,13 @@ bitflags! {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct AllocationChain {
+    pub first: AllocationId,
+    pub last: AllocationId,
+    pub length: u32
+}
+
 #[derive(Debug)]
 pub struct Allocation {
     pub pointer: DataPointer,
@@ -223,6 +231,8 @@ pub struct Allocation {
     pub deallocation: Option< Deallocation >,
     pub reallocation: Option< AllocationId >,
     pub reallocated_from: Option< AllocationId >,
+    pub first_allocation_in_chain: Option< AllocationId >,
+    pub position_in_chain: u32,
     pub flags: AllocationFlags,
     pub extra_usable_space: u32,
     pub marker: u32,
@@ -731,6 +741,23 @@ impl Data {
         &self.frames[ id ]
     }
 
+    pub fn get_chain_by_first_allocation( &self, id: AllocationId ) -> Option< &AllocationChain > {
+        self.chains.get( &id )
+    }
+
+    pub fn get_chain_by_any_allocation( &self, id: AllocationId ) -> AllocationChain {
+        let alloc = self.get_allocation( id );
+        if let Some( initial ) = alloc.first_allocation_in_chain {
+            self.chains.get( &initial ).unwrap().clone()
+        } else {
+            AllocationChain {
+                first: id,
+                last: id,
+                length: 1
+            }
+        }
+    }
+
     pub fn get_allocation( &self, id: AllocationId ) -> &Allocation {
         &self.allocations[ id.raw() as usize ]
     }
@@ -1033,5 +1060,16 @@ impl Data {
         }
 
         table_to_string( &table )
+    }
+}
+
+impl AllocationChain {
+    pub fn lifetime( &self, data: &Data ) -> Option< Timestamp > {
+        Some(
+            data.get_allocation( self.last )
+                .deallocation.as_ref()
+                .map( |deallocation| deallocation.timestamp )?
+            - data.get_allocation( self.first ).timestamp
+        )
     }
 }

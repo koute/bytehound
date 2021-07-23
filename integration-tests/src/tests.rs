@@ -170,7 +170,8 @@ pub struct Allocation {
     pub backtrace: Vec< Frame >,
     pub is_mmaped: bool,
     pub in_main_arena: bool,
-    pub extra_space: u32
+    pub extra_space: u32,
+    pub chain_length: u32,
 }
 
 #[derive(Deserialize, Debug)]
@@ -488,6 +489,13 @@ fn test_basic() {
     assert_eq!( a4.thread, a5.thread );
 
     assert_eq!( a0.backtrace.last().unwrap().line.unwrap() + 1, a1.backtrace.last().unwrap().line.unwrap() );
+
+    assert_eq!( a0.chain_length, 1 );
+    assert_eq!( a1.chain_length, 1 );
+    assert_eq!( a2.chain_length, 2 );
+    assert_eq!( a3.chain_length, 2 );
+    assert_eq!( a4.chain_length, 1 );
+    assert_eq!( a5.chain_length, 1 );
 
     assert_eq!( iter.next(), None );
 }
@@ -1116,6 +1124,13 @@ fn test_cull() {
     let g0 = analysis.groups.allocations.iter().find( |group| group.backtrace_id == a0.backtrace_id ).unwrap();
     assert_eq!( g0.all.leaked_count, 1 );
     assert_eq!( g0.all.allocated_count, 3 );
+
+    let a2 = iter.next().unwrap();
+    let a3 = iter.next().unwrap();
+    assert_eq!( a2.size, 2000 );
+    assert_eq!( a3.size, 3000 );
+    assert_eq!( a2.chain_length, 2 );
+    assert_eq!( a3.chain_length, 2 );
 
     assert_eq!( iter.next(), None );
 }

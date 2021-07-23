@@ -43,7 +43,19 @@ pub struct Filter {
     pub arena: Option< protocol::ArenaFilter >,
     pub matched_backtraces: Option< HashSet< BacktraceId > >,
     pub marker: Option< u32 >,
-    pub group_filter: Option< GroupFilter >
+    pub group_filter: Option< GroupFilter >,
+    pub first_size_min_specified: bool,
+    pub first_size_min: u64,
+    pub first_size_max_specified: bool,
+    pub first_size_max: u64,
+    pub last_size_min_specified: bool,
+    pub last_size_min: u64,
+    pub last_size_max_specified: bool,
+    pub last_size_max: u64,
+    pub chain_length_min: u32,
+    pub chain_length_max: u32,
+    pub chain_lifetime_min: protocol::Interval,
+    pub chain_lifetime_max: Option< protocol::Interval >,
 }
 
 #[derive(Clone, Debug)]
@@ -182,7 +194,19 @@ pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< 
         arena: filter.arena,
         matched_backtraces,
         marker: filter.marker,
-        group_filter
+        group_filter,
+        first_size_min_specified: filter.first_size_min.is_some(),
+        first_size_min: filter.first_size_min.unwrap_or( 0 ),
+        first_size_max_specified: filter.first_size_max.is_some(),
+        first_size_max: filter.first_size_max.unwrap_or( -1_i32 as _ ),
+        last_size_min_specified: filter.last_size_min.is_some(),
+        last_size_min: filter.last_size_min.unwrap_or( 0 ),
+        last_size_max_specified: filter.last_size_max.is_some(),
+        last_size_max: filter.last_size_max.unwrap_or( -1_i32 as _ ),
+        chain_length_min: filter.chain_length_min.unwrap_or( 0 ),
+        chain_length_max: filter.chain_length_max.unwrap_or( !0 ),
+        chain_lifetime_min: filter.chain_lifetime_min.unwrap_or( protocol::Interval::min() ),
+        chain_lifetime_max: filter.chain_lifetime_max,
     };
 
     Ok( filter )
@@ -337,6 +361,10 @@ pub fn match_allocation( data: &Data, allocation: &Allocation, filter: &Filter )
     let timestamp_end = filter.timestamp_end;
     let size_min = filter.size_min;
     let size_max = filter.size_max;
+    let first_size_min = filter.first_size_min;
+    let first_size_max = filter.first_size_max;
+    let last_size_min = filter.last_size_min;
+    let last_size_max = filter.last_size_max;
     let lifetime_min = filter.lifetime_min;
     let lifetime_max = filter.lifetime_max;
     let backtrace_depth_min = filter.backtrace_depth_min;
@@ -447,6 +475,50 @@ pub fn match_allocation( data: &Data, allocation: &Allocation, filter: &Filter )
 
     if let Some( ref matched_backtraces ) = filter.matched_backtraces {
         if !matched_backtraces.contains( &allocation.backtrace ) {
+            return false;
+        }
+    }
+
+    let first_allocation_size;
+    let last_allocation_size;
+    let chain_length;
+    let chain_lifetime;
+    if let Some( first_in_chain ) = allocation.first_allocation_in_chain {
+        let chain = data.get_chain_by_first_allocation( first_in_chain ).unwrap();
+        let first_allocation = data.get_allocation( chain.first );
+        let last_allocation = data.get_allocation( chain.last );
+
+        first_allocation_size = first_allocation.size;
+        last_allocation_size = last_allocation.size;
+        chain_length = chain.length;
+
+        let chain_lifetime_end = last_allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
+        chain_lifetime = chain_lifetime_end - first_allocation.timestamp;
+    } else {
+        first_allocation_size = allocation.size;
+        last_allocation_size = allocation.size;
+        chain_length = 1;
+        chain_lifetime = lifetime;
+    }
+
+    if first_allocation_size < first_size_min || first_allocation_size > first_size_max {
+        return false;
+    }
+
+    if last_allocation_size < last_size_min || last_allocation_size > last_size_max {
+        return false;
+    }
+
+    if chain_length < filter.chain_length_min || chain_length > filter.chain_length_max {
+        return false;
+    }
+
+    if chain_lifetime < filter.chain_lifetime_min.0 {
+        return false;
+    }
+
+    if let Some( max ) = filter.chain_lifetime_max {
+        if chain_lifetime > max.0 {
             return false;
         }
     }

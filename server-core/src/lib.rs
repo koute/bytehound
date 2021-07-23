@@ -691,9 +691,11 @@ fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceF
         allocations_iter( data, allocation_ids, order, filter )
             .skip( skip )
             .take( remaining )
-            .map( move |(_, allocation)| {
+            .map( move |(allocation_id, allocation)| {
                 let backtrace = data.get_backtrace( allocation.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
+                let chain = data.get_chain_by_any_allocation( allocation_id );
                 protocol::Allocation {
+                    id: allocation_id.raw(),
                     address: allocation.pointer,
                     address_s: format!( "{:016X}", allocation.pointer ),
                     timestamp: allocation.timestamp.into(),
@@ -711,7 +713,10 @@ fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceF
                     backtrace,
                     in_main_arena: !allocation.in_non_main_arena(),
                     is_mmaped: allocation.is_mmaped(),
-                    extra_space: allocation.extra_usable_space
+                    extra_space: allocation.extra_usable_space,
+                    chain_lifetime: chain.lifetime( data ).map( |lifetime| lifetime.into() ),
+                    position_in_chain: allocation.position_in_chain,
+                    chain_length: chain.length
                 }
             })
     };

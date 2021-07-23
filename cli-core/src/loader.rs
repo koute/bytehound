@@ -30,6 +30,7 @@ use common::range_map::RangeMap;
 use crate::frame::Frame;
 use crate::data::{
     Allocation,
+    AllocationChain,
     AllocationFlags,
     AllocationId,
     BacktraceId,
@@ -351,6 +352,8 @@ impl Loader {
             deallocation: None,
             reallocation: None,
             reallocated_from: None,
+            first_allocation_in_chain: None,
+            position_in_chain: 0,
             flags,
             extra_usable_space,
             preceding_free_space: preceding_free_space as u32,
@@ -469,6 +472,8 @@ impl Loader {
             deallocation: None,
             reallocation: None,
             reallocated_from: Some( allocation_id ),
+            first_allocation_in_chain: None,
+            position_in_chain: 0,
             flags,
             extra_usable_space,
             preceding_free_space: preceding_free_space as u32,
@@ -983,6 +988,41 @@ impl Loader {
     }
 
     pub fn finalize( mut self ) -> Data {
+        let mut chains = HashMap::new();
+        for index in 0..self.allocations.len() {
+            let mut allocation = &self.allocations[ index ];
+            if allocation.reallocation.is_some() || allocation.reallocated_from.is_none() {
+                continue;
+            }
+
+            let last_allocation_id = AllocationId::new( index as _ );
+            let mut first_allocation_id = last_allocation_id;
+            let mut chain_length = 1;
+            while let Some( previous_id ) = allocation.reallocated_from {
+                first_allocation_id = previous_id;
+                allocation = &self.allocations[ previous_id.raw() as usize ];
+                chain_length += 1;
+            }
+
+            chains.insert( first_allocation_id, AllocationChain {
+                first: first_allocation_id,
+                last: last_allocation_id,
+                length: chain_length
+            });
+
+            let mut current = first_allocation_id;
+            for position in 0.. {
+                let alloc = &mut self.allocations[ current.raw() as usize ];
+                alloc.first_allocation_in_chain = Some( first_allocation_id );
+                alloc.position_in_chain = position;
+                if let Some( next_id ) = alloc.reallocation {
+                    current = next_id;
+                } else {
+                    break;
+                }
+            }
+        }
+
         let initial_timestamp = self.shift_timestamp( self.header.initial_timestamp );
         let indices: Vec< AllocationId > = (0..self.allocations.len()).into_iter().map( |id| AllocationId::new( id as _ ) ).collect();
 
@@ -1061,7 +1101,8 @@ impl Loader {
             mallopts: self.mallopts,
             mmap_operations: self.mmap_operations,
             maximum_backtrace_depth: self.maximum_backtrace_depth,
-            group_stats: self.group_stats
+            group_stats: self.group_stats,
+            chains
         }
     }
 }
