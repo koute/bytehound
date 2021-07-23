@@ -1119,6 +1119,17 @@ export default class PageDataAllocations extends React.Component {
                     lastDataUrl: data_url,
                     group: params.group_allocations === "true" || params.group_allocations === "1"
                 });
+            })
+            .catch( error => {
+                // TODO: Put the error message on the page itself.
+                alert( "Failed to fatch data: " + error );
+                this.setState({
+                    data: {},
+                    pages: null,
+                    loading: false,
+                    lastDataUrl: data_url,
+                    group: false
+                });
             });
     }
 }
