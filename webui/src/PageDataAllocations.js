@@ -824,6 +824,7 @@ export default class PageDataAllocations extends React.Component {
             },
             {
                 Header: "Address",
+                id: "address",
                 accessor: "address_s",
                 maxWidth: 140,
                 view: "allocations"
