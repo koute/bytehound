@@ -10,6 +10,7 @@ extern crate quickcheck;
 pub mod cmd_gather;
 pub mod cmd_analyze_size;
 
+mod filter;
 mod util;
 mod tree;
 mod tree_printer;
@@ -44,3 +45,11 @@ pub use crate::reader::parse_events;
 pub use crate::repack::repack;
 
 pub use common::event;
+
+pub use crate::filter::{
+    BasicFilter,
+    CompiledFilter,
+    Duration,
+    Filter,
+    NumberOrFractionOfTotal
+};

@@ -1,10 +1,8 @@
 use ahash::AHashMap as HashMap;
-use ahash::AHashSet as HashSet;
 
 use regex::{self, Regex};
 
 use cli_core::{
-    Allocation,
     BacktraceId,
     Data,
     Timestamp
@@ -23,42 +21,6 @@ pub struct GroupFilter {
 }
 
 #[derive(Clone, Debug)]
-pub struct Filter {
-    pub timestamp_start_specified: bool,
-    pub timestamp_start: Timestamp,
-    pub timestamp_end_specified: bool,
-    pub timestamp_end: Timestamp,
-    pub address_min: u64,
-    pub address_max: u64,
-    pub size_min_specified: bool,
-    pub size_min: u64,
-    pub size_max_specified: bool,
-    pub size_max: u64,
-    pub lifetime_min: protocol::Interval,
-    pub lifetime_max: Option< protocol::Interval >,
-    pub lifetime: protocol::LifetimeFilter,
-    pub backtrace_depth_min: usize,
-    pub backtrace_depth_max: usize,
-    pub mmaped: Option< protocol::MmapedFilter >,
-    pub arena: Option< protocol::ArenaFilter >,
-    pub matched_backtraces: Option< HashSet< BacktraceId > >,
-    pub marker: Option< u32 >,
-    pub group_filter: Option< GroupFilter >,
-    pub first_size_min_specified: bool,
-    pub first_size_min: u64,
-    pub first_size_max_specified: bool,
-    pub first_size_max: u64,
-    pub last_size_min_specified: bool,
-    pub last_size_min: u64,
-    pub last_size_max_specified: bool,
-    pub last_size_max: u64,
-    pub chain_length_min: u32,
-    pub chain_length_max: u32,
-    pub chain_lifetime_min: protocol::Interval,
-    pub chain_lifetime_max: Option< protocol::Interval >,
-}
-
-#[derive(Clone, Debug)]
 pub struct BacktraceFilter {
     pub backtrace_depth_min: usize,
     pub backtrace_depth_max: usize,
@@ -68,148 +30,124 @@ pub struct BacktraceFilter {
     pub negative_source_regex: Option< Regex >,
 }
 
-impl Filter {
-    pub fn timestamp_start_opt( &self ) -> Option< Timestamp > {
-        if self.timestamp_start_specified {
-            Some( self.timestamp_start )
-        } else {
-            None
+impl From< crate::protocol::NumberOrPercentage > for cli_core::NumberOrFractionOfTotal {
+    fn from( value: crate::protocol::NumberOrPercentage ) -> Self {
+        match value {
+            crate::protocol::NumberOrPercentage::Absolute( value ) => cli_core::NumberOrFractionOfTotal::Number( value as _ ),
+            crate::protocol::NumberOrPercentage::Percent( value ) => cli_core::NumberOrFractionOfTotal::Fraction( value as f64 / 100.0 )
+        }
+    }
+}
+
+pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::CompiledFilter, PrepareFilterError > {
+    use cli_core::Duration;
+
+    let mut output = cli_core::BasicFilter::default();
+
+    output.only_allocated_after_at_least = filter.from.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.only_allocated_until_at_most = filter.to.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.only_address_at_least = filter.address_min;
+    output.only_address_at_most = filter.address_max;
+    output.only_larger_or_equal = filter.size_min;
+    output.only_smaller_or_equal = filter.size_max;
+    output.only_first_size_larger_or_equal = filter.first_size_min;
+    output.only_first_size_smaller_or_equal = filter.first_size_max;
+    output.only_last_size_larger_or_equal = filter.last_size_min;
+    output.only_last_size_smaller_or_equal = filter.last_size_max;
+
+    output.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
+    output.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );
+
+    output.only_backtrace_length_at_least = filter.backtrace_depth_min.map( |value| value as usize );
+    output.only_backtrace_length_at_most = filter.backtrace_depth_max.map( |value| value as usize );
+
+    if let Some( id ) = filter.backtraces {
+        output.only_matching_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
+    }
+
+    match filter.mmaped {
+        None => {},
+        Some( protocol::MmapedFilter::Yes ) => output.only_mmaped = true,
+        Some( protocol::MmapedFilter::No ) => output.only_not_mmaped = true
+    }
+
+    match filter.arena {
+        None => {},
+        Some( protocol::ArenaFilter::Main ) => output.only_from_main_arena = true,
+        Some( protocol::ArenaFilter::NonMain ) => output.only_from_not_main_arena = true
+    }
+
+    if let Some( ref pattern ) = filter.function_regex {
+        output.only_passing_through_function = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "function_regex", err ) )?
+        );
+    }
+
+    if let Some( ref pattern ) = filter.negative_function_regex {
+        output.only_not_passing_through_function = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_function_regex", err ) )?
+        );
+    }
+
+    if let Some( ref pattern ) = filter.source_regex {
+        output.only_passing_through_source = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "source_regex", err ) )?
+        );
+    }
+
+    if let Some( ref pattern ) = filter.negative_source_regex {
+        output.only_not_passing_through_source = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_source_regex", err ) )?
+        );
+    }
+
+    output.only_with_marker = filter.marker;
+
+    output.only_group_interval_at_least = filter.group_interval_min.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.only_group_interval_at_most = filter.group_interval_max.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.only_group_allocations_at_least = filter.group_allocations_min.map( |value| value as usize );
+    output.only_group_allocations_at_most = filter.group_allocations_max.map( |value| value as usize );
+    output.only_group_leaked_allocations_at_least = filter.group_leaked_allocations_min.map( |value| value.into() );
+    output.only_group_leaked_allocations_at_most = filter.group_leaked_allocations_max.map( |value| value.into() );
+
+    output.only_chain_length_at_least = filter.chain_length_min;
+    output.only_chain_length_at_most = filter.chain_length_max;
+    output.only_chain_alive_for_at_least = filter.chain_lifetime_min.map( |interval| Duration( interval.0 ) );
+    output.only_chain_alive_for_at_most = filter.chain_lifetime_max.map( |interval| Duration( interval.0 ) );
+
+    match filter.lifetime.unwrap_or( protocol::LifetimeFilter::All ) {
+        protocol::LifetimeFilter::All => {},
+        protocol::LifetimeFilter::OnlyLeaked => {
+            output.only_leaked = true;
+        },
+        protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
+            output.only_not_deallocated_after_at_least = output.only_allocated_after_at_least;
+            output.only_not_deallocated_until_at_most = output.only_allocated_until_at_most;
+        },
+        protocol::LifetimeFilter::OnlyDeallocatedInCurrentRange => {
+            let min_1 = output.only_allocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
+            let max_1 = output.only_allocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
+
+            let min_2 = output.only_deallocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
+            let max_2 = output.only_deallocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
+
+            output.only_deallocated_after_at_least = Some( std::cmp::max( min_1, min_2 ) );
+            output.only_deallocated_until_at_most = Some( std::cmp::min( max_1, max_2 ) );
+        },
+        protocol::LifetimeFilter::OnlyTemporary => {
+            output.only_temporary = true;
+        },
+        protocol::LifetimeFilter::OnlyWholeGroupLeaked => {
+            output.only_group_leaked_allocations_at_least = Some( cli_core::NumberOrFractionOfTotal::Fraction( 1.0 ) );
         }
     }
 
-    pub fn timestamp_end_opt( &self ) -> Option< Timestamp > {
-        if self.timestamp_end_specified {
-            Some( self.timestamp_end )
-        } else {
-            None
-        }
-    }
-
-    pub fn size_min_opt( &self ) -> Option< u64 > {
-        if self.size_min_specified {
-            Some( self.size_min )
-        } else {
-            None
-        }
-    }
-
-    pub fn size_max_opt( &self ) -> Option< u64 > {
-        if self.size_max_specified {
-            Some( self.size_max )
-        } else {
-            None
-        }
-    }
+    let output: cli_core::Filter = output.into();
+    Ok( output.compile( data ) )
 }
 
 pub enum PrepareFilterError {
     InvalidRegex( &'static str, regex::Error )
-}
-
-pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< Filter, PrepareFilterError > {
-    let matched_backtraces_1;
-    let matched_backtraces_2;
-
-    if filter.function_regex.is_some() || filter.source_regex.is_some() || filter.negative_function_regex.is_some() || filter.negative_source_regex.is_some() {
-        let subfilter = prepare_backtrace_filter( &protocol::BacktraceFilter {
-            backtrace_depth_min: filter.backtrace_depth_min,
-            backtrace_depth_max: filter.backtrace_depth_max,
-            function_regex: filter.function_regex.clone(),
-            source_regex: filter.source_regex.clone(),
-            negative_function_regex: filter.negative_function_regex.clone(),
-            negative_source_regex: filter.negative_source_regex.clone()
-        })?;
-
-        let mut matched_backtraces = HashSet::new();
-        let mut positive_cache = HashMap::new();
-        let mut negative_cache = HashMap::new();
-        for (backtrace_id, backtrace) in data.all_backtraces() {
-            if match_backtrace( data, &mut positive_cache, &mut negative_cache, &subfilter, backtrace ) {
-                matched_backtraces.insert( backtrace_id );
-            }
-        }
-
-        matched_backtraces_1 = Some( matched_backtraces );
-    } else {
-        matched_backtraces_1 = None;
-    }
-
-    if let Some( backtrace ) = filter.backtraces {
-        let mut matched_backtraces = HashSet::new();
-        matched_backtraces.insert( BacktraceId::new( backtrace ) );
-        matched_backtraces_2 = Some( matched_backtraces );
-    } else {
-        matched_backtraces_2 = None;
-    }
-
-    let matched_backtraces = match (matched_backtraces_1, matched_backtraces_2) {
-        (None, None) => None,
-        (Some( left ), None) => Some( left ),
-        (None, Some( right )) => Some( right ),
-        (Some( left ), Some( right )) => Some( left.intersection( &right ).cloned().collect() )
-    };
-
-    let group_interval_min = filter.group_interval_min.map( |ts| ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) );
-    let group_interval_max = filter.group_interval_max.map( |ts| ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) );
-
-    let has_group_filter =
-        group_interval_min.is_some() ||
-        group_interval_max.is_some() ||
-        filter.group_leaked_allocations_min.is_some() ||
-        filter.group_leaked_allocations_max.is_some() ||
-        filter.group_allocations_min.is_some() ||
-        filter.group_allocations_max.is_some();
-
-    let group_filter = if has_group_filter {
-        let group_filter = GroupFilter {
-            interval_min: group_interval_min,
-            interval_max: group_interval_max,
-            leaked_allocations_min: filter.group_leaked_allocations_min,
-            leaked_allocations_max: filter.group_leaked_allocations_max,
-            allocations_min: filter.group_allocations_min.map( |value| value as usize ).unwrap_or( 0 ),
-            allocations_max: filter.group_allocations_max.map( |value| value as usize ).unwrap_or( -1_i32 as _ ),
-        };
-        Some( group_filter )
-    } else {
-        None
-    };
-
-    let filter = Filter {
-        timestamp_start_specified: filter.from.is_some(),
-        timestamp_start: filter.from.map( |ts| ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ).unwrap_or( Timestamp::min() ),
-        timestamp_end_specified: filter.to.is_some(),
-        timestamp_end: filter.to.map( |ts| ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ).unwrap_or( Timestamp::max() ),
-        address_min: filter.address_min.unwrap_or( 0 ),
-        address_max: filter.address_max.unwrap_or( -1_i32 as _ ),
-        size_min_specified: filter.size_min.is_some(),
-        size_min: filter.size_min.unwrap_or( 0 ),
-        size_max_specified: filter.size_max.is_some(),
-        size_max: filter.size_max.unwrap_or( -1_i32 as _ ),
-        lifetime_min: filter.lifetime_min.unwrap_or( protocol::Interval::min() ),
-        lifetime_max: filter.lifetime_max,
-        lifetime: filter.lifetime.unwrap_or( protocol::LifetimeFilter::All ),
-        backtrace_depth_min: filter.backtrace_depth_min.unwrap_or( 0 ) as _,
-        backtrace_depth_max: filter.backtrace_depth_max.unwrap_or( -1_i32 as _ ) as _,
-        mmaped: filter.mmaped,
-        arena: filter.arena,
-        matched_backtraces,
-        marker: filter.marker,
-        group_filter,
-        first_size_min_specified: filter.first_size_min.is_some(),
-        first_size_min: filter.first_size_min.unwrap_or( 0 ),
-        first_size_max_specified: filter.first_size_max.is_some(),
-        first_size_max: filter.first_size_max.unwrap_or( -1_i32 as _ ),
-        last_size_min_specified: filter.last_size_min.is_some(),
-        last_size_min: filter.last_size_min.unwrap_or( 0 ),
-        last_size_max_specified: filter.last_size_max.is_some(),
-        last_size_max: filter.last_size_max.unwrap_or( -1_i32 as _ ),
-        chain_length_min: filter.chain_length_min.unwrap_or( 0 ),
-        chain_length_max: filter.chain_length_max.unwrap_or( !0 ),
-        chain_lifetime_min: filter.chain_lifetime_min.unwrap_or( protocol::Interval::min() ),
-        chain_lifetime_max: filter.chain_lifetime_max,
-    };
-
-    Ok( filter )
 }
 
 pub fn prepare_backtrace_filter( filter: &protocol::BacktraceFilter ) -> Result< BacktraceFilter, PrepareFilterError > {
@@ -353,213 +291,4 @@ pub fn match_backtrace< 'a >(
     }
 
     positive_matched && !negative_matched
-}
-
-#[inline]
-pub fn match_allocation( data: &Data, allocation: &Allocation, filter: &Filter ) -> bool {
-    let timestamp_start = filter.timestamp_start;
-    let timestamp_end = filter.timestamp_end;
-    let size_min = filter.size_min;
-    let size_max = filter.size_max;
-    let first_size_min = filter.first_size_min;
-    let first_size_max = filter.first_size_max;
-    let last_size_min = filter.last_size_min;
-    let last_size_max = filter.last_size_max;
-    let lifetime_min = filter.lifetime_min;
-    let lifetime_max = filter.lifetime_max;
-    let backtrace_depth_min = filter.backtrace_depth_min;
-    let backtrace_depth_max = filter.backtrace_depth_max;
-
-    if allocation.pointer < filter.address_min {
-        return false;
-    }
-
-    if allocation.pointer > filter.address_max {
-        return false;
-    }
-
-    if allocation.timestamp < timestamp_start {
-        return false;
-    }
-
-    if allocation.timestamp > timestamp_end {
-        return false;
-    }
-
-    if allocation.size < size_min || allocation.size > size_max {
-        return false;
-    }
-
-    match filter.lifetime {
-        protocol::LifetimeFilter::All => {},
-        protocol::LifetimeFilter::OnlyLeaked => {
-            if allocation.deallocation.is_some() {
-                return false;
-            }
-        },
-        protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
-            if let Some( ref deallocation ) = allocation.deallocation {
-                if deallocation.timestamp <= timestamp_end {
-                    return false;
-                }
-            }
-        },
-        protocol::LifetimeFilter::OnlyDeallocatedInCurrentRange => {
-            if let Some( ref deallocation ) = allocation.deallocation {
-                if deallocation.timestamp > timestamp_end {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        },
-        protocol::LifetimeFilter::OnlyTemporary => {
-            if allocation.deallocation.is_none() {
-                return false;
-            }
-        },
-        protocol::LifetimeFilter::OnlyWholeGroupLeaked => {
-            if allocation.deallocation.is_some() {
-                return false;
-            }
-
-            let stats = data.get_group_statistics( allocation.backtrace );
-            if stats.free_count != 0 {
-                return false;
-            }
-        }
-    }
-
-    let backtrace = data.get_backtrace( allocation.backtrace );
-    if backtrace.len() < backtrace_depth_min || backtrace.len() > backtrace_depth_max {
-        return false;
-    }
-
-    let lifetime_end = allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
-    let lifetime = lifetime_end - allocation.timestamp;
-    if lifetime < lifetime_min.0 {
-        return false;
-    }
-
-    if let Some( lifetime_max ) = lifetime_max {
-        if lifetime > lifetime_max.0 {
-            return false;
-        }
-    }
-
-    if let Some( mmaped ) = filter.mmaped {
-        let ok = match mmaped {
-            protocol::MmapedFilter::Yes => allocation.is_mmaped(),
-            protocol::MmapedFilter::No => !allocation.is_mmaped()
-        };
-        if !ok {
-            return false;
-        }
-    }
-
-    if let Some( arena ) = filter.arena {
-        let ok = match arena {
-            protocol::ArenaFilter::Main => !allocation.in_non_main_arena(),
-            protocol::ArenaFilter::NonMain => allocation.in_non_main_arena()
-        };
-        if !ok {
-            return false;
-        }
-    }
-
-    if let Some( marker ) = filter.marker {
-        if allocation.marker != marker {
-            return false;
-        }
-    }
-
-    if let Some( ref matched_backtraces ) = filter.matched_backtraces {
-        if !matched_backtraces.contains( &allocation.backtrace ) {
-            return false;
-        }
-    }
-
-    let first_allocation_size;
-    let last_allocation_size;
-    let chain_length;
-    let chain_lifetime;
-    if let Some( first_in_chain ) = allocation.first_allocation_in_chain {
-        let chain = data.get_chain_by_first_allocation( first_in_chain ).unwrap();
-        let first_allocation = data.get_allocation( chain.first );
-        let last_allocation = data.get_allocation( chain.last );
-
-        first_allocation_size = first_allocation.size;
-        last_allocation_size = last_allocation.size;
-        chain_length = chain.length;
-
-        let chain_lifetime_end = last_allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
-        chain_lifetime = chain_lifetime_end - first_allocation.timestamp;
-    } else {
-        first_allocation_size = allocation.size;
-        last_allocation_size = allocation.size;
-        chain_length = 1;
-        chain_lifetime = lifetime;
-    }
-
-    if first_allocation_size < first_size_min || first_allocation_size > first_size_max {
-        return false;
-    }
-
-    if last_allocation_size < last_size_min || last_allocation_size > last_size_max {
-        return false;
-    }
-
-    if chain_length < filter.chain_length_min || chain_length > filter.chain_length_max {
-        return false;
-    }
-
-    if chain_lifetime < filter.chain_lifetime_min.0 {
-        return false;
-    }
-
-    if let Some( max ) = filter.chain_lifetime_max {
-        if chain_lifetime > max.0 {
-            return false;
-        }
-    }
-
-    if let Some( ref group_filter ) = filter.group_filter {
-        let group_allocations = data.get_allocation_ids_by_backtrace( allocation.backtrace );
-        if group_allocations.len() < group_filter.allocations_min {
-            return false;
-        }
-
-        if group_allocations.len() > group_filter.allocations_max {
-            return false;
-        }
-
-        let first_timestamp = data.get_allocation( *group_allocations.first().unwrap() ).timestamp;
-        let last_timestamp = data.get_allocation( *group_allocations.last().unwrap() ).timestamp;
-        let interval = last_timestamp - first_timestamp;
-
-        if interval < group_filter.interval_min.unwrap_or( Timestamp::min() ) {
-            return false;
-        }
-
-        if interval > group_filter.interval_max.unwrap_or( Timestamp::max() ) {
-            return false;
-        }
-
-        let stats = data.get_group_statistics( allocation.backtrace );
-        let total_allocations = stats.alloc_count as u32;
-        let leaked = (stats.alloc_count - stats.free_count) as u32;
-
-        let leaked_min = group_filter.leaked_allocations_min.map( |threshold| threshold.get( total_allocations ) ).unwrap_or( 0 );
-        let leaked_max = group_filter.leaked_allocations_max.map( |threshold| threshold.get( total_allocations ) ).unwrap_or( -1_i32 as _ );
-
-        if leaked < leaked_min {
-            return false;
-        }
-
-        if leaked > leaked_max {
-            return false;
-        }
-    }
-
-    true
 }

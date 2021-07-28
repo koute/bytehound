@@ -58,6 +58,7 @@ use cli_core::{
     MemoryMap,
     MemoryUnmap,
     CountAndSize,
+    CompiledFilter,
     export_as_replay,
     export_as_heaptrack,
     export_as_flamegraph,
@@ -76,7 +77,7 @@ mod filter;
 
 use crate::byte_channel::byte_channel;
 use crate::streaming_serializer::StreamingSerializer;
-use crate::filter::{Filter, PrepareFilterError, prepare_filter, match_allocation};
+use crate::filter::{PrepareFilterError, prepare_filter};
 
 struct AllocationGroups {
     allocations_by_backtrace: VecVec< BacktraceId, AllocationId >
@@ -638,12 +639,13 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
 fn prefiltered_allocation_ids< 'a >(
     data: &'a Data,
     sort_by: protocol::AllocSortBy,
-    filter: &Filter
+    _filter: &CompiledFilter
  ) -> &'a [AllocationId] {
+    // TODO: Use the filter to narrow down the range.
     match sort_by {
-        protocol::AllocSortBy::Timestamp => data.alloc_sorted_by_timestamp( filter.timestamp_start_opt(), filter.timestamp_end_opt() ),
+        protocol::AllocSortBy::Timestamp => data.alloc_sorted_by_timestamp( None, None ),
         protocol::AllocSortBy::Address => data.alloc_sorted_by_address( None, None ),
-        protocol::AllocSortBy::Size => data.alloc_sorted_by_size( filter.size_min_opt(), filter.size_max_opt() )
+        protocol::AllocSortBy::Size => data.alloc_sorted_by_size( None, None )
     }
 }
 
@@ -651,16 +653,16 @@ fn allocations_iter< 'a >(
     data: &'a Data,
     array: &'a [AllocationId],
     order: protocol::Order,
-    filter: Filter
+    filter: CompiledFilter
 ) -> Box< dyn DoubleEndedIterator< Item = (AllocationId, &'a Allocation) > + 'a > {
     match order {
         protocol::Order::Asc => Box::new( array.iter()
             .map( move |&id| (id, data.get_allocation( id )) )
-            .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) )
+            .filter( move |(_, allocation)| filter.try_match( data, allocation ) )
         ),
         protocol::Order::Dsc => Box::new( array.iter().rev()
             .map( move |&id| (id, data.get_allocation( id )) )
-            .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) )
+            .filter( move |(_, allocation)| filter.try_match( data, allocation ) )
         )
     }
 }
@@ -671,7 +673,7 @@ fn timestamp_to_fraction( data: &Data, timestamp: Timestamp ) -> f32 {
     (relative.as_usecs() as f64 / range.as_usecs() as f64) as f32
 }
 
-fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceFormat, params: protocol::RequestAllocations, filter: Filter ) -> protocol::ResponseAllocations< impl Serialize + 'a > {
+fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceFormat, params: protocol::RequestAllocations, filter: CompiledFilter ) -> protocol::ResponseAllocations< impl Serialize + 'a > {
     let remaining = params.count.unwrap_or( -1_i32 as _ ) as usize;
     let skip = params.skip.unwrap_or( 0 ) as usize;
     let sort_by = params.sort_by.unwrap_or( protocol::AllocSortBy::Timestamp );
@@ -681,7 +683,7 @@ fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceF
     let total_count =
         allocation_ids
         .iter()
-        .filter( |&&id| match_allocation( data, data.get_allocation( id ), &filter ) )
+        .filter( |&&id| filter.try_match( data, data.get_allocation( id ) ) )
         .count() as u64;
 
     let allocations = move || {
@@ -913,7 +915,7 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
         let iter = prefiltered_allocation_ids( data, Default::default(), &filter )
             .par_iter()
             .map( |&allocation_id| (allocation_id, data.get_allocation( allocation_id )) )
-            .filter( move |(_, allocation)| match_allocation( data, allocation, &filter ) );
+            .filter( move |(_, allocation)| filter.try_match( data, allocation ) );
 
         let mut groups = AllocationGroups::new( iter );
         match key.sort_by {
@@ -1043,7 +1045,7 @@ fn handler_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let body = async_data_handler( &req, move |data, mut tx| {
         let mut tree: Tree< FrameId, &Frame > = Tree::new();
         for (allocation_id, allocation) in data.allocations_with_id() {
-            if !match_allocation( data, allocation, &filter ) {
+            if !filter.try_match( data, allocation ) {
                 continue;
             }
 
@@ -1270,7 +1272,7 @@ fn handler_regions( req: HttpRequest ) -> Result< HttpResponse > {
     let filter = prepare_filter( data, &filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let response = generate_regions( data, |allocation| match_allocation( data, allocation, &filter ) );
+        let response = generate_regions( data, |allocation| filter.try_match( data, allocation ) );
         let _ = serde_json::to_writer( tx, &response );
     })?;
 
@@ -1318,7 +1320,7 @@ fn handler_export_flamegraph_pl( req: HttpRequest ) -> Result< HttpResponse > {
     let filter = prepare_filter( data, &filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_flamegraph_pl( data, tx, |allocation| match_allocation( data, allocation, &filter ) );
+        let _ = export_as_flamegraph_pl( data, tx, |allocation| filter.try_match( data, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
@@ -1330,7 +1332,7 @@ fn handler_export_flamegraph( req: HttpRequest ) -> Result< HttpResponse > {
     let filter = prepare_filter( data, &filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_flamegraph( data, tx, |allocation| match_allocation( data, allocation, &filter ) );
+        let _ = export_as_flamegraph( data, tx, |allocation| filter.try_match( data, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "image/svg+xml" ).body( body ) )
@@ -1342,7 +1344,7 @@ fn handler_export_replay( req: HttpRequest ) -> Result< HttpResponse > {
     let filter = prepare_filter( data, &filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_replay( data, tx, |allocation| match_allocation( data, allocation, &filter ) );
+        let _ = export_as_replay( data, tx, |allocation| filter.try_match( data, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
@@ -1354,7 +1356,7 @@ fn handler_export_heaptrack( req: HttpRequest ) -> Result< HttpResponse > {
     let filter = prepare_filter( data, &filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_heaptrack( data, tx, |allocation| match_allocation( data, allocation, &filter ) );
+        let _ = export_as_heaptrack( data, tx, |allocation| filter.try_match( data, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
@@ -1366,7 +1368,7 @@ fn handler_allocation_ascii_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let filter = prepare_filter( data, &filter )?;
 
     let body = async_data_handler( &req, move |data, mut tx| {
-        let tree = data.tree_by_source( |allocation| match_allocation( data, allocation, &filter ) );
+        let tree = data.tree_by_source( |allocation| filter.try_match( data, allocation ) );
         let table = data.dump_tree( &tree );
         let table = table_to_string( &table );
         let _ = writeln!( tx, "{}", table );

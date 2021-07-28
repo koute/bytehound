@@ -22,6 +22,7 @@ ahash = "0.7"
 parking_lot = "0.11"
 crossbeam-channel = "0.3"
 rayon = "1"
+regex = "1"
 
 common = { path = "../common" }
 lz4-compress = { path = "../lz4-compress" }

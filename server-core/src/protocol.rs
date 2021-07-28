@@ -362,12 +362,6 @@ pub struct IntervalParseError;
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Interval( pub Timestamp );
 
-impl Interval {
-    pub fn min() -> Self {
-        Interval( Timestamp::min() )
-    }
-}
-
 impl FromStr for Interval {
     type Err = IntervalParseError;
 
@@ -448,20 +442,20 @@ pub trait TimevalKind {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct TimestampMin;
+pub struct OffsetMin;
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct TimestampMax;
+pub struct OffsetMax;
 
-impl TimevalKind for TimestampMin {
-    fn is_end_of_the_range() -> bool { false }
-    fn is_interval() -> bool { false }
-}
-impl TimevalKind for TimestampMax {
-    fn is_end_of_the_range() -> bool { true }
-    fn is_interval() -> bool { false }
-}
 impl TimevalKind for Interval {
     fn is_end_of_the_range() -> bool { false }
+    fn is_interval() -> bool { true }
+}
+impl TimevalKind for OffsetMin {
+    fn is_end_of_the_range() -> bool { false }
+    fn is_interval() -> bool { true }
+}
+impl TimevalKind for OffsetMax {
+    fn is_end_of_the_range() -> bool { true }
     fn is_interval() -> bool { true }
 }
 
@@ -591,8 +585,8 @@ pub struct MmapFilter {
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
 pub struct AllocFilter {
-    pub from: Option< TimestampFilter< TimestampMin > >,
-    pub to: Option< TimestampFilter< TimestampMax > >,
+    pub from: Option< TimestampFilter< OffsetMin > >,
+    pub to: Option< TimestampFilter< OffsetMax > >,
     pub lifetime: Option< LifetimeFilter >,
     pub address_min: Option< u64 >,
     pub address_max: Option< u64 >,

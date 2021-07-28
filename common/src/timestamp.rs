@@ -47,6 +47,11 @@ impl Timestamp {
     }
 
     #[inline]
+    pub fn from_msecs( msecs: u64 ) -> Self {
+        Timestamp( msecs * 1_000 )
+    }
+
+    #[inline]
     pub fn from_usecs( usecs: u64 ) -> Self {
         Timestamp( usecs )
     }
