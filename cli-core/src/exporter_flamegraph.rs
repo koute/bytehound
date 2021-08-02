@@ -5,25 +5,14 @@ use inferno::flamegraph;
 
 use super::{
     Allocation,
+    AllocationId,
     Data
 };
 
 use crate::exporter_flamegraph_pl::dump_collation;
 use crate::io_adapter::IoAdapter;
 
-pub fn export_as_flamegraph< T, F >( data: &Data, output: T, filter: F )
-    where T: fmt::Write,
-          F: Fn( &Allocation ) -> bool
-{
-    let mut lines = Vec::new();
-    dump_collation( data, filter, |line| {
-        lines.push( line.to_owned() );
-        let result: Result< (), () > = Ok(());
-        result
-    }).unwrap();
-
-    lines.sort_unstable();
-
+pub fn lines_to_svg( lines: Vec< String >, output: impl fmt::Write ) {
     lazy_static::lazy_static! {
         pub static ref PALETTE_MAP: Mutex< flamegraph::color::PaletteMap > = Mutex::new( flamegraph::color::PaletteMap::default() );
     }
@@ -43,4 +32,20 @@ pub fn export_as_flamegraph< T, F >( data: &Data, output: T, filter: F )
     // We explicitly ignore the error to prevent a panic in case
     // we didn't match any allocations.
     let _ = flamegraph::from_lines( &mut options, lines.iter().map( |line| line.as_str() ), IoAdapter::new( output ) );
+}
+
+pub fn export_as_flamegraph< T, F >( data: &Data, output: T, filter: F )
+    where T: fmt::Write,
+          F: Fn( AllocationId, &Allocation ) -> bool
+{
+    let mut lines = Vec::new();
+    dump_collation( data, filter, |line| {
+        lines.push( line.to_owned() );
+        let result: Result< (), () > = Ok(());
+        result
+    }).unwrap();
+
+    lines.sort_unstable();
+
+    lines_to_svg( lines, output )
 }

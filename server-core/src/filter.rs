@@ -1,8 +1,12 @@
+use std::sync::Arc;
 use ahash::AHashMap as HashMap;
+use ahash::AHashSet as HashSet;
 
 use regex::{self, Regex};
 
 use cli_core::{
+    Allocation,
+    AllocationId,
     BacktraceId,
     Data,
     Timestamp
@@ -39,7 +43,66 @@ impl From< crate::protocol::NumberOrPercentage > for cli_core::NumberOrFractionO
     }
 }
 
-pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::CompiledFilter, PrepareFilterError > {
+fn run_custom_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< Arc< HashSet< AllocationId > > >, cli_core::script::EvalError > {
+    let mut custom_set = None;
+    if let Some( ref custom_filter ) = custom_filter.custom_filter {
+        if custom_filter.is_empty() {
+            return Ok( None );
+        }
+
+        let args = cli_core::script::EngineArgs {
+            data: Some( data.clone() ),
+            .. cli_core::script::EngineArgs::default()
+        };
+
+        let env = crate::VirtualEnvironment::new();
+        let engine = cli_core::script::Engine::new( env.clone(), args );
+        let custom_set = custom_set.get_or_insert( HashSet::new() );
+        match engine.run( &custom_filter )? {
+            Some( mut list ) => {
+                custom_set.extend( list.allocation_ids().iter().copied() );
+            },
+            None => {}
+        }
+    }
+
+    Ok( custom_set.map( |set| Arc::new( set ) ) )
+}
+
+#[derive(Clone)]
+pub struct AllocationFilter {
+    filter: cli_core::CompiledFilter,
+    custom_filter: Option< Arc< HashSet< AllocationId > > >
+}
+
+impl AllocationFilter {
+    pub fn try_match( &self, data: &Data, id: AllocationId, allocation: &Allocation ) -> bool {
+        if let Some( ref custom_filter ) = self.custom_filter {
+            if !custom_filter.contains( &id ) {
+                return false;
+            }
+        }
+
+        if !self.filter.try_match( data, allocation ) {
+            return false;
+        }
+
+        true
+    }
+}
+
+pub fn prepare_filter(
+    data: &Arc< Data >,
+    filter: &protocol::AllocFilter,
+    custom_filter: &protocol::CustomFilter
+) -> Result< AllocationFilter, PrepareFilterError > {
+    let filter = prepare_raw_filter( data, filter )?.compile( data );
+    let custom_filter = run_custom_filter( data, custom_filter ).map_err( |error| PrepareFilterError::InvalidCustomFilter( error.message ) )?;
+
+    Ok( AllocationFilter { filter, custom_filter } )
+}
+
+pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::Filter, PrepareFilterError > {
     use cli_core::Duration;
 
     let mut output = cli_core::BasicFilter::default();
@@ -143,11 +206,12 @@ pub fn prepare_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< 
     }
 
     let output: cli_core::Filter = output.into();
-    Ok( output.compile( data ) )
+    Ok( output )
 }
 
 pub enum PrepareFilterError {
-    InvalidRegex( &'static str, regex::Error )
+    InvalidRegex( &'static str, regex::Error ),
+    InvalidCustomFilter( String )
 }
 
 pub fn prepare_backtrace_filter( filter: &protocol::BacktraceFilter ) -> Result< BacktraceFilter, PrepareFilterError > {

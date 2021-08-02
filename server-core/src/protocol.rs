@@ -584,6 +584,11 @@ pub struct MmapFilter {
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
+pub struct CustomFilter {
+    pub custom_filter: Option< String >
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
 pub struct AllocFilter {
     pub from: Option< TimestampFilter< OffsetMin > >,
     pub to: Option< TimestampFilter< OffsetMax > >,

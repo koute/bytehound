@@ -6,7 +6,7 @@ extern crate serde_derive;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::ops::Bound::{self, Unbounded};
 use std::fmt::{self, Write};
 use std::thread;
@@ -58,7 +58,6 @@ use cli_core::{
     MemoryMap,
     MemoryUnmap,
     CountAndSize,
-    CompiledFilter,
     export_as_replay,
     export_as_heaptrack,
     export_as_flamegraph,
@@ -77,7 +76,7 @@ mod filter;
 
 use crate::byte_channel::byte_channel;
 use crate::streaming_serializer::StreamingSerializer;
-use crate::filter::{PrepareFilterError, prepare_filter};
+use crate::filter::{AllocationFilter, PrepareFilterError, prepare_filter, prepare_raw_filter};
 
 struct AllocationGroups {
     allocations_by_backtrace: VecVec< BacktraceId, AllocationId >
@@ -132,6 +131,7 @@ impl AllocationGroups {
 struct AllocationGroupsKey {
     data_id: DataId,
     filter: protocol::AllocFilter,
+    custom_filter: protocol::CustomFilter,
     sort_by: protocol::AllocGroupsSortBy,
     order: protocol::Order
 }
@@ -139,7 +139,8 @@ struct AllocationGroupsKey {
 struct State {
     data: HashMap< DataId, Arc< Data > >,
     data_ids: Vec< DataId >,
-    allocation_group_cache: Mutex< LruCache< AllocationGroupsKey, Arc< AllocationGroups > > >
+    allocation_group_cache: Mutex< LruCache< AllocationGroupsKey, Arc< AllocationGroups > > >,
+    script_files: Mutex< HashMap< String, (&'static str, Arc< Vec< u8 > >) > >
 }
 
 impl State {
@@ -147,7 +148,8 @@ impl State {
         State {
             data: HashMap::new(),
             data_ids: Vec::new(),
-            allocation_group_cache: Mutex::new( LruCache::new( 4 ) )
+            allocation_group_cache: Mutex::new( LruCache::new( 4 ) ),
+            script_files: Default::default()
         }
     }
 
@@ -205,12 +207,15 @@ impl From< PrepareFilterError > for ActixWebError {
         match error {
             PrepareFilterError::InvalidRegex( field, inner_err ) => {
                 ErrorBadRequest( format!( "invalid '{}': {}", field, inner_err ) )
+            },
+            PrepareFilterError::InvalidCustomFilter( message ) => {
+                ErrorBadRequest( format!( "failed to evaluate custom filter: {}", message ) )
             }
         }
     }
 }
 
-fn async_data_handler< F: FnOnce( &Data, byte_channel::ByteSender ) + Send + 'static >( req: &HttpRequest, callback: F ) -> Result< Body > {
+fn async_data_handler< F: FnOnce( Arc< Data >, byte_channel::ByteSender ) + Send + 'static >( req: &HttpRequest, callback: F ) -> Result< Body > {
     let (tx, rx) = byte_channel();
     let rx = rx.map_err( |_| ErrorInternalServerError( "internal error" ) );
     let rx = BodyStream::new( rx );
@@ -224,7 +229,7 @@ fn async_data_handler< F: FnOnce( &Data, byte_channel::ByteSender ) + Send + 'st
             None => return
         };
 
-        callback( data, tx );
+        callback( data.clone(), tx );
     });
 
     Ok( body )
@@ -639,7 +644,7 @@ fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
 fn prefiltered_allocation_ids< 'a >(
     data: &'a Data,
     sort_by: protocol::AllocSortBy,
-    _filter: &CompiledFilter
+    _filter: &AllocationFilter
  ) -> &'a [AllocationId] {
     // TODO: Use the filter to narrow down the range.
     match sort_by {
@@ -653,16 +658,16 @@ fn allocations_iter< 'a >(
     data: &'a Data,
     array: &'a [AllocationId],
     order: protocol::Order,
-    filter: CompiledFilter
+    filter: AllocationFilter
 ) -> Box< dyn DoubleEndedIterator< Item = (AllocationId, &'a Allocation) > + 'a > {
     match order {
         protocol::Order::Asc => Box::new( array.iter()
             .map( move |&id| (id, data.get_allocation( id )) )
-            .filter( move |(_, allocation)| filter.try_match( data, allocation ) )
+            .filter( move |(id, allocation)| filter.try_match( data, *id, allocation ) )
         ),
         protocol::Order::Dsc => Box::new( array.iter().rev()
             .map( move |&id| (id, data.get_allocation( id )) )
-            .filter( move |(_, allocation)| filter.try_match( data, allocation ) )
+            .filter( move |(id, allocation)| filter.try_match( data, *id, allocation ) )
         )
     }
 }
@@ -673,7 +678,12 @@ fn timestamp_to_fraction( data: &Data, timestamp: Timestamp ) -> f32 {
     (relative.as_usecs() as f64 / range.as_usecs() as f64) as f32
 }
 
-fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceFormat, params: protocol::RequestAllocations, filter: CompiledFilter ) -> protocol::ResponseAllocations< impl Serialize + 'a > {
+fn get_allocations< 'a >(
+    data: &'a Arc< Data >,
+    backtrace_format: protocol::BacktraceFormat,
+    params: protocol::RequestAllocations,
+    filter: crate::filter::AllocationFilter
+) -> protocol::ResponseAllocations< impl Serialize + 'a > {
     let remaining = params.count.unwrap_or( -1_i32 as _ ) as usize;
     let skip = params.skip.unwrap_or( 0 ) as usize;
     let sort_by = params.sort_by.unwrap_or( protocol::AllocSortBy::Timestamp );
@@ -683,7 +693,7 @@ fn get_allocations< 'a >( data: &'a Data, backtrace_format: protocol::BacktraceF
     let total_count =
         allocation_ids
         .iter()
-        .filter( |&&id| filter.try_match( data, data.get_allocation( id ) ) )
+        .filter( |&&id| filter.try_match( data, id, data.get_allocation( id ) ) )
         .count() as u64;
 
     let allocations = move || {
@@ -733,11 +743,12 @@ fn handler_allocations( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let params: protocol::RequestAllocations = query( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
     let backtrace_format: protocol::BacktraceFormat = query( &req )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let response = get_allocations( data, backtrace_format, params, filter );
+        let response = get_allocations( &data, backtrace_format, params, filter );
         let _ = serde_json::to_writer( tx, &response );
     })?;
 
@@ -873,13 +884,15 @@ impl< T > Ord for Reverse< T > where T: Ord {
 fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter_params: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter_params )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter_params, &custom_filter )?;
     let backtrace_format: protocol::BacktraceFormat = query( &req )?;
     let params: protocol::RequestAllocationGroups = query( &req )?;
 
     let key = AllocationGroupsKey {
         data_id: data.id(),
         filter: filter_params,
+        custom_filter,
         sort_by: params.sort_by.unwrap_or( protocol::AllocGroupsSortBy::MinTimestamp ),
         order: params.order.unwrap_or( protocol::Order::Asc )
     };
@@ -915,7 +928,7 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
         let iter = prefiltered_allocation_ids( data, Default::default(), &filter )
             .par_iter()
             .map( |&allocation_id| (allocation_id, data.get_allocation( allocation_id )) )
-            .filter( move |(_, allocation)| filter.try_match( data, allocation ) );
+            .filter( move |(id, allocation)| filter.try_match( data, *id, allocation ) );
 
         let mut groups = AllocationGroups::new( iter );
         match key.sort_by {
@@ -962,7 +975,7 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
     }
 
     let body = async_data_handler( &req, move |data, tx| {
-        let response = get_allocation_groups( data, backtrace_format, params, allocation_groups );
+        let response = get_allocation_groups( &data, backtrace_format, params, allocation_groups );
         let _ = serde_json::to_writer( tx, &response );
     })?;
 
@@ -1039,13 +1052,14 @@ fn dump_node< T: fmt::Write, K: PartialEq + Clone, V, F: Fn( &mut T, &V ) -> fmt
 fn handler_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
     let backtrace_format: protocol::BacktraceFormat = query( &req )?;
 
     let body = async_data_handler( &req, move |data, mut tx| {
         let mut tree: Tree< FrameId, &Frame > = Tree::new();
         for (allocation_id, allocation) in data.allocations_with_id() {
-            if !filter.try_match( data, allocation ) {
+            if !filter.try_match( &data, allocation_id, allocation ) {
                 continue;
             }
 
@@ -1053,7 +1067,7 @@ fn handler_tree( req: HttpRequest ) -> Result< HttpResponse > {
         }
 
         dump_node( &tree, 0, &mut tx, &mut |output, frame| {
-            let frame = get_frame( data, &backtrace_format, frame );
+            let frame = get_frame( &data, &backtrace_format, frame );
             serde_json::to_writer( output, &frame ).map_err( |_| fmt::Error )
         }).unwrap();
     })?;
@@ -1090,7 +1104,7 @@ fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
                                 return None;
                             }
                         }
-                        let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
+                        let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( &data, &backtrace_format, frame ) ).collect();
                         Some( protocol::MmapOperation::Mmap {
                             timestamp: timestamp.into(),
                             pointer,
@@ -1133,7 +1147,7 @@ fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
                                 return None;
                             }
                         }
-                        let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
+                        let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( &data, &backtrace_format, frame ) ).collect();
                         Some(protocol::MmapOperation::Munmap {
                             timestamp: timestamp.into(),
                             pointer,
@@ -1185,26 +1199,27 @@ fn handler_backtraces( req: HttpRequest ) -> Result< HttpResponse > {
         let mut positive_cache = HashMap::new();
         let mut negative_cache = HashMap::new();
         let total_count = data.all_backtraces().flat_map( |(_, backtrace)| {
-            if !crate::filter::match_backtrace( data, &mut positive_cache, &mut negative_cache, &filter, backtrace ) {
+            if !crate::filter::match_backtrace( &data, &mut positive_cache, &mut negative_cache, &filter, backtrace ) {
                 None
             } else {
                 Some(())
             }
         }).count();
 
+        let data = &data;
         let backtraces = move || {
             let mut positive_cache = positive_cache.clone();
             let mut negative_cache = negative_cache.clone();
             let backtrace_format = backtrace_format.clone();
             let filter = filter.clone();
             data.all_backtraces().flat_map( move |(_, backtrace)| {
-                if !crate::filter::match_backtrace( data, &mut positive_cache, &mut negative_cache, &filter, backtrace.clone() ) {
+                if !crate::filter::match_backtrace( &data, &mut positive_cache, &mut negative_cache, &filter, backtrace.clone() ) {
                     return None;
                 }
 
                 let mut frames = Vec::new();
                 for (_, frame) in backtrace {
-                    frames.push( get_frame( data, &backtrace_format, frame ) );
+                    frames.push( get_frame( &data, &backtrace_format, frame ) );
                 }
                 Some( frames )
             })
@@ -1221,7 +1236,7 @@ fn handler_backtraces( req: HttpRequest ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
 }
 
-fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a Data, filter: F ) -> impl Serialize + 'a {
+fn generate_regions< 'a, F: Fn( AllocationId, &Allocation ) -> bool + Clone + 'a >( data: &'a Data, filter: F ) -> impl Serialize + 'a {
     let main_heap_start = data.alloc_sorted_by_address( None, None )
         .iter()
         .map( |&id| data.get_allocation( id ) )
@@ -1243,9 +1258,9 @@ fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a 
         let filter = filter.clone();
         data.alloc_sorted_by_address( None, None )
             .iter()
-            .map( move |&id| data.get_allocation( id ) )
-            .filter( move |allocation| filter( allocation ) )
-            .map( move |allocation| allocation.actual_range( data ) )
+            .map( move |&id| (id, data.get_allocation( id )) )
+            .filter( move |(id, allocation)| filter( *id, allocation ) )
+            .map( move |(_, allocation)| allocation.actual_range( data ) )
             .coalesce( |mut range, next_range| {
                 if next_range.start <= range.end {
                     range.end = next_range.end;
@@ -1269,10 +1284,11 @@ fn generate_regions< 'a, F: Fn( &Allocation ) -> bool + Clone + 'a >( data: &'a 
 fn handler_regions( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let response = generate_regions( data, |allocation| filter.try_match( data, allocation ) );
+        let response = generate_regions( &data, |id, allocation| filter.try_match( &data, id, allocation ) );
         let _ = serde_json::to_writer( tx, &response );
     })?;
 
@@ -1286,7 +1302,7 @@ fn handler_mallopts( req: HttpRequest ) -> Result< HttpResponse > {
     let response: Vec< _ > = data.mallopts().iter().map( |mallopt| {
         let mut backtrace = Vec::new();
         for (_, frame) in data.get_backtrace( mallopt.backtrace ) {
-            backtrace.push( get_frame( data, &backtrace_format, frame ) );
+            backtrace.push( get_frame( &data, &backtrace_format, frame ) );
         }
 
         protocol::Mallopt {
@@ -1317,10 +1333,11 @@ fn handler_mallopts( req: HttpRequest ) -> Result< HttpResponse > {
 fn handler_export_flamegraph_pl( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_flamegraph_pl( data, tx, |allocation| filter.try_match( data, allocation ) );
+        let _ = export_as_flamegraph_pl( &data, tx, |id, allocation| filter.try_match( &data, id, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
@@ -1329,10 +1346,11 @@ fn handler_export_flamegraph_pl( req: HttpRequest ) -> Result< HttpResponse > {
 fn handler_export_flamegraph( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_flamegraph( data, tx, |allocation| filter.try_match( data, allocation ) );
+        let _ = export_as_flamegraph( &data, tx, |id, allocation| filter.try_match( &data, id, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "image/svg+xml" ).body( body ) )
@@ -1341,10 +1359,11 @@ fn handler_export_flamegraph( req: HttpRequest ) -> Result< HttpResponse > {
 fn handler_export_replay( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_replay( data, tx, |allocation| filter.try_match( data, allocation ) );
+        let _ = export_as_replay( &data, tx, |id, allocation| filter.try_match( &data, id, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
@@ -1353,10 +1372,11 @@ fn handler_export_replay( req: HttpRequest ) -> Result< HttpResponse > {
 fn handler_export_heaptrack( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( data, &filter, &custom_filter )?;
 
     let body = async_data_handler( &req, move |data, tx| {
-        let _ = export_as_heaptrack( data, tx, |allocation| filter.try_match( data, allocation ) );
+        let _ = export_as_heaptrack( &data, tx, |id, allocation| filter.try_match( &data, id, allocation ) );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/octet-stream" ).body( body ) )
@@ -1365,10 +1385,11 @@ fn handler_export_heaptrack( req: HttpRequest ) -> Result< HttpResponse > {
 fn handler_allocation_ascii_tree( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let filter: protocol::AllocFilter = query( &req )?;
-    let filter = prepare_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+    let filter = prepare_filter( &data, &filter, &custom_filter )?;
 
     let body = async_data_handler( &req, move |data, mut tx| {
-        let tree = data.tree_by_source( |allocation| filter.try_match( data, allocation ) );
+        let tree = data.tree_by_source( |id, allocation| filter.try_match( &data, id, allocation ) );
         let table = data.dump_tree( &tree );
         let table = table_to_string( &table );
         let _ = writeln!( tx, "{}", table );
@@ -1446,6 +1467,396 @@ fn handler_dynamic_statics_ascii_tree( req: HttpRequest ) -> Result< HttpRespons
     })?;
 
     Ok( HttpResponse::Ok().content_type( "text/plain; charset=utf-8" ).body( body ) )
+}
+
+enum NodeKind {
+    File( Arc< Vec< u8 > > ),
+    Directory( BTreeMap< String, Arc< Node > > )
+}
+
+struct Node {
+    parent: Weak< Node >,
+    name: String,
+    kind: Mutex< NodeKind >
+}
+
+enum VfsErr {
+    NotDir { path: String },
+    IsDirectory { path: String }
+}
+
+impl std::fmt::Display for VfsErr {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        match *self {
+            VfsErr::NotDir { ref path } => {
+                write!( fmt, "is not a directory: \"{}\"", path )
+            },
+            VfsErr::IsDirectory { ref path } => {
+                write!( fmt, "is a directory: \"{}\"", path )
+            },
+        }
+    }
+}
+
+impl From< VfsErr > for Box< cli_core::script::rhai::EvalAltResult > {
+    fn from( err: VfsErr ) -> Self {
+        Box::new( err.to_string().into() )
+    }
+}
+
+impl Node {
+    pub fn parent( &self ) -> Option< Arc< Node > > {
+        self.parent.upgrade()
+    }
+
+    pub fn absolute_path_into( &self, output: &mut String ) {
+        if let Some( parent ) = self.parent() {
+            parent.absolute_path_into( output );
+            if !output.ends_with( '/' ) {
+                output.push( '/' );
+            }
+            output.push_str( &self.name );
+        } else {
+            output.push( '/' );
+        }
+    }
+
+    pub fn absolute_path( &self ) -> String {
+        let mut output = String::new();
+        self.absolute_path_into( &mut output );
+        output
+    }
+
+    pub fn child_path( &self, name: &str ) -> String {
+        let mut output = String::new();
+        self.absolute_path_into( &mut output );
+        if !output.ends_with( '/' ) {
+            output.push( '/' );
+        }
+        output.push_str( name );
+        output
+    }
+
+    pub fn get_child( &self, name: &str ) -> Result< Option< Arc< Node > >, VfsErr > {
+        match *self.kind.lock() {
+            NodeKind::File( .. ) => Err( VfsErr::NotDir { path: self.absolute_path() } ),
+            NodeKind::Directory( ref directory ) => Ok( directory.get( name ).cloned() )
+        }
+    }
+
+    pub fn get_directory_by_relative_path( self: &Arc< Node >, path: &str ) -> Result< Arc< Node >, VfsErr > {
+        if path.is_empty() {
+            return Ok( self.clone() );
+        }
+
+        let mut node = self.clone();
+        for chunk in path.split( "/" ) {
+            node = match node.get_child( chunk )? {
+                Some( node ) => node,
+                None => {
+                    return Err( VfsErr::NotDir { path: node.child_path( chunk ) } );
+                }
+            }
+        }
+
+        if !node.is_dir() {
+            return Err( VfsErr::NotDir { path: path.into() }.into() )
+        }
+
+        Ok( node )
+    }
+
+    pub fn is_dir( &self ) -> bool {
+        match *self.kind.lock() {
+            NodeKind::File( .. ) => false,
+            NodeKind::Directory( .. ) => true
+        }
+    }
+
+    pub fn mkdir( self: &Arc< Node >, name: &str ) -> Result< Arc< Node >, VfsErr > {
+        match *self.kind.lock() {
+            NodeKind::File( .. ) => Err( VfsErr::NotDir { path: self.absolute_path() } ),
+            NodeKind::Directory( ref mut directory ) => {
+                if let Some( child ) = directory.get( name ) {
+                    if !child.is_dir() {
+                        return Err( VfsErr::NotDir { path: self.child_path( name ) } );
+                    }
+                    return Ok( child.clone() );
+                }
+
+                let node = Arc::new( Node {
+                    parent: Arc::downgrade( &self ),
+                    name: name.to_owned(),
+                    kind: Mutex::new( NodeKind::Directory( Default::default() ) )
+                });
+
+                directory.insert( name.to_owned(), node.clone() );
+                Ok( node )
+            }
+        }
+    }
+
+    pub fn get_or_create_file( self: &Arc< Node >, filename: &str ) -> Result< Arc< Node >, VfsErr > {
+        match *self.kind.lock() {
+            NodeKind::File( .. ) => Err( VfsErr::NotDir { path: self.absolute_path() } ),
+            NodeKind::Directory( ref mut directory ) => {
+                if let Some( child ) = directory.get( filename ) {
+                    match *child.kind.lock() {
+                        NodeKind::Directory( .. ) => {
+                            Err( VfsErr::IsDirectory { path: self.child_path( filename ) } )
+                        },
+                        NodeKind::File( .. ) => {
+                            Ok( child.clone() )
+                        }
+                    }
+                } else {
+                    let node = Arc::new( Node {
+                        parent: Arc::downgrade( &self ),
+                        name: filename.to_owned(),
+                        kind: Mutex::new( NodeKind::File( Default::default() ) )
+                    });
+
+                    directory.insert( filename.to_owned(), node.clone() );
+                    Ok( node )
+                }
+            }
+        }
+    }
+}
+
+enum ScriptOutputKind {
+    PrintLine( String ),
+    Image {
+        path: String,
+        data: Arc< Vec< u8 > >
+    }
+}
+
+pub(crate) struct VirtualEnvironment {
+    cwd: String,
+    root: Arc< Node >,
+    output: Vec< ScriptOutputKind >
+}
+
+impl VirtualEnvironment {
+    pub(crate) fn new() -> Arc< Mutex< Self > > {
+        Arc::new( Mutex::new( VirtualEnvironment {
+            cwd: "/".into(),
+            root: Arc::new( Node {
+                parent: Weak::new(),
+                name: "".into(),
+                kind: Mutex::new( NodeKind::Directory( Default::default() ) )
+            }),
+            output: Default::default()
+        }))
+    }
+
+    fn normalize_path( &self, mut path: &str ) -> String {
+        if path == "/" {
+            return path.into();
+        }
+
+        if path.ends_with( "/" ) {
+            path = &path[ ..path.len() - 1 ];
+        }
+
+        if path.starts_with( "/" ) {
+            return path.into();
+        }
+
+        let mut output = String::with_capacity( self.cwd.len() + path.len() + 1 );
+        output.push_str( &self.cwd );
+        if !output.ends_with( "/" ) {
+            output.push( '/' );
+        }
+        output.push_str( path );
+        output
+    }
+}
+
+impl cli_core::script::Environment for VirtualEnvironment {
+    fn println( &mut self, message: &str ) {
+        self.output.push( ScriptOutputKind::PrintLine( message.into() ) );
+    }
+
+    fn mkdir_p( &mut self, path: &str ) -> Result< (), Box< cli_core::script::rhai::EvalAltResult > > {
+        let path = self.normalize_path( path );
+        let mut node = self.root.clone();
+        for chunk in path[ 1.. ].split( "/" ) {
+            node = node.mkdir( chunk )?;
+        }
+        Ok(())
+    }
+
+    fn chdir( &mut self, path: &str ) -> Result< (), Box< cli_core::script::rhai::EvalAltResult > > {
+        let path = self.normalize_path( path );
+        self.root.get_directory_by_relative_path( &path[ 1.. ] )?;
+        self.cwd = path.into();
+        Ok(())
+    }
+
+    fn file_write(
+        &mut self,
+        path: &str,
+        kind: cli_core::script::FileKind,
+        contents: &[u8]
+    ) -> Result< (), Box< cli_core::script::rhai::EvalAltResult > > {
+        let path = self.normalize_path( path );
+        let index = path.rfind( "/" ).unwrap();
+        let dirname = &path[ ..std::cmp::max( 1, index ) ];
+        let filename = &path[ index + 1.. ];
+        if filename.is_empty() {
+            return Err( cli_core::script::error( "missing filename" ) );
+        }
+
+        let directory = self.root.get_directory_by_relative_path( &dirname[ 1.. ] )?;
+        let child =
+            if let Some( node ) = directory.get_child( filename )? {
+                if node.is_dir() {
+                    return Err( VfsErr::IsDirectory { path }.into() )
+                }
+
+                node
+            } else {
+                directory.get_or_create_file( filename )?
+            };
+
+        let contents: Vec< u8 > = contents.into();
+        let contents = Arc::new( contents );
+        *child.kind.lock() = NodeKind::File( contents.clone() );
+
+        use cli_core::script::FileKind;
+        match kind {
+            FileKind::Svg => {
+                self.output.push( ScriptOutputKind::Image {
+                    path,
+                    data: contents
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn handler_script_files( req: HttpRequest ) -> Result< HttpResponse > {
+    let hash = req.match_info().get( "hash" ).unwrap();
+    let (mime, data) = match req.state().script_files.lock().get( hash ) {
+        Some( entry ) => entry.clone(),
+        None => {
+            return Err( ErrorNotFound( "file not found" ) );
+        }
+    };
+
+    let (mut tx, rx) = byte_channel();
+    let rx = rx.map_err( |_| ErrorInternalServerError( "internal error" ) );
+    let rx = BodyStream::new( rx );
+    let body = Body::Message( Box::new( rx ) );
+    thread::spawn( move || {
+        use std::io::Write;
+        tx.write_all( &data ).unwrap();
+    });
+
+    Ok( HttpResponse::Ok().content_type( mime ).body( body ) )
+}
+
+fn handler_filter_to_script( req: HttpRequest ) -> Result< HttpResponse > {
+    let data = get_data( &req )?;
+    let filter: protocol::AllocFilter = query( &req )?;
+    let filter = prepare_raw_filter( data, &filter )?;
+    let custom_filter: protocol::CustomFilter = query( &req )?;
+
+    let mut prologue = String::new();
+    let code;
+
+    if let Some( custom_filter ) = custom_filter.custom_filter {
+        prologue.push_str( "fn custom_filter() {\n" );
+        for line in custom_filter.lines() {
+            prologue.push_str( "    " );
+            prologue.push_str( line );
+            prologue.push_str( "\n" );
+        }
+        prologue.push_str( "}\n\n" );
+        prologue.push_str( "let filtered = custom_filter();\n" );
+        code = filter.to_code( Some( "filtered".into() ) );
+    } else {
+        code = filter.to_code( None );
+    }
+
+    let body = serde_json::json! {{
+        "prologue": prologue,
+        "code": code
+    }};
+
+    Ok( HttpResponse::Ok().content_type( "application/json; charset=utf-8" ).body( body ) )
+}
+
+fn handler_execute_script( req: HttpRequest, body: web::Bytes ) -> Result< HttpResponse > {
+    let data = get_data( &req )?;
+    let body = String::from_utf8( body.to_vec() ).unwrap();
+    let args = cli_core::script::EngineArgs {
+        data: Some( data.clone() ),
+        .. cli_core::script::EngineArgs::default()
+    };
+
+    let env = VirtualEnvironment::new();
+    let engine = cli_core::script::Engine::new( env.clone(), args );
+    let timestamp = std::time::Instant::now();
+    let result = engine.run( &body );
+    let elapsed = timestamp.elapsed();
+    let data_id = data.id();
+
+    req.state().script_files.lock().clear();
+    let mut output = Vec::new();
+    for item in std::mem::take( &mut env.lock().output ) {
+        match item {
+            ScriptOutputKind::PrintLine( line ) => {
+                output.push( serde_json::json! {{
+                    "kind": "println",
+                    "value": line
+                }});
+            },
+            ScriptOutputKind::Image { path, data } => {
+                let hash = format!( "{:x}", md5::compute( &*data ) );
+                let basename = path[ path.rfind( "/" ).unwrap() + 1.. ].to_owned();
+                req.state().script_files.lock().insert( hash.clone(), ("image/svg+xml", data) );
+
+                output.push( serde_json::json! {{
+                    "url": format!( "/data/{}/script_files/{}/{}", data_id, hash, basename ),
+                    "kind": "image",
+                    "basename": basename,
+                    "path": path,
+                    "checksum": hash
+                }});
+            }
+        }
+    }
+
+    let result = match result {
+        Ok( _ ) => {
+            serde_json::json! {{
+                "status": "ok",
+                "elapsed": elapsed.as_secs_f64(),
+                "output": output
+            }}
+        },
+        Err( error ) => {
+            serde_json::json! {{
+                "status": "error",
+                "message": error.message,
+                "line": error.line,
+                "column": error.column,
+                "output": output
+            }}
+        }
+    };
+
+    Ok(
+        HttpResponse::Ok()
+        .content_type( "application/json; charset=utf-8" )
+        .header( "Access-Control-Allow-Origin", "http://localhost:1234" )
+        .body( serde_json::to_string( &result ).unwrap() )
+    )
 }
 
 fn guess_mime( path: &str ) -> &str {
@@ -1577,7 +1988,11 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
                     .service( web::resource( "/data/{id}/dynamic_statics" ).route( web::get().to( handler_dynamic_statics ) ) )
                     .service( web::resource( "/data/{id}/dynamic_statics/{filename}" ).route( web::get().to( handler_dynamic_statics ) ) )
                     .service( web::resource( "/data/{id}/dynamic_statics_ascii_tree" ).route( web::get().to( handler_dynamic_statics_ascii_tree ) ) )
-                    .service( web::resource( "/data/{id}/dynamic_statics_ascii_tree/{filename}" ).route( web::get().to( handler_dynamic_statics_ascii_tree ) ) );
+                    .service( web::resource( "/data/{id}/dynamic_statics_ascii_tree/{filename}" ).route( web::get().to( handler_dynamic_statics_ascii_tree ) ) )
+                    .service( web::resource( "/data/{id}/execute_script" ).route( web::post().to( handler_execute_script ) ) )
+                    .service( web::resource( "/data/{id}/script_files/{hash}/{filename}" ).route( web::get().to( handler_script_files ) ) )
+                    .service( web::resource( "/data/{id}/filter_to_script" ).route( web::get().to( handler_filter_to_script ) ) )
+                ;
 
                 for (key, bytes) in WEBUI_ASSETS {
                     app.service( web::resource( &format!( "/{}", key ) ).route( web::get().to( move || StaticResponse( key, bytes ) ) ) );

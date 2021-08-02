@@ -269,6 +269,9 @@ export default class PageDataOverview extends React.Component {
                                     <Link to={"/allocations/" + this.props.id + "?lifetime=only_leaked"}>Only leaked</Link>
                                     &nbsp;(<a href={prefix + "/export/flamegraph/flame.svg?lifetime=only_leaked"}>flamegraph</a>)
                                 </div>
+                                <div>
+                                    <Link to={"/console/" + this.props.id}>Scripting console</Link>
+                                </div>
                             </div>
                             <div>Download</div>
                             <div style={{marginLeft: "1rem"}}>

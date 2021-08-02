@@ -284,3 +284,72 @@ div.-sort-asc {
     flex-wrap: wrap;
     gap: 0.1rem;
 }
+
+.PageDataConsole .error {
+    border: 1px solid red;
+    border-radius: 8px;
+    padding: 1rem;
+    background-color: #FEE;
+    color: #000;
+    max-width: 50rem;
+}
+
+.PageDataConsole .message {
+    border: 1px solid #2ae;
+    border-radius: 8px;
+    padding: 1rem;
+    background-color: #DEF;
+    color: #000;
+    max-width: 50rem;
+}
+
+.PageDataConsole .script-file {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #888;
+    border-radius: 4px;
+    padding: 1rem;
+    max-width: 50rem;
+}
+
+.PageDataConsole .script-file div {
+    text-align: center;
+    font-size: 125%;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 1rem;
+}
+
+.PageDataConsole .script-file > a > img {
+    width: 100%;
+}
+
+.PageDataConsole .main {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.PageDataConsole #code-editor, .PageDataAllocations #code-editor {
+    width: 100% !important;
+    max-height: 16rem;
+}
+
+.PageDataConsole .editor-pane {
+    flex-grow: 1;
+}
+
+.PageDataConsole .output-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.PageDataConsole .println {
+    font-family: monospace;
+    color: #333;
+}
+
+.stretch-child > div {
+    width: 100%;
+}

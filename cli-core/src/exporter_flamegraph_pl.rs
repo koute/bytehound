@@ -1,5 +1,6 @@
 use super::{
     Allocation,
+    AllocationId,
     Data,
     Frame,
     FrameId,
@@ -55,23 +56,29 @@ fn dump_collation_impl< O: FnMut( &str ) -> Result< (), E >, K: PartialEq + Clon
     Ok(())
 }
 
-pub fn dump_collation< F, O, E >( data: &Data, filter: F, mut output: O ) -> Result< (), E >
-    where F: Fn( &Allocation ) -> bool,
-          O: FnMut( &str ) -> Result< (), E >
+pub fn dump_collation_from_iter< 'a, O, E >(
+    data: &Data,
+    allocations: impl Iterator< Item = (AllocationId, &'a Allocation) >,
+    mut output: O
+) -> Result< (), E >
+    where O: FnMut( &str ) -> Result< (), E >
 {
     let mut tree: Tree< FrameId, &Frame > = Tree::new();
-    for (allocation_id, allocation) in data.allocations_with_id() {
-        if !filter( allocation ) {
-            continue;
-        }
-
+    for (allocation_id, allocation) in allocations {
         tree.add_allocation( allocation, allocation_id, data.get_backtrace( allocation.backtrace ) );
     }
 
     dump_collation_impl( data, &tree, 0, &mut Vec::new(), &mut Vec::new(), &mut output )
 }
 
-pub fn export_as_flamegraph_pl< T: fmt::Write, F: Fn( &Allocation ) -> bool >( data: &Data, mut output: T, filter: F ) -> fmt::Result {
+pub fn dump_collation< F, O, E >( data: &Data, filter: F, output: O ) -> Result< (), E >
+    where F: Fn( AllocationId, &Allocation ) -> bool,
+          O: FnMut( &str ) -> Result< (), E >
+{
+    dump_collation_from_iter( data, data.allocations_with_id().filter( |(id, allocation)| filter( *id, allocation ) ), output )
+}
+
+pub fn export_as_flamegraph_pl< T: fmt::Write, F: Fn( AllocationId, &Allocation ) -> bool >( data: &Data, mut output: T, filter: F ) -> fmt::Result {
     dump_collation( data, filter, |line| {
         writeln!( &mut output, "{}", line )
     })

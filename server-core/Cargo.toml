@@ -22,6 +22,7 @@ parking_lot = "0.11"
 common = { path = "../common" }
 ahash = "0.7"
 rayon = "1"
+md5 = "0.7"
 
 [build-dependencies]
 semalock = "0.2"

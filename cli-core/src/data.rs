@@ -395,6 +395,7 @@ pub enum Operation< 'a > {
         deallocation: &'a Deallocation
     },
     Reallocation {
+        allocation_id: AllocationId,
         new_allocation: &'a Allocation,
         deallocation: &'a Deallocation,
         old_allocation: &'a Allocation
@@ -661,6 +662,7 @@ impl Data {
             } else if op.is_reallocation() {
                 let previous_allocation = &self.allocations[ allocation.reallocated_from.unwrap().raw() as usize ];
                 Operation::Reallocation {
+                    allocation_id,
                     new_allocation: allocation,
                     deallocation: previous_allocation.deallocation.as_ref().unwrap(),
                     old_allocation: previous_allocation
@@ -823,10 +825,10 @@ impl Data {
         tree
     }
 
-    pub fn tree_by_source< F >( &self, filter: F ) -> Tree< SourceKey, FrameId > where F: Fn( &Allocation ) -> bool {
+    pub fn tree_by_source< F >( &self, filter: F ) -> Tree< SourceKey, FrameId > where F: Fn( AllocationId, &Allocation ) -> bool {
         let mut tree = Tree::new();
         for (allocation_id, allocation) in self.allocations_with_id() {
-            if !filter( allocation ) {
+            if !filter( allocation_id, allocation ) {
                 continue;
             }
 

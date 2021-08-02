@@ -28,6 +28,7 @@ mod exporter_flamegraph_pl;
 mod vecvec;
 mod threaded_lz4_stream;
 mod repack;
+pub mod script;
 
 pub use crate::data::{Data, DataId, CodePointer, DataPointer, BacktraceId, Timestamp, Operation, StringId, Allocation, AllocationId, FrameId, Mallopt, MalloptKind, MmapOperation, MemoryMap, MemoryUnmap, CountAndSize};
 pub use crate::loader::Loader;
@@ -43,6 +44,7 @@ pub use crate::postprocessor::postprocess;
 pub use crate::squeeze::squeeze_data;
 pub use crate::reader::parse_events;
 pub use crate::repack::repack;
+pub use crate::script::run_script;
 
 pub use common::event;
 

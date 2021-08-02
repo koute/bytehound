@@ -4,6 +4,7 @@ import ReactTable from "react-table";
 import { FormGroup, Label, Input, Button, ButtonGroup, Modal, ModalFooter, ModalBody, ModalHeader, Badge } from "reactstrap";
 import { Link } from "react-router-dom";
 import { ContextMenu, MenuItem, ContextMenuTrigger } from "react-contextmenu";
+import AceEditor from "react-ace";
 import classNames from "classnames";
 import Feather from "./Feather.js";
 import Tabbed from "./Tabbed.js";
@@ -375,6 +376,18 @@ const FIELDS = {
             yes: "Only mmaped",
             no: "Only non-mmaped"
         }
+    },
+    custom_filter: {
+        validate: (value) => {
+            if( value === "" ) {
+                return false;
+            }
+            return true;
+        },
+        format: identity,
+        parse: identity,
+        clean: identity,
+        badge: value => "Custom filter"
     }
 };
 
@@ -397,8 +410,12 @@ function state_to_filter( fields, state ) {
     return output;
 }
 
+const EMPTY_CUSTOM_FILTER = "return allocations();";
+
 class FilterEditor extends React.Component {
-    state = {}
+    state = {
+        customFilter: EMPTY_CUSTOM_FILTER
+    }
 
     field( key ) {
         const kind = FIELDS[ key ].kind;
@@ -447,6 +464,11 @@ class FilterEditor extends React.Component {
     }
 
     render() {
+        let custom_filter = this.getFieldState( "custom_filter" );
+        if( custom_filter.value === "" ) {
+            custom_filter.value = EMPTY_CUSTOM_FILTER;
+        }
+
         return (
             <Tabbed>
                 <div title="By timestamp" className="d-flex">
@@ -531,6 +553,21 @@ class FilterEditor extends React.Component {
                     <div className="px-2" />
                     {this.field("arena")}
                 </div>
+                <div title="Custom">
+                    <div className="editor-pane">
+                        <AceEditor
+                            value={custom_filter.value}
+                            name="code-editor"
+                            editorProps={{ $blockScrolling: true }}
+                            onChange={(code) => {
+                                if( code === EMPTY_CUSTOM_FILTER ) {
+                                    code = "";
+                                }
+                                this.onChanged( "custom_filter", code );
+                            }}
+                        />,
+                    </div>
+                </div>
             </Tabbed>
         );
     }
@@ -559,7 +596,11 @@ class FilterEditor extends React.Component {
     }
 
     onChanged( key, value ) {
-        value = value.trim().replace( / {2,}/, " " ).replace( /\s*:\s*/, ":" ).replace( /\s*-\s*/, "-" );
+        if( FIELDS[ key ].clean ) {
+            value = FIELDS[ key ].clean( value );
+        } else {
+            value = value.trim().replace( / {2,}/, " " ).replace( /\s*:\s*/, ":" ).replace( /\s*-\s*/, "-" );
+        }
         const new_state = {...this.props.state};
         new_state[ key ] = value;
 
@@ -616,6 +657,7 @@ class Control extends React.Component {
         let heaptrackUrl;
         let treeUrl;
         let flamegraphUrl;
+        let scriptingUrl;
         if( this.props.dataUrl ) {
             const data_url = new URL( this.props.dataUrl );
             const q = _.omit( extract_query( data_url.search ), "count", "skip" );
@@ -666,6 +708,9 @@ class Control extends React.Component {
                                     <a href={flamegraphUrl || "#"}>Open flamegraph</a>
                                 </MenuItem>
                                 <MenuItem>
+                                    <Link onClick={this.openScriptingConsole.bind( this )} onAuxClick={this.openScriptingConsole.bind( this )} to={"/console/" + this.props.id}>Open scripting console</Link>
+                                </MenuItem>
+                                <MenuItem>
                                     <a href={fullDataUrl || "#"}>Download as JSON (every page)</a>
                                 </MenuItem>
                                 <MenuItem>
@@ -681,7 +726,7 @@ class Control extends React.Component {
                         </div>
                     </div>
                 </div>
-                <div className={classNames( "pb-2 w-100 justify-content-between", {"d-none": !this.state.editingFilter, "d-flex": this.state.editingFilter} )}>
+                <div className={classNames( "pb-2 w-100 justify-content-between stretch-child", {"d-none": !this.state.editingFilter, "d-flex": this.state.editingFilter} )}>
                     <FilterEditor filter={this.props.filter} state={this.state.filterEditorState} onChanged={this.onFilterChanged.bind( this )} />
                 </div>
             </div>
@@ -725,6 +770,22 @@ class Control extends React.Component {
         if( this.props.onGroupByBacktracesChanged ) {
             this.props.onGroupByBacktracesChanged( event.target.checked )
         }
+    }
+
+    openScriptingConsole() {
+        let code = "";
+        if( this.props.filterAsScript.prologue !== "" ) {
+            code += this.props.filterAsScript.prologue.trim() + "\n";
+        }
+        code += "let allocs = " + this.props.filterAsScript.code.trim() + ";\n";
+        code += "\n";
+        code += "println(\"Matched allocations: {}\", allocs.len());\n";
+        code += "graph()\n";
+        code += "  .add(allocs)\n";
+        code += "  .save();";
+
+        // This is a hack, but whatever.
+        window.localStorage.setItem( "next-script", code );
     }
 }
 
@@ -1148,6 +1209,7 @@ export default class PageDataAllocations extends React.Component {
                     showFullBacktraces={show_full_backtraces}
                     groupByBacktraces={group_by_backtraces}
                     filter={extract_query( this.props.location.search )}
+                    filterAsScript={this.state.filterAsScript}
                     dataUrl={this.state.lastDataUrl}
                     onPageChange={(page) => update_query( this.props, {page: page + 1} )}
                     onShowFullBacktracesChanged={value => {
@@ -1198,7 +1260,8 @@ export default class PageDataAllocations extends React.Component {
 
                         return <div className="backtrace-cell" onContextMenu={event => {
                             this.setState({
-                                showOnlyAllocationsUrl: url
+                                showOnlyAllocationsUrl: url,
+                                selectedBacktrace: row.original.backtrace_id
                             });
                             return this.menu_trigger.handleContextClick( event );
                         }}>{cell}</div>;
@@ -1227,10 +1290,23 @@ export default class PageDataAllocations extends React.Component {
             return;
         }
 
-        this.setState( { loading: true } );
+        this.setState({
+            loading: true,
+            filterAsScript: null
+        });
         fetch( data_url )
-            .then( response => response.json() )
+            .then( response => {
+                if( response.status !== 200 ) {
+                    return response.text().then( error => Promise.reject( error ) );
+                }
+
+                return response.json();
+             })
             .then( data => {
+                if( data.error ) {
+                    return Promise.reject( data.error );
+                }
+
                 const pages = Math.floor( (data.total_count / params.page_size) ) + (((data.total_count % params.page_size) !== 0) ? 1 : 0);
                 this.setState({
                     data,
@@ -1251,5 +1327,21 @@ export default class PageDataAllocations extends React.Component {
                     group: false
                 });
             });
+
+        const url = (this.props.sourceUrl || "") + "/data/" + this.props.id + "/filter_to_script?" + create_query( params ).toString();
+        fetch( url, {
+            cache: "no-cache"
+        })
+            .then( response => response.json() )
+            .then( response => {
+                this.setState({
+                    filterAsScript: response
+                });
+            })
+            .catch( error => {
+                this.setState({
+                    filterAsScript: null
+                });
+            })
     }
 }

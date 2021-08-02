@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use super::{
     Allocation,
+    AllocationId,
     BacktraceId,
     CodePointer,
     Data,
@@ -249,30 +250,30 @@ fn io_err< T: fmt::Display >( err: T ) -> io::Error {
     io::Error::new( io::ErrorKind::Other, format!( "serialization failed: {}", err ) )
 }
 
-pub fn export_as_heaptrack< T: io::Write, F: Fn( &Allocation ) -> bool >( data: &Data, data_out: T, filter: F ) -> io::Result< () > {
+pub fn export_as_heaptrack< T: io::Write, F: Fn( AllocationId, &Allocation ) -> bool >( data: &Data, data_out: T, filter: F ) -> io::Result< () > {
     let mut exporter = HeaptrackExporter::new( data, IoAdapter::new( data_out ) ).map_err( io_err )?;
     for op in data.operations() {
         match op {
-            Operation::Allocation { allocation, .. } => {
-                if !filter( allocation ) {
+            Operation::Allocation { allocation, allocation_id, .. } => {
+                if !filter( allocation_id, allocation ) {
                     continue;
                 }
 
                 exporter.handle_alloc( allocation ).map_err( io_err )?;
             },
-            Operation::Deallocation { allocation, .. } => {
-                if !filter( allocation ) {
+            Operation::Deallocation { allocation, allocation_id, .. } => {
+                if !filter( allocation_id, allocation ) {
                     continue;
                 }
 
                 exporter.handle_dealloc( allocation ).map_err( io_err )?;
             },
-            Operation::Reallocation { old_allocation, new_allocation, .. } => {
-                if filter( old_allocation ) {
+            Operation::Reallocation { old_allocation, new_allocation, allocation_id, .. } => {
+                if filter( allocation_id, old_allocation ) {
                     exporter.handle_dealloc( old_allocation ).map_err( io_err )?;
                 }
 
-                if filter( new_allocation ) {
+                if filter( allocation_id, new_allocation ) {
                     exporter.handle_alloc( new_allocation ).map_err( io_err )?;
                 }
             }

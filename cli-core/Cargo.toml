@@ -23,6 +23,9 @@ parking_lot = "0.11"
 crossbeam-channel = "0.3"
 rayon = "1"
 regex = "1"
+rhai = "1"
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "all_series"] }
+colorgrad = "0.4"
 
 common = { path = "../common" }
 lz4-compress = { path = "../lz4-compress" }

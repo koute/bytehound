@@ -101,7 +101,14 @@ enum Opt {
     #[structopt(name = "analyze-size", raw(setting = "structopt::clap::AppSettings::Hidden"))]
     AnalyzeSize {
         input: PathBuf
-    }
+    },
+    #[structopt(name = "script")]
+    Script {
+        #[structopt(parse(from_os_str))]
+        input: PathBuf,
+
+        args: Vec< String >
+    },
 }
 
 fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
@@ -112,7 +119,7 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let data_out = File::create( output )?;
             let data_out = io::BufWriter::new( data_out );
 
-            export_as_replay( &data, data_out, |_| true )?;
+            export_as_replay( &data, data_out, |_, _| true )?;
         },
         Opt::ExportHeaptrack { debug_symbols, output, input } => {
             let fp = File::open( input )?;
@@ -120,7 +127,7 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let data_out = File::create( output )?;
             let data_out = io::BufWriter::new( data_out );
 
-            export_as_heaptrack( &data, data_out, |_| true )?;
+            export_as_heaptrack( &data, data_out, |_, _| true )?;
         },
         Opt::Gather { target } => {
             cli_core::cmd_gather::main( target.as_ref().map( |target| target.as_str() ) )?;
@@ -147,7 +154,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
         Opt::AnalyzeSize { input } => {
             let ifp = File::open( &input )?;
             cli_core::cmd_analyze_size::analyze_size( ifp )?;
-        }
+        },
+        Opt::Script { input, args } => {
+            cli_core::run_script( &input, args )?;
+        },
     }
 
     Ok(())

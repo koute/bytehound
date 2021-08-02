@@ -144,6 +144,7 @@ pub enum Filter {
     Basic( BasicFilter ),
     And( Box< Filter >, Box< Filter > ),
     Or( Box< Filter >, Box< Filter > ),
+    Not( Box< Filter > ),
 }
 
 #[derive(Clone)]
@@ -151,6 +152,7 @@ pub enum CompiledFilter {
     Basic( CompiledBasicFilter ),
     And( Box< CompiledFilter >, Box< CompiledFilter > ),
     Or( Box< CompiledFilter >, Box< CompiledFilter > ),
+    Not( Box< CompiledFilter > ),
 }
 
 fn compile_backtrace_filter( data: &Data, filter: &BasicFilter ) -> Option< HashSet< BacktraceId > > {
@@ -622,7 +624,8 @@ impl CompiledFilter {
         match *self {
             CompiledFilter::Basic( ref filter ) => filter.try_match( data, allocation ),
             CompiledFilter::And( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) && rhs.try_match( data, allocation ),
-            CompiledFilter::Or( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) || rhs.try_match( data, allocation )
+            CompiledFilter::Or( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) || rhs.try_match( data, allocation ),
+            CompiledFilter::Not( ref filter ) => !filter.try_match( data, allocation )
         }
     }
 }
@@ -633,6 +636,7 @@ impl Filter {
             Filter::Basic( ref filter ) => CompiledFilter::Basic( filter.compile( data ) ),
             Filter::And( ref lhs, ref rhs ) => CompiledFilter::And( Box::new( lhs.compile( data ) ), Box::new( rhs.compile( data ) ) ),
             Filter::Or( ref lhs, ref rhs ) => CompiledFilter::Or( Box::new( lhs.compile( data ) ), Box::new( rhs.compile( data ) ) ),
+            Filter::Not( ref filter ) => CompiledFilter::Not( Box::new( filter.compile( data ) ) )
         }
     }
 }

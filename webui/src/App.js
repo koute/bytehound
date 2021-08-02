@@ -6,6 +6,7 @@ import PageDataList from "./PageDataList.js";
 import PageDataOverview from "./PageDataOverview.js";
 import PageDataAllocations from "./PageDataAllocations.js";
 import PageDataAddressSpace from "./PageDataAddressSpace.js";
+import PageDataConsole from "./PageDataConsole.js";
 
 export default class App extends React.Component {
     render() {
@@ -20,6 +21,9 @@ export default class App extends React.Component {
                     }} />
                     <Route exact path="/address_space/:id" render={ ({ match, location, history }) => {
                         return <PageDataAddressSpace key="address_space" location={location} history={history} sourceUrl={this.props.sourceUrl} id={match.params.id} />;
+                    }} />
+                    <Route exact path="/console/:id" render={ ({ match, location, history }) => {
+                        return <PageDataConsole key="console" location={location} sourceUrl={this.props.sourceUrl} id={match.params.id} />;
                     }} />
                     <Route exact path="/" render={ () => {
                         return <PageDataList key="list" sourceUrl={this.props.sourceUrl} />;

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use byteorder::{NativeEndian, WriteBytesExt};
 
-use crate::data::{Allocation, BacktraceId, Data, FrameId, Operation};
+use crate::data::{Allocation, AllocationId, BacktraceId, Data, FrameId, Operation};
 
 #[derive(Default)]
 struct Exporter {
@@ -103,19 +103,19 @@ impl Exporter {
         Ok(())
     }
 
-    fn process< T: io::Write, F: Fn( &Allocation ) -> bool >( mut self, data: &Data, filter: F, mut output: T ) -> io::Result< () > {
+    fn process< T: io::Write, F: Fn( AllocationId, &Allocation ) -> bool >( mut self, data: &Data, filter: F, mut output: T ) -> io::Result< () > {
         for operation in data.operations() {
             match operation {
-                Operation::Allocation { allocation, .. } => {
-                    if !filter( allocation ) {
+                Operation::Allocation { allocation, allocation_id, .. } => {
+                    if !filter( allocation_id, allocation ) {
                         continue;
                     }
 
                     self.preprocess_backtrace( data, allocation.backtrace );
                     self.preprocess_alloc( allocation );
                 },
-                Operation::Deallocation { allocation, deallocation, .. } => {
-                    if !filter( allocation ) {
+                Operation::Deallocation { allocation, deallocation, allocation_id, .. } => {
+                    if !filter( allocation_id, allocation ) {
                         continue;
                     }
 
@@ -124,9 +124,9 @@ impl Exporter {
                     }
                     self.preprocess_dealloc( allocation );
                 },
-                Operation::Reallocation { new_allocation, old_allocation, .. } => {
-                    let is_new_ok = filter( new_allocation );
-                    let is_old_ok = filter( old_allocation );
+                Operation::Reallocation { new_allocation, old_allocation, allocation_id, .. } => {
+                    let is_new_ok = filter( allocation_id, new_allocation );
+                    let is_old_ok = filter( allocation_id, old_allocation );
 
                     if is_new_ok || is_old_ok {
                         self.preprocess_backtrace( data, new_allocation.backtrace );
@@ -153,16 +153,16 @@ impl Exporter {
         let mut last_backtrace = None;
         for (operation, slot) in data.operations().zip( self.slot_by_index ) {
             match operation {
-                Operation::Allocation { allocation, .. } => {
-                    if !filter( allocation ) {
+                Operation::Allocation { allocation, allocation_id, .. } => {
+                    if !filter( allocation_id, allocation ) {
                         continue;
                     }
 
                     Self::generate_traversal( &frame_map, &mut last_backtrace, &mut output, data, allocation.backtrace )?;
                     Self::generate_alloc( &mut output, slot, allocation )?;
                 },
-                Operation::Deallocation { allocation, deallocation, .. } => {
-                    if !filter( allocation ) {
+                Operation::Deallocation { allocation, deallocation, allocation_id, .. } => {
+                    if !filter( allocation_id, allocation ) {
                         continue;
                     }
 
@@ -171,9 +171,9 @@ impl Exporter {
                     }
                     Self::generate_dealloc( &mut output, slot, allocation )?;
                 },
-                Operation::Reallocation { new_allocation, old_allocation, .. } => {
-                    let is_new_ok = filter( new_allocation );
-                    let is_old_ok = filter( old_allocation );
+                Operation::Reallocation { new_allocation, old_allocation, allocation_id, .. } => {
+                    let is_new_ok = filter( allocation_id, new_allocation );
+                    let is_old_ok = filter( allocation_id, old_allocation );
 
                     if is_new_ok || is_old_ok {
                         Self::generate_traversal( &frame_map, &mut last_backtrace, &mut output, data, new_allocation.backtrace )?;
@@ -195,6 +195,6 @@ impl Exporter {
     }
 }
 
-pub fn export_as_replay< T: io::Write, F: Fn( &Allocation ) -> bool >( data: &Data, output: T, filter: F ) -> io::Result< () > {
+pub fn export_as_replay< T: io::Write, F: Fn( AllocationId, &Allocation ) -> bool >( data: &Data, output: T, filter: F ) -> io::Result< () > {
     Exporter::default().process( data, filter, output )
 }
