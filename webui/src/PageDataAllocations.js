@@ -740,10 +740,12 @@ class Filter {
 
 function get_data_url( source_url, id, params ) {
     params = {...params};
-    if( !_.isNil( params.page_size ) ) {
-        params.count = params.page_size;
-        params.skip = params.page_size * params.page;
-    }
+
+    const page = (parseInt( params.page, 10 ) || 1) - 1;
+    const page_size = parseInt( params.page_size, 10 ) || 20;
+
+    params.count = page_size;
+    params.skip = page_size * page;
 
     const group_allocations = params.group_allocations === "true" || params.group_allocations === "1";
     let source;
@@ -847,6 +849,13 @@ function backtrace_cell( show_full_backtraces, frames ) {
 
 export default class PageDataAllocations extends React.Component {
     state = { pages: null, data: {}, loading: false };
+
+    componentDidUpdate( prev_props ) {
+        if( this.props.location !== prev_props.location ) {
+            const params = extract_query( this.props.location.search );
+            this.fetchData( params );
+        }
+    }
 
     render() {
         const q = new URLSearchParams( this.props.location.search );
@@ -1154,12 +1163,9 @@ export default class PageDataAllocations extends React.Component {
                             otherSortBy: p.sort_by,
                             otherOrder: p.order
                         });
-                        const params = extract_query( location.search );
-                        this.fetchData( {...params, page, page_size} );
                     }}
                     onFilterChange={(filter) => {
                         update_query( this.props, filter );
-                        this.fetchData( {...filter, page, page_size} );
                     }}
                 />
                 <ReactTable
