@@ -12,7 +12,7 @@ use std::fmt::{self, Write};
 use std::thread;
 use std::io;
 use std::borrow::Cow;
-use std::cmp::{min, max, Ordering};
+use std::cmp::{min, max};
 use std::path::PathBuf;
 
 use actix_web::{
@@ -862,23 +862,6 @@ fn get_allocation_groups< 'a >(
     };
 
     response
-}
-
-#[derive(PartialEq, Eq)]
-struct Reverse< T >( T );
-
-impl< T > PartialOrd for Reverse< T > where T: PartialOrd {
-    #[inline]
-    fn partial_cmp( &self, rhs: &Reverse< T > ) -> Option< Ordering > {
-        self.0.partial_cmp( &rhs.0 ).map( Ordering::reverse )
-    }
-}
-
-impl< T > Ord for Reverse< T > where T: Ord {
-    #[inline]
-    fn cmp( &self, rhs: &Reverse< T > ) -> Ordering {
-        self.0.cmp( &rhs.0 ).reverse()
-    }
 }
 
 fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
