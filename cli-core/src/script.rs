@@ -438,20 +438,20 @@ impl std::fmt::Debug for AllocationGroupList {
 }
 
 impl AllocationGroupList {
-    fn filter( &self, mut callback: impl FnMut( &AllocationGroup ) -> bool ) -> Self {
+    fn filter( &self, callback: impl Fn( &AllocationGroup ) -> bool + Send + Sync ) -> Self {
+        let groups: Vec< _ > = self.groups.par_iter()
+            .filter( |(_, group)| callback( group ) )
+            .map( |(key, group)| (key.clone(), group.clone()) )
+            .collect();
+
         Self {
             data: self.data.clone(),
-            groups: Arc::new(
-                self.groups.iter()
-                    .filter( |(_, group)| callback( group ) )
-                    .map( |(key, group)| (key.clone(), group.clone()) )
-                    .collect()
-            )
+            groups: Arc::new( groups.into_iter().collect() )
         }
     }
 
     fn only_all_leaked( &mut self ) -> AllocationGroupList {
-        self.filter( |group| group.allocation_ids.iter().all( |&id| {
+        self.filter( |group| group.allocation_ids.par_iter().all( |&id| {
             let allocation = self.data.get_allocation( id );
             allocation.deallocation.is_none()
         }))
@@ -462,7 +462,7 @@ impl AllocationGroupList {
         for (_, group) in &*self.groups {
             allocation_ids.extend_from_slice( &group.allocation_ids );
         }
-        allocation_ids.sort_by_key( |&id| {
+        allocation_ids.par_sort_by_key( |&id| {
             let allocation = self.data.get_allocation( id );
             (allocation.timestamp, id)
         });

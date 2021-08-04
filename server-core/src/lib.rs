@@ -692,7 +692,7 @@ fn get_allocations< 'a >(
     let allocation_ids = prefiltered_allocation_ids( data, sort_by, &filter );
     let total_count =
         allocation_ids
-        .iter()
+        .par_iter()
         .filter( |&&id| filter.try_match( data, id, data.get_allocation( id ) ) )
         .count() as u64;
 
@@ -756,46 +756,79 @@ fn handler_allocations( req: HttpRequest ) -> Result< HttpResponse > {
 }
 
 fn get_allocation_group_data< 'a, I >( data: &Data, iter: I ) -> protocol::AllocationGroupData
-    where I: IntoIterator< Item = &'a Allocation >, <I as IntoIterator>::IntoIter: ExactSizeIterator
+    where I: ParallelIterator< Item = &'a Allocation >
 {
-    let iter = iter.into_iter();
-    assert_ne!( iter.len(), 0 );
+    #[derive(Clone)]
+    struct Group {
+        size_sum: u64,
+        min_size: u64,
+        max_size: u64,
+        min_timestamp: Timestamp,
+        max_timestamp: Timestamp,
+        leaked_count: u64,
+        allocated_count: u64
+    }
 
-    let mut size_sum = 0;
-    let mut min_size = -1_i32 as _;
-    let mut max_size = 0;
-    let mut min_timestamp = Timestamp::max();
-    let mut max_timestamp = Timestamp::min();
-    let mut leaked_count = 0;
-    let mut allocated_count = 0;
-    for allocation in iter {
-        let size = allocation.size;
-        let timestamp = allocation.timestamp;
-        size_sum += size;
-        min_size = min( min_size, size );
-        max_size = max( max_size, size );
-        min_timestamp = min( min_timestamp, timestamp );
-        max_timestamp = max( max_timestamp, timestamp );
-
-        allocated_count += 1;
-        if allocation.deallocation.is_none() {
-            leaked_count += 1;
+    impl Default for Group {
+        fn default() -> Self {
+            Group {
+                size_sum: 0,
+                min_size: !0,
+                max_size: 0,
+                min_timestamp: Timestamp::max(),
+                max_timestamp: Timestamp::min(),
+                leaked_count: 0,
+                allocated_count: 0
+            }
         }
     }
 
+    let group = iter.fold_with(
+        Group::default(),
+        |mut group, allocation| {
+            let size = allocation.size;
+            let timestamp = allocation.timestamp;
+            group.size_sum += size;
+            group.min_size = min( group.min_size, size );
+            group.max_size = max( group.max_size, size );
+            group.min_timestamp = min( group.min_timestamp, timestamp );
+            group.max_timestamp = max( group.max_timestamp, timestamp );
+
+            group.allocated_count += 1;
+            if allocation.deallocation.is_none() {
+                group.leaked_count += 1;
+            }
+
+            group
+        }
+    ).reduce(
+        || Group::default(),
+        |mut a, b| {
+            a.size_sum += b.size_sum;
+            a.min_size = min( a.min_size, b.min_size );
+            a.max_size = max( a.max_size, b.max_size );
+            a.min_timestamp = min( a.min_timestamp, b.min_timestamp );
+            a.max_timestamp = max( a.max_timestamp, b.max_timestamp );
+            a.allocated_count += b.allocated_count;
+            a.leaked_count += b.leaked_count;
+
+            a
+        }
+    );
+
     protocol::AllocationGroupData {
-        leaked_count,
-        allocated_count,
-        size: size_sum,
-        min_size,
-        max_size,
-        min_timestamp: min_timestamp.into(),
-        min_timestamp_relative: (min_timestamp - data.initial_timestamp()).into(),
-        min_timestamp_relative_p: timestamp_to_fraction( data, min_timestamp ),
-        max_timestamp: max_timestamp.into(),
-        max_timestamp_relative: (max_timestamp - data.initial_timestamp()).into(),
-        max_timestamp_relative_p: timestamp_to_fraction( data, max_timestamp ),
-        interval: (max_timestamp - min_timestamp).into()
+        leaked_count: group.leaked_count,
+        allocated_count: group.allocated_count,
+        size: group.size_sum,
+        min_size: group.min_size,
+        max_size: group.max_size,
+        min_timestamp: group.min_timestamp.into(),
+        min_timestamp_relative: (group.min_timestamp - data.initial_timestamp()).into(),
+        min_timestamp_relative_p: timestamp_to_fraction( data, group.min_timestamp ),
+        max_timestamp: group.max_timestamp.into(),
+        max_timestamp_relative: (group.max_timestamp - data.initial_timestamp()).into(),
+        max_timestamp_relative_p: timestamp_to_fraction( data, group.max_timestamp ),
+        interval: (group.max_timestamp - group.min_timestamp).into()
     }
 }
 
@@ -845,7 +878,7 @@ fn get_allocation_groups< 'a >(
             .map( move |index| {
                 let (&backtrace_id, matched_allocation_ids) = allocations.allocations_by_backtrace.get( index );
                 let all = get_global_group_data( data, backtrace_id );
-                let only_matched = get_allocation_group_data( data, matched_allocation_ids.into_iter().map( |&allocation_id| data.get_allocation( allocation_id ) ) );
+                let only_matched = get_allocation_group_data( data, matched_allocation_ids.into_par_iter().map( |&allocation_id| data.get_allocation( allocation_id ) ) );
                 let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
                 protocol::AllocationGroup {
                     all,
@@ -883,18 +916,27 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
     let groups = req.state().allocation_group_cache.lock().get( &key ).cloned();
 
     fn sort_by< T, F >( data: &Data, groups: &mut AllocationGroups, order: protocol::Order, is_global: bool, callback: F )
-        where F: Fn( &protocol::AllocationGroupData ) -> T,
-              T: Ord
+        where F: Fn( &protocol::AllocationGroupData ) -> T + Send + Sync,
+              T: Ord + Send + Sync
     {
-        groups.allocations_by_backtrace.sort_by_key( |(&backtrace_id, ids)| {
-            let group_data = if is_global {
-                get_global_group_data( data, backtrace_id )
-            } else {
-                let allocations = ids.iter().map( |&id| data.get_allocation( id ) );
-                get_allocation_group_data( data, allocations )
-            };
-            callback( &group_data )
-        });
+        if is_global {
+            groups.allocations_by_backtrace.par_sort_by_key( |(&backtrace_id, _)| {
+                let group_data = get_global_group_data( data, backtrace_id );
+                callback( &group_data )
+            });
+        } else {
+            let key_for_backtrace: Vec< _ > =
+                groups.allocations_by_backtrace.par_iter().map( |(&backtrace_id, ids)| {
+                    let allocations = ids.par_iter().map( |&id| data.get_allocation( id ) );
+                    let group_data = get_allocation_group_data( data, allocations );
+                    (backtrace_id, callback( &group_data ))
+                }).collect();
+
+            let key_for_backtrace: HashMap< _, _ > = key_for_backtrace.into_iter().collect();
+            groups.allocations_by_backtrace.par_sort_by_key( |(&backtrace_id, _)| {
+                key_for_backtrace.get( &backtrace_id ).unwrap().clone()
+            });
+        }
 
         match order {
             protocol::Order::Asc => {},

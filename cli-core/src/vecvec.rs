@@ -1,6 +1,7 @@
 use std::iter::FusedIterator;
 use std::cmp::Ordering;
 use std::u32;
+use rayon::prelude::*;
 
 #[derive(Default)]
 pub struct VecVec< K, T > {
@@ -36,6 +37,11 @@ impl< K, T > VecVec< K, T > {
     }
 
     #[inline]
+    pub fn par_iter< 'a >( &'a self ) -> impl ParallelIterator< Item = (&'a K, &'a [T]) > where K: Send + Sync, T: Send + Sync {
+        self.index.par_iter().map( move |&(ref key, offset, length)| (key, &self.storage[ (offset as usize)..(offset + length) as usize ]) )
+    }
+
+    #[inline]
     pub fn len( &self ) -> usize {
         self.index.len()
     }
@@ -47,11 +53,13 @@ impl< K, T > VecVec< K, T > {
         (key, value)
     }
 
-    pub fn sort_by< F >( &mut self, mut callback: F )
-        where F: FnMut( (&K, &[T]), (&K, &[T]) ) -> Ordering
+    pub fn par_sort_by< F >( &mut self, callback: F )
+        where F: Fn( (&K, &[T]), (&K, &[T]) ) -> Ordering + Send + Sync,
+              K: Send + Sync,
+              T: Send + Sync
     {
         let storage = &self.storage;
-        self.index.sort_by( |&(ref l_key, l_offset, l_length), &(ref r_key, r_offset, r_length)| {
+        self.index.par_sort_by( |&(ref l_key, l_offset, l_length), &(ref r_key, r_offset, r_length)| {
             let lhs = &storage[ (l_offset as usize)..(l_offset + l_length) as usize ];
             let rhs = &storage[ (r_offset as usize)..(r_offset + r_length) as usize ];
             return callback( (l_key, lhs), (r_key, rhs) );
@@ -59,10 +67,13 @@ impl< K, T > VecVec< K, T > {
     }
 
     #[inline]
-    pub fn sort_by_key< U, F >( &mut self, mut callback: F )
-        where F: FnMut( (&K, &[T]) ) -> U, U: Ord
+    pub fn par_sort_by_key< U, F >( &mut self, callback: F )
+        where F: Fn( (&K, &[T]) ) -> U + Send + Sync,
+              U: Ord,
+              K: Send + Sync,
+              T: Send + Sync
     {
-        self.sort_by( |lhs, rhs| {
+        self.par_sort_by( |lhs, rhs| {
             let lhs = callback( lhs );
             let rhs = callback( rhs );
             lhs.cmp( &rhs )
@@ -137,7 +148,7 @@ fn test_vecvec() {
         assert_eq!( iter.next(), None );
     }
 
-    vec.sort_by_key( |(&key, _)| key );
+    vec.par_sort_by_key( |(&key, _)| key );
     {
         let mut iter = vec.iter();
         assert_eq!( iter.next(), Some( (&0, &[ 1, 2, 3 ][..]) ) );
@@ -146,7 +157,7 @@ fn test_vecvec() {
         assert_eq!( iter.next(), None );
     }
 
-    vec.sort_by_key( |(&key, _)| 100 - key );
+    vec.par_sort_by_key( |(&key, _)| 100 - key );
     {
         let mut iter = vec.iter();
         assert_eq!( iter.next(), Some( (&3, &[ 100 ][..]) ) );
