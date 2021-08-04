@@ -549,7 +549,7 @@ impl< 'a > Iterator for MemoryUsageIter< 'a > {
                 let x = self.current_time * self.granularity;
                 // Since the allocations are gathered in parallel and are not guaranteed
                 // to be strictly ordered we could - in theory - temporarily hit a negative memory usage.
-                let y = std::cmp::max( 0, self.current_max_usage as u64 );
+                let y = std::cmp::max( 0, self.current_max_usage ) as u64;
                 output = Some( MemoryUsagePoint {
                     index,
                     timestamp: x,
@@ -571,7 +571,7 @@ impl< 'a > Iterator for MemoryUsageIter< 'a > {
             let index = self.index;
             self.index += 1;
             let x = self.current_time * self.granularity;
-            let y = std::cmp::max( 0, self.current_max_usage as u64 );
+            let y = std::cmp::max( 0, self.current_max_usage ) as u64;
             Some( MemoryUsagePoint {
                 index,
                 timestamp: x,
