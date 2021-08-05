@@ -1886,18 +1886,21 @@ impl ToCode for Duration {
             if non_empty {
                 ctx.output.push_str( " + " );
             }
+            non_empty = true;
             write!( &mut ctx.output, "m({})", d.minutes ).unwrap();
         }
         if d.secs > 0 {
             if non_empty {
                 ctx.output.push_str( " + " );
             }
+            non_empty = true;
             write!( &mut ctx.output, "s({})", d.secs ).unwrap();
         }
         if d.ms > 0 {
             if non_empty {
                 ctx.output.push_str( " + " );
             }
+            non_empty = true;
             write!( &mut ctx.output, "ms({})", d.ms ).unwrap();
         }
         if d.us > 0 {
