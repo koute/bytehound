@@ -504,7 +504,7 @@ impl Loader {
         self.operations.push( (timestamp, op) );
 
         self.allocation_range_map_dirty = true;
-        self.allocations_by_backtrace.get_mut( &backtrace ).unwrap().push( allocation_id );
+        self.allocations_by_backtrace.get_mut( &backtrace ).unwrap().push( reallocation_id );
     }
 
     pub(crate) fn interner( &mut self ) -> &mut StringInterner {
@@ -1068,6 +1068,7 @@ impl Loader {
 
         let allocations = &self.allocations;
         for (backtrace_id, mut allocation_ids) in index {
+            debug_assert!( allocation_ids.is_empty() || allocations[ allocation_ids[ 0 ].raw() as usize ].backtrace == backtrace_id );
             allocation_ids.sort_by( |&a_id, &b_id| cmp_by_time( allocations, a_id, b_id ) );
             let index = allocations_by_backtrace.push( allocation_ids );
             assert_eq!( index, backtrace_id.raw() as _ );
