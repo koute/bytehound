@@ -74,9 +74,9 @@ enum Opt {
         input: PathBuf
     },
     /// Generates a new data file with temporary allocations stripped away
-    #[structopt(name = "squeeze")]
-    Squeeze {
-        /// The file to which the squeezed data will be written
+    #[structopt(name = "strip")]
+    Strip {
+        /// The file to which the stripped data will be written
         #[structopt(long, short = "o", parse(from_os_str))]
         output: PathBuf,
 
@@ -141,7 +141,7 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let ofp = File::create( output )?;
             postprocess( ifp, ofp, debug_symbols )?;
         },
-        Opt::Squeeze { output, input, threshold } => {
+        Opt::Strip { output, input, threshold } => {
             let ifp = File::open( &input )?;
             let ofp = File::create( output )?;
             cli_core::squeeze_data( ifp, ofp, threshold )?;
