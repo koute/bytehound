@@ -547,7 +547,7 @@ impl CompiledBasicFilter {
                 return false;
             }
 
-            if !(chain_length >= self.only_chain_length_at_least && chain_length <= self.only_chain_length_at_least) {
+            if !(chain_length >= self.only_chain_length_at_least && chain_length <= self.only_chain_length_at_most) {
                 return false;
             }
 
