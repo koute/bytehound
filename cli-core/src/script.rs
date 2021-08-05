@@ -474,6 +474,8 @@ impl AllocationGroupList {
 
 #[derive(Clone)]
 struct Graph {
+    without_axes: bool,
+    without_grid: bool,
     hide_empty: bool,
     trim_left: bool,
     trim_right: bool,
@@ -487,6 +489,8 @@ struct Graph {
 impl Graph {
     fn new() -> Self {
         Graph {
+            without_axes: false,
+            without_grid: false,
             hide_empty: false,
             trim_left: false,
             trim_right: false,
@@ -546,6 +550,18 @@ impl Graph {
     fn truncate_until( &mut self, offset: Duration ) -> Self {
         let mut cloned = self.clone();
         cloned.truncate_until = Some( offset );
+        cloned
+    }
+
+    fn without_axes( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.without_axes = true;
+        cloned
+    }
+
+    fn without_grid( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.without_grid = true;
         cloned
     }
 
@@ -799,17 +815,22 @@ impl Graph {
         let root = SVGBackend::with_string( &mut output, (1024, 768) ).into_drawing_area();
         root.fill( &WHITE ).map_err( |error| format!( "failed to fill the graph with white: {}", error ) )?;
 
-        let mut chart = ChartBuilder::on( &root )
-            .margin( (1).percent() )
-            .set_label_area_size( LabelAreaPosition::Left, 70 )
-            .margin_right( 50 )
-            .set_label_area_size( LabelAreaPosition::Bottom, 60 )
-            .set_label_area_size( LabelAreaPosition::Top, 60 )
-            .build_cartesian_2d(
+        let mut chart = ChartBuilder::on( &root );
+        let mut chart = &mut chart;
+        if !self.without_axes {
+            chart = chart
+                .margin( (1).percent() )
+                .set_label_area_size( LabelAreaPosition::Left, 70 )
+                .margin_right( 50 )
+                .set_label_area_size( LabelAreaPosition::Bottom, 60 )
+                .set_label_area_size( LabelAreaPosition::Top, 60 )
+        };
+
+        let mut chart = chart.build_cartesian_2d(
                 TimeRange( x_min, x_max + 1 ),
                 SizeRange( 0, (max_usage + 1) as u64 )
             )
-            .map_err( |error| format!( "failed to construct the chat builder: {}", error ) )?
+            .map_err( |error| format!( "failed to construct the chart builder: {}", error ) )?
             .set_secondary_coord(
                 TimeRangeOffset( x_min, x_max + 1 ),
                 SizeRange( 0, (max_usage + 1) as u64 )
@@ -852,17 +873,24 @@ impl Graph {
             }
         }
 
-        chart
-            .configure_mesh()
-            .x_desc( "Time" )
-            .y_desc( "Memory usage" )
-            .draw()
-            .map_err( |error| format!( "failed to draw the mesh: {}", error ) )?;
+        let mut mesh = chart.configure_mesh();
+        let mut mesh = &mut mesh;
+        if !self.without_axes {
+            mesh = mesh.x_desc( "Time" ).y_desc( "Memory usage" );
+        }
 
-        chart
-            .configure_secondary_axes()
-            .draw()
-            .map_err( |error| format!( "failed to draw the secondary axes: {}", error ) )?;
+        if self.without_grid {
+            mesh = mesh.disable_mesh();
+        }
+
+        mesh.draw().map_err( |error| format!( "failed to draw the mesh: {}", error ) )?;
+
+        if !self.without_axes {
+            chart
+                .configure_secondary_axes()
+                .draw()
+                .map_err( |error| format!( "failed to draw the secondary axes: {}", error ) )?;
+        }
 
         if labels.iter().any( |label| label.is_some() ) {
             chart
@@ -1282,6 +1310,8 @@ impl Engine {
         engine.register_fn( "extend_until", Graph::extend_until );
         engine.register_fn( "truncate_until", Graph::truncate_until );
         engine.register_fn( "only_non_empty_series", Graph::only_non_empty_series );
+        engine.register_fn( "without_axes", Graph::without_axes );
+        engine.register_fn( "without_grid", Graph::without_grid );
         engine.register_result_fn( "with_gradient_color_scheme", Graph::with_gradient_color_scheme );
         engine.register_fn( "allocations", DataRef::allocations );
         engine.register_fn( "runtime", |data: &mut DataRef| Duration( data.0.last_timestamp - data.0.initial_timestamp ) );
