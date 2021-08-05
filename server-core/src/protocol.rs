@@ -12,12 +12,23 @@ pub struct Secs( u64 );
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Debug, Hash)]
 #[serde(transparent)]
+pub struct MSecs( u64 );
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Debug, Hash)]
+#[serde(transparent)]
 pub struct FractNanos( u32 );
 
 impl From< Secs > for Timestamp {
     #[inline]
     fn from( value: Secs ) -> Self {
         Timestamp::from_secs( value.0 )
+    }
+}
+
+impl From< MSecs > for Timestamp {
+    #[inline]
+    fn from( value: MSecs ) -> Self {
+        Timestamp::from_msecs( value.0 )
     }
 }
 
@@ -71,8 +82,6 @@ pub struct ResponseTimeline {
     pub count_delta: Vec< i64 >,
     pub allocated_size: Vec< u64 >,
     pub allocated_count: Vec< u64 >,
-    pub leaked_size: Vec< u64 >,
-    pub leaked_count: Vec< u64 >,
     pub allocations: Vec< u32 >,
     pub deallocations: Vec< u32 >
 }
@@ -438,7 +447,7 @@ impl< 'de > serde::Deserialize< 'de > for Interval {
 
 pub trait TimevalKind {
     fn is_end_of_the_range() -> bool;
-    fn is_interval() -> bool;
+    fn is_unitless_absolute() -> bool;
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -448,50 +457,50 @@ pub struct OffsetMax;
 
 impl TimevalKind for Interval {
     fn is_end_of_the_range() -> bool { false }
-    fn is_interval() -> bool { true }
+    fn is_unitless_absolute() -> bool { false }
 }
 impl TimevalKind for OffsetMin {
     fn is_end_of_the_range() -> bool { false }
-    fn is_interval() -> bool { true }
+    fn is_unitless_absolute() -> bool { true }
 }
 impl TimevalKind for OffsetMax {
     fn is_end_of_the_range() -> bool { true }
-    fn is_interval() -> bool { true }
+    fn is_unitless_absolute() -> bool { true }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum TimestampFilter< K: TimevalKind > {
-    Timestamp( Timestamp ),
-    Secs( Secs, PhantomData< K > ),
+    Relative( Timestamp ),
+    Absolute( MSecs, PhantomData< K > ),
     Percent( u32 )
 }
 
 impl< K > TimestampFilter< K > where K: TimevalKind {
     pub fn to_timestamp( &self, start_at: Timestamp, end_at: Timestamp ) -> Timestamp {
         match *self {
-            TimestampFilter::Secs( secs, _ ) => {
-                let mut timestamp = secs.into();
+            TimestampFilter::Absolute( msecs, _ ) => {
+                let mut timestamp: Timestamp = msecs.into();
                 if K::is_end_of_the_range() {
                     // We need to do this since the filter is specifed
-                    // in seconds while we use a higher precision timestamps
+                    // in milliseconds while we use a higher precision timestamps
                     // internally.
                     if timestamp != Timestamp::max() {
-                        timestamp = timestamp + Timestamp::from_secs( 1 ) - Timestamp::eps();
+                        timestamp = timestamp + Timestamp::from_msecs( 1 ) - Timestamp::eps();
                     }
                 }
-                timestamp
+                if timestamp < start_at {
+                    return Timestamp::from_secs( 0 );
+                }
+
+                timestamp - start_at
             },
-            TimestampFilter::Timestamp( timestamp ) => timestamp,
+            TimestampFilter::Relative( timestamp ) => timestamp,
             TimestampFilter::Percent( percentage ) => {
                 let range = end_at - start_at;
                 let p = percentage as f64 / 100.0;
                 let shift = range * p;
 
-                if K::is_interval() {
-                    shift
-                } else {
-                    start_at + shift
-                }
+                shift
             }
         }
     }
@@ -516,12 +525,12 @@ impl< 'de, K > serde::Deserialize< 'de > for TimestampFilter< K > where K: Timev
                     let value = value[ 0..value.len() - 1 ].parse().map_err( |_| E::custom( "not a valid percentage" ) )?;
                     Ok( TimestampFilter::Percent( value ) )
                 } else {
-                    if K::is_interval() {
+                    if !K::is_unitless_absolute() {
                         let value: Interval = value.parse().map_err( |_| E::custom( "not a valid interval" ) )?;
-                        Ok( TimestampFilter::Timestamp( value.0 ) )
+                        Ok( TimestampFilter::Relative( value.0 ) )
                     } else {
                         let value: u64 = value.parse().map_err( |_| E::custom( "not a valid number" ) )?;
-                        Ok( TimestampFilter::Secs( Secs( value ), PhantomData ) )
+                        Ok( TimestampFilter::Absolute( MSecs( value ), PhantomData ) )
                     }
                 }
             }

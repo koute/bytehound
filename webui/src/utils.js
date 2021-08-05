@@ -199,7 +199,18 @@ function fmt_date( date ) {
         s = "" + s;
     }
 
-    return y + "-" + m + "-" + d + " " + h + ":" + min + ":" + s;
+    let ms = date.getUTCMilliseconds();
+    if( ms !== 0 ) {
+        ms = "" + ms;
+        while( ms.length < 3 ) {
+            ms = "0" + ms;
+        }
+        ms = "." + ms;
+    } else {
+        ms = "";
+    }
+
+    return y + "-" + m + "-" + d + " " + h + ":" + min + ":" + s + ms;
 }
 
 function fmt_date_timeval( timestamp ) {
@@ -213,6 +224,10 @@ function fmt_date_timeval( timestamp ) {
 
 function fmt_date_unix( timestamp ) {
     return fmt_date( new Date( timestamp * 1000 ) );
+}
+
+function fmt_date_unix_ms( timestamp ) {
+    return fmt_date( new Date( parseInt( timestamp, 10 ) ) );
 }
 
 function fmt_hex16( value ) {
@@ -293,4 +308,4 @@ function def( value, default_value ) {
     }
 }
 
-export { fmt_uptime, fmt_uptime_timeval, fmt_size, fmt_full_size, fmt_date, fmt_date_unix, fmt_date_timeval, fmt_hex16, update_query, create_query, extract_query, format_frame, def }
+export { fmt_uptime, fmt_uptime_timeval, fmt_size, fmt_full_size, fmt_date, fmt_date_unix, fmt_date_unix_ms, fmt_date_timeval, fmt_hex16, update_query, create_query, extract_query, format_frame, def }

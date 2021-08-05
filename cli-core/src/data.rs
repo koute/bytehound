@@ -55,18 +55,17 @@ pub struct OperationId( u64 );
 
 impl OperationId {
     #[inline]
-    pub(crate) fn new_allocation( id: AllocationId ) -> Self {
+    pub fn new_allocation( id: AllocationId ) -> Self {
         OperationId( id.0 )
     }
 
-
     #[inline]
-    pub(crate) fn new_deallocation( id: AllocationId ) -> Self {
+    pub fn new_deallocation( id: AllocationId ) -> Self {
         OperationId( (1 << 62) | id.0 )
     }
 
     #[inline]
-    pub(crate) fn new_reallocation( id: AllocationId ) -> Self {
+    pub fn new_reallocation( id: AllocationId ) -> Self {
         OperationId( (2 << 62) | id.0 )
     }
 
@@ -647,6 +646,10 @@ impl Data {
     #[inline]
     pub fn allocations_with_id( &self ) -> impl Iterator< Item = (AllocationId, &Allocation) > {
         self.allocations.iter().enumerate().map( |(index, allocation)| (AllocationId::new( index as _ ), allocation) )
+    }
+
+    pub fn operation_ids( &self ) -> &[OperationId] {
+        &self.operations
     }
 
     #[inline]

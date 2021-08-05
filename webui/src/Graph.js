@@ -1,6 +1,6 @@
 import _ from "lodash";
 import React from "react";
-import { fmt_date_unix, fmt_size, def } from "./utils.js";
+import { fmt_date_unix, fmt_date_unix_ms, fmt_size, def } from "./utils.js";
 import Dygraph from "dygraphs";
 import classNames from "classnames";
 
@@ -255,6 +255,8 @@ export default class Graph extends React.Component {
     formatX( value ) {
         if( this.props.xUnit === "unix_timestamp" ) {
             return fmt_date_unix( value );
+        } else if( this.props.xUnit === "unix_timestamp_ms" ) {
+            return fmt_date_unix_ms( value );
         } else if( this.props.xUnit instanceof Function ) {
             return this.props.xUnit( value );
         } else {

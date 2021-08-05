@@ -46,6 +46,7 @@ use cli_core::{
     DataId,
     BacktraceId,
     Operation,
+    OperationId,
     Frame,
     Allocation,
     AllocationId,
@@ -474,17 +475,17 @@ fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationT
             if x != (-1_i32 as u64) && x + 1 != timestamp {
                 let last_fragmentation = fragmentation.last().cloned().unwrap();
 
-                xs.push( x + 1 );
+                xs.push( (x + 1) * 1000 );
                 fragmentation.push( last_fragmentation );
 
                 if x + 2 != timestamp {
-                    xs.push( timestamp - 1 );
+                    xs.push( (timestamp - 1) * 1000 );
                     fragmentation.push( last_fragmentation );
                 }
             }
 
             x = timestamp;
-            xs.push( x );
+            xs.push( x * 1000 );
             fragmentation.push( 0 );
         }
 
@@ -509,135 +510,61 @@ fn handler_fragmentation_timeline( req: HttpRequest ) -> Result< HttpResponse > 
     Ok( HttpResponse::Ok().json( response ) )
 }
 
-fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
-    let data = get_data( &req )?;
+fn build_timeline( data: &Data, ops: &[OperationId] ) -> protocol::ResponseTimeline {
+    let timeline = cli_core::build_timeline( data, data.initial_timestamp(), data.last_timestamp(), ops );
 
-    let maximum_len = (data.last_timestamp().as_secs() - data.initial_timestamp().as_secs()) as usize;
-    let mut xs = Vec::with_capacity( maximum_len );
-    let mut size_delta = Vec::with_capacity( maximum_len );
-    let mut count_delta = Vec::with_capacity( maximum_len );
-    let mut allocated_size = Vec::with_capacity( maximum_len );
-    let mut allocated_count = Vec::with_capacity( maximum_len );
-    let mut leaked_size = Vec::with_capacity( maximum_len );
-    let mut leaked_count = Vec::with_capacity( maximum_len );
-    let mut allocations = Vec::with_capacity( maximum_len );
-    let mut deallocations = Vec::with_capacity( maximum_len );
-    let mut x = (-1_i32) as u64;
+    let mut xs = Vec::with_capacity( timeline.len() );
+    let mut size_delta = Vec::with_capacity( timeline.len() );
+    let mut count_delta = Vec::with_capacity( timeline.len() );
+    let mut allocated_size = Vec::with_capacity( timeline.len() );
+    let mut allocated_count = Vec::with_capacity( timeline.len() );
+    let mut allocations = Vec::with_capacity( timeline.len() );
+    let mut deallocations = Vec::with_capacity( timeline.len() );
 
-    for op in data.operations() {
-        let timestamp = match op {
-            Operation::Allocation { ref allocation, .. } => allocation.timestamp,
-            Operation::Deallocation { ref deallocation, .. } => deallocation.timestamp,
-            Operation::Reallocation { ref new_allocation, .. } => new_allocation.timestamp
-        };
+    let mut last_size = 0;
+    let mut last_count = 0;
+    for point in timeline {
+        xs.push( point.timestamp / 1000 );
+        size_delta.push( point.memory_usage as i64 - last_size );
+        count_delta.push( point.allocations as i64 - last_count );
+        allocated_size.push( point.memory_usage );
+        allocated_count.push( point.allocations );
+        allocations.push( point.allocations_per_time as u32 );
+        deallocations.push( point.deallocations_per_time as u32 );
 
-        let timestamp = timestamp.as_secs();
-        assert!( x == (-1_i32 as u64) || timestamp >= x );
-
-        let timestamp_changed = timestamp != x;
-
-        if timestamp_changed {
-            let mut last_allocated_size = 0;
-            let mut last_allocated_count = 0;
-            let mut last_leaked_size = 0;
-            let mut last_leaked_count = 0;
-
-            if x != (-1_i32 as u64) {
-                last_allocated_size = allocated_size.last().cloned().unwrap();
-                last_allocated_count = allocated_count.last().cloned().unwrap();
-                last_leaked_size = leaked_size.last().cloned().unwrap();
-                last_leaked_count = leaked_count.last().cloned().unwrap();
-
-                if x + 1 != timestamp {
-                    xs.push( x + 1 );
-                    size_delta.push( 0 );
-                    count_delta.push( 0 );
-                    allocated_size.push( last_allocated_size );
-                    allocated_count.push( last_allocated_count );
-                    leaked_size.push( last_leaked_size );
-                    leaked_count.push( last_leaked_count );
-                    allocations.push( 0 );
-                    deallocations.push( 0 );
-
-                    if x + 2 != timestamp {
-                        xs.push( timestamp - 1 );
-                        size_delta.push( 0 );
-                        count_delta.push( 0 );
-                        allocated_size.push( last_allocated_size );
-                        allocated_count.push( last_allocated_count );
-                        leaked_size.push( last_leaked_size );
-                        leaked_count.push( last_leaked_count );
-                        allocations.push( 0 );
-                        deallocations.push( 0 );
-                    }
-                }
-            }
-
-            x = timestamp;
-            xs.push( x );
-            size_delta.push( 0 );
-            count_delta.push( 0 );
-            allocated_size.push( last_allocated_size );
-            allocated_count.push( last_allocated_count );
-            leaked_size.push( last_leaked_size );
-            leaked_count.push( last_leaked_count );
-            allocations.push( 0 );
-            deallocations.push( 0 );
-        }
-
-        let allocations = allocations.last_mut().unwrap();
-        let deallocations = deallocations.last_mut().unwrap();
-        let allocated_size = allocated_size.last_mut().unwrap();
-        let allocated_count = allocated_count.last_mut().unwrap();
-        let size_delta = size_delta.last_mut().unwrap();
-        let count_delta = count_delta.last_mut().unwrap();
-        let leaked_size = leaked_size.last_mut().unwrap();
-        let leaked_count = leaked_count.last_mut().unwrap();
-
-        let (size_delta_v, count_delta_v) = match op {
-            Operation::Allocation { allocation, .. } => {
-                *allocations += 1;
-                if allocation.deallocation.is_none() {
-                    *leaked_size += allocation.size;
-                    *leaked_count += 1;
-                }
-
-                (allocation.size as i64, 1)
-            },
-            Operation::Deallocation { allocation, .. } => {
-                *deallocations += 1;
-                (allocation.size as i64 * -1, -1)
-            },
-            Operation::Reallocation { new_allocation, old_allocation, .. } => {
-                *allocations += 1;
-                *deallocations += 1;
-                if new_allocation.deallocation.is_none() {
-                    *leaked_size += new_allocation.size;
-                    *leaked_count += 1;
-                }
-
-                (new_allocation.size as i64 - old_allocation.size as i64, 0)
-            }
-        };
-
-        *allocated_size = (*allocated_size as i64 + size_delta_v) as _;
-        *allocated_count = (*allocated_count as i64 + count_delta_v) as _;
-        *size_delta = (*size_delta as i64 + size_delta_v) as _;
-        *count_delta = (*count_delta as i64 + count_delta_v) as _;
+        last_size = point.memory_usage as i64;
+        last_count = point.allocations as i64;
     }
 
-    let timeline = protocol::ResponseTimeline {
+    protocol::ResponseTimeline {
         xs,
         size_delta,
         count_delta,
         allocated_size,
         allocated_count,
-        leaked_size,
-        leaked_count,
         allocations,
         deallocations
-    };
+    }
+}
 
+fn handler_timeline( req: HttpRequest ) -> Result< HttpResponse > {
+    let data = get_data( &req )?;
+    let timeline = build_timeline( &data, data.operation_ids() );
+    Ok( HttpResponse::Ok().json( timeline ) )
+}
+
+fn handler_timeline_leaked( req: HttpRequest ) -> Result< HttpResponse > {
+    let data = get_data( &req )?;
+    let ops: Vec< _ > = data.operation_ids().par_iter().flat_map( |op| {
+        let allocation = data.get_allocation( op.id() );
+        if allocation.deallocation.is_some() {
+            None
+        } else {
+            Some( OperationId::new_allocation( op.id() ) )
+        }
+    }).collect();
+
+    let timeline = build_timeline( &data, &ops );
     Ok( HttpResponse::Ok().json( timeline ) )
 }
 
@@ -1987,6 +1914,7 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
                 app
                     .service( web::resource( "/list" ).route( web::get().to( handler_list ) ) )
                     .service( web::resource( "/data/{id}/timeline" ).route( web::get().to( handler_timeline ) ) )
+                    .service( web::resource( "/data/{id}/timeline_leaked" ).route( web::get().to( handler_timeline_leaked ) ) )
                     .service( web::resource( "/data/{id}/fragmentation_timeline" ).route( web::get().to( handler_fragmentation_timeline ) ) )
                     .service( web::resource( "/data/{id}/allocations" ).route( web::get().to( handler_allocations ) ) )
                     .service( web::resource( "/data/{id}/allocation_groups" ).route( web::get().to( handler_allocation_groups ) ) )

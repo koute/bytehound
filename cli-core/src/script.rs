@@ -13,6 +13,7 @@ use crate::{AllocationId, BacktraceId, Data, Loader};
 use crate::data::OperationId;
 use crate::exporter_flamegraph_pl::dump_collation_from_iter;
 use crate::filter::{BasicFilter, Duration, Filter, NumberOrFractionOfTotal};
+use crate::timeline::build_timeline;
 
 pub use rhai;
 
@@ -389,11 +390,7 @@ impl AllocationList {
             }
 
             let allocation = self.data.get_allocation( id );
-            if allocation.reallocated_from.is_some() {
-                ops.push( OperationId::new_reallocation( id ) );
-            } else {
-                ops.push( OperationId::new_allocation( id ) );
-            }
+            ops.push( OperationId::new_allocation( id ) );
 
             if allocation.deallocation.is_some() && filter != OpFilter::OnlyAlloc {
                 ops.push( OperationId::new_deallocation( id ) );
@@ -471,114 +468,6 @@ impl AllocationGroupList {
             data: self.data.clone(),
             allocation_ids: Some( Arc::new( allocation_ids ) ),
             filter: None
-        }
-    }
-}
-
-struct MemoryUsageIter< 'a > {
-    data: &'a Data,
-    granularity: u64,
-    ops: &'a [OperationId],
-    index: usize,
-
-    current_time: u64,
-    current_usage: i64,
-    current_max_usage: i64
-}
-
-impl< 'a > MemoryUsageIter< 'a > {
-    fn new(
-        data: &'a Data,
-        granularity: u64,
-        timestamp_min_user: Option< common::Timestamp >,
-        ops: &'a [OperationId]
-    ) -> Self {
-        let timestamp_min_data = ops.first().map( |op| get_timestamp( data, *op ) );
-        let timestamp_min = match (timestamp_min_user, timestamp_min_data) {
-            (Some( lhs ), None) => lhs,
-            (None, Some( rhs )) => rhs,
-            (Some( lhs ), Some( rhs )) => std::cmp::min( lhs, rhs ),
-            (None, None) => common::Timestamp::min()
-        };
-        MemoryUsageIter {
-            data,
-            granularity,
-            ops,
-            index: 0,
-            current_time: timestamp_min.as_usecs() / granularity,
-            current_usage: 0,
-            current_max_usage: 0
-        }
-    }
-}
-
-struct MemoryUsagePoint {
-    #[allow(dead_code)]
-    index: usize,
-    timestamp: u64,
-    memory_usage: u64
-}
-
-impl< 'a > Iterator for MemoryUsageIter< 'a > {
-    type Item = MemoryUsagePoint;
-
-    fn next( &mut self ) -> Option< Self::Item > {
-        while self.index < self.ops.len() {
-            let index = self.index;
-            let op = self.ops[ index ];
-            self.index += 1;
-
-            let timestamp;
-
-            let mut new_usage = self.current_usage;
-            if op.is_allocation() || op.is_reallocation() {
-                let allocation = self.data.get_allocation( op.id() );
-                new_usage += allocation.size as i64;
-                timestamp = allocation.timestamp;
-            } else if op.is_deallocation() {
-                let allocation = self.data.get_allocation( op.id() );
-                new_usage -= allocation.size as i64;
-                timestamp = allocation.deallocation.as_ref().unwrap().timestamp;
-            } else {
-                unreachable!()
-            }
-
-            let new_time = timestamp.as_usecs() / self.granularity;
-            let mut output = None;
-            if self.current_time != new_time {
-                let x = self.current_time * self.granularity;
-                // Since the allocations are gathered in parallel and are not guaranteed
-                // to be strictly ordered we could - in theory - temporarily hit a negative memory usage.
-                let y = std::cmp::max( 0, self.current_max_usage ) as u64;
-                output = Some( MemoryUsagePoint {
-                    index,
-                    timestamp: x,
-                    memory_usage: y
-                });
-                self.current_max_usage = 0;
-            }
-
-            self.current_time = new_time;
-            self.current_max_usage = std::cmp::max( self.current_max_usage, new_usage );
-            self.current_usage = new_usage;
-
-            if let Some( output ) = output {
-                return Some( output );
-            }
-        }
-
-        if self.index + 1 == self.ops.len() {
-            let index = self.index;
-            self.index += 1;
-            let x = self.current_time * self.granularity;
-            let y = std::cmp::max( 0, self.current_max_usage ) as u64;
-            Some( MemoryUsagePoint {
-                index,
-                timestamp: x,
-                memory_usage: y
-            })
-        } else {
-            None
         }
     }
 }
@@ -717,7 +606,6 @@ impl Graph {
         let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |op| get_timestamp( &data, *op ) ).min().unwrap_or( common::Timestamp::min() );
         let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |op| get_timestamp( &data, *op ) ).max().unwrap_or( common::Timestamp::min() );
 
-        let granularity = std::cmp::max( (timestamp_max - timestamp_min).as_usecs() / 1000, 1 );
         let mut xs = HashSet::new();
         let mut datapoints_for_ops = Vec::new();
         for ops in ops_for_list {
@@ -725,11 +613,11 @@ impl Graph {
                 datapoints_for_ops.push( Vec::new() );
                 continue;
             }
-            let mut datapoints = Vec::with_capacity( 1000 );
-            for point in MemoryUsageIter::new( &data, granularity, Some( timestamp_min ), ops ) {
-                datapoints.push( (point.timestamp, point.memory_usage) );
+
+            let datapoints: Vec< _ > = build_timeline( &data, timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
                 xs.insert( point.timestamp );
-            }
+                (point.timestamp, point.memory_usage)
+            }).collect();
 
             datapoints_for_ops.push( datapoints );
         }

@@ -5,7 +5,7 @@ import { Button, ButtonGroup, DropdownMenu, DropdownItem } from "reactstrap";
 import { ContextMenu, MenuItem, ContextMenuTrigger } from "react-contextmenu";
 import { Link } from "react-router-dom";
 import classNames from "classnames";
-import { fmt_date_unix, fmt_uptime, fmt_size } from "./utils.js";
+import { fmt_date_unix_ms, fmt_uptime, fmt_size } from "./utils.js";
 import Feather from "./Feather.js";
 
 class Switcher extends React.Component {
@@ -61,6 +61,10 @@ export default class PageDataOverview extends React.Component {
             .then( rsp => rsp.json() )
             .then( json => this.setState( {timeline: json} ) );
 
+        fetch( (this.props.sourceUrl || "") + "/data/" + this.props.id + "/timeline_leaked" )
+            .then( rsp => rsp.json() )
+            .then( json => this.setState( {timeline_leaked: json} ) );
+
         fetch( (this.props.sourceUrl || "") + "/data/" + this.props.id + "/fragmentation_timeline" )
             .then( rsp => rsp.json() )
             .then( json => this.setState( {fragmentation_timeline: json} ) );
@@ -106,121 +110,125 @@ export default class PageDataOverview extends React.Component {
         }
 
         if( this.state.timeline ) {
-            inner.push(
-                <Switcher key="s1">
-                    <Graph
-                        key="memory"
-                        title="Memory usage"
-                        data={this.state.timeline}
-                        y_accessor="allocated_size"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                    <Graph
-                        key="size_delta"
-                        title="Memory usage delta"
-                        data={this.state.timeline}
-                        y_accessor="size_delta"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                    <Graph
-                        key="count"
-                        title="Live allocations"
-                        data={this.state.timeline}
-                        y_accessor="allocated_count"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                    <Graph
-                        key="count_delta"
-                        title="Live allocations delta"
-                        data={this.state.timeline}
-                        y_accessor="count_delta"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                    <Graph
-                        key="allocations"
-                        title="Alloc/s"
-                        data={this.state.timeline}
-                        y_accessor="allocations"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                    <Graph
-                        key="deallocations"
-                        title="Dealloc/s"
-                        data={this.state.timeline}
-                        y_accessor="deallocations"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                </Switcher>
-            );
+            if( this.state.timeline.xs.length > 2 ) {
+                inner.push(
+                    <Switcher key="s1">
+                        <Graph
+                            key="memory"
+                            title="Memory usage"
+                            data={this.state.timeline}
+                            y_accessor="allocated_size"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="size_delta"
+                            title="Memory usage delta"
+                            data={this.state.timeline}
+                            y_accessor="size_delta"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="count"
+                            title="Live allocations"
+                            data={this.state.timeline}
+                            y_accessor="allocated_count"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="count_delta"
+                            title="Live allocations delta"
+                            data={this.state.timeline}
+                            y_accessor="count_delta"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="allocations"
+                            title="Alloc/s"
+                            data={this.state.timeline}
+                            y_accessor="allocations"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="deallocations"
+                            title="Dealloc/s"
+                            data={this.state.timeline}
+                            y_accessor="deallocations"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                    </Switcher>
+                );
+            }
         }
 
-        if( this.state.timeline ) {
-            inner.push(
-                <Switcher key="s3">
-                    <Graph
-                        key="leaked_size"
-                        title="Leaked memory"
-                        data={this.state.timeline}
-                        y_accessor="leaked_size"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                    <Graph
-                        key="leaked_count"
-                        title="Leaked allocations"
-                        data={this.state.timeline}
-                        y_accessor="leaked_count"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp"
-                    />
-                </Switcher>
-            );
+        if( this.state.timeline_leaked ) {
+            if( this.state.timeline_leaked.xs.length > 2 ) {
+                inner.push(
+                    <Switcher key="s3">
+                        <Graph
+                            key="leaked_size"
+                            title="Leaked memory usage"
+                            data={this.state.timeline_leaked}
+                            y_accessor="allocated_size"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="leaked_count"
+                            title="Leaked live allocations"
+                            data={this.state.timeline_leaked}
+                            y_accessor="allocated_count"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                    </Switcher>
+                );
+            }
         }
 
         if( this.state.fragmentation_timeline ) {
@@ -237,7 +245,7 @@ export default class PageDataOverview extends React.Component {
                         x0={this.state.x0}
                         x1={this.state.x1}
                         fill={true}
-                        xUnit="unix_timestamp"
+                        xUnit="unix_timestamp_ms"
                     />
                 </Switcher>
             );
@@ -293,9 +301,7 @@ export default class PageDataOverview extends React.Component {
                     {inner}
                     <ContextMenuTrigger id="overview_context_menu" ref={c => this.context_trigger = c}></ContextMenuTrigger>
                     <ContextMenu id="overview_context_menu">
-                        <MenuItem>
-                            <Link to={this.allocationsLink()}>Allocations at {this.getSelectedDate()}</Link>
-                        </MenuItem>
+
                         <MenuItem>
                             <Link to={this.allocationsRangeLink()}>Allocations in {this.getSelectedRange()}</Link>
                         </MenuItem>
@@ -303,15 +309,6 @@ export default class PageDataOverview extends React.Component {
                 </div>
             </div>
         );
-    }
-
-    allocationsLink() {
-        if( this.state.context_x === undefined ) {
-            return "/";
-        }
-
-        const x = Math.floor( this.state.context_x );
-        return "/allocations/" + this.props.id + "?from=" + x + "&to=" + x;
     }
 
     allocationsRangeLink() {
@@ -324,21 +321,13 @@ export default class PageDataOverview extends React.Component {
         return "/allocations/" + this.props.id + "?from=" + x0 + "&to=" + x1;
     }
 
-    getSelectedDate() {
-        if( !this.state.timeline || this.state.context_x === undefined ) {
-            return "";
-        }
-
-        return fmt_date_unix( this.state.context_x );
-    }
-
     getSelectedRange() {
         if( !this.state.timeline || this.state.context_range === undefined ) {
             return "";
         }
 
         const r = this.state.context_range;
-        return fmt_date_unix( r[0] ) + " - " + fmt_date_unix( r[1] );
+        return fmt_date_unix_ms( r[0] ) + " - " + fmt_date_unix_ms( r[1] );
     }
 
     onZoom( min, max ) {

@@ -8,10 +8,10 @@ import AceEditor from "react-ace";
 import classNames from "classnames";
 import Feather from "./Feather.js";
 import Tabbed from "./Tabbed.js";
-import { fmt_size, fmt_date_unix, fmt_date_timeval, fmt_hex16, fmt_uptime, fmt_uptime_timeval, update_query, create_query, extract_query, format_frame } from "./utils.js";
+import { fmt_size, fmt_date_unix_ms, fmt_date_timeval, fmt_hex16, fmt_uptime, fmt_uptime_timeval, update_query, create_query, extract_query, format_frame } from "./utils.js";
 
 const PERCENTAGE_REGEX = /^(\d+)%$/;
-const DATE_REGEX = /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})$/;
+const DATE_REGEX = /^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})(\.\d{3})?$/;
 const SIZE_REGEX = /^(\d+)(k|m|g|t)?$/;
 const DURATION_REGEX = /^(\d+d)?(\d+h)?(\d+m)?(\d+s)?(\d+ms)?(\d+us)?|\d+$/;
 const POSITIVE_INTEGER_REGEX = /^(\d+)$/;
@@ -54,7 +54,7 @@ function parse_or_percentage( alt ) {
     };
 }
 
-function date_to_unix( value ) {
+function date_to_unix_ms( value ) {
     const match = value.match( DATE_REGEX );
     const year = parseInt( match[ 1 ], 10 );
     const month = parseInt( match[ 2 ], 10 );
@@ -62,7 +62,8 @@ function date_to_unix( value ) {
     const hour = parseInt( match[ 4 ], 10 );
     const minute = parseInt( match[ 5 ], 10 );
     const second = parseInt( match[ 6 ], 10 );
-    return Math.floor( Date.UTC( year, month - 1, day, hour, minute, second ) / 1000 );
+    const ms = parseInt( (match[ 7 ] || ".000").substr( 1 ), 10 );
+    return Date.UTC( year, month - 1, day, hour, minute, second );
 }
 
 function validate_size( value ) {
@@ -118,8 +119,8 @@ function identity( value ) {
 const DATE_FIELD = {
     kind: "entry",
     validate: validate_date,
-    format: fmt_date_unix,
-    parse: date_to_unix
+    format: fmt_date_unix_ms,
+    parse: date_to_unix_ms
 };
 
 const DATE_OR_PERCENTAGE_FIELD = {
@@ -204,12 +205,12 @@ const FIELDS = {
     from: {
         ...DATE_OR_PERCENTAGE_FIELD,
         label: "From",
-        badge: value => "From " + (fmt_date_unix( value ) || value)
+        badge: value => "From " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
     },
     to: {
         ...DATE_OR_PERCENTAGE_FIELD,
         label: "To",
-        badge: value => "Until " + (fmt_date_unix( value ) || value)
+        badge: value => "Until " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
     },
     lifetime_min: {
         ...DURATION_FIELD,
