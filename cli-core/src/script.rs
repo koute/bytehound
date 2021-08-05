@@ -1524,9 +1524,9 @@ impl Engine {
                 filter.only_group_leaked_allocations_at_least = Some( NumberOrFractionOfTotal::Fraction( value ) )
             )
         });
-        engine.register_fn( "only_group_leaked_allocations_at_least", |list: &mut AllocationList, value: u64| {
+        engine.register_fn( "only_group_leaked_allocations_at_least", |list: &mut AllocationList, value: i64| {
             list.add_filter_once( |filter| filter.only_group_leaked_allocations_at_least.is_some(), |filter|
-                filter.only_group_leaked_allocations_at_least = Some( NumberOrFractionOfTotal::Number( value ) )
+                filter.only_group_leaked_allocations_at_least = Some( NumberOrFractionOfTotal::Number( value as u64 ) )
             )
         });
         engine.register_fn( "only_group_leaked_allocations_at_most", |list: &mut AllocationList, value: f64| {
@@ -1534,9 +1534,9 @@ impl Engine {
                 filter.only_group_leaked_allocations_at_most = Some( NumberOrFractionOfTotal::Fraction( value ) )
             )
         });
-        engine.register_fn( "only_group_leaked_allocations_at_most", |list: &mut AllocationList, value: u64| {
+        engine.register_fn( "only_group_leaked_allocations_at_most", |list: &mut AllocationList, value: i64| {
             list.add_filter_once( |filter| filter.only_group_leaked_allocations_at_most.is_some(), |filter|
-                filter.only_group_leaked_allocations_at_most = Some( NumberOrFractionOfTotal::Number( value ) )
+                filter.only_group_leaked_allocations_at_most = Some( NumberOrFractionOfTotal::Number( value as u64 ) )
             )
         });
 
