@@ -14,6 +14,7 @@ use std::io;
 use std::borrow::Cow;
 use std::cmp::{min, max};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use actix_web::{
     body::{
@@ -137,11 +138,46 @@ struct AllocationGroupsKey {
     order: protocol::Order
 }
 
+#[derive(Clone)]
+struct GeneratedFile {
+    timestamp: Instant,
+    hash: String,
+    mime: &'static str,
+    data: Arc< Vec< u8 > >
+}
+
+#[derive(Default)]
+struct GeneratedFilesCollection {
+    by_hash: HashMap< String, GeneratedFile >,
+    total_size: usize
+}
+
+impl GeneratedFilesCollection {
+    fn purge_old_if_too_big( &mut self ) {
+        if self.total_size < 32 * 1024 * 1024 {
+            return;
+        }
+
+        let mut list: Vec< _ > = self.by_hash.values().cloned().collect();
+        list.sort_by_key( |entry| entry.timestamp );
+        list.reverse();
+
+        while let Some( entry ) = list.pop() {
+            if self.total_size <= 16 * 1024 * 1024 {
+                break;
+            }
+
+            self.total_size -= entry.data.len();
+            self.by_hash.remove( &entry.hash );
+        }
+    }
+}
+
 struct State {
     data: HashMap< DataId, Arc< Data > >,
     data_ids: Vec< DataId >,
     allocation_group_cache: Mutex< LruCache< AllocationGroupsKey, Arc< AllocationGroups > > >,
-    script_files: Mutex< HashMap< String, (&'static str, Arc< Vec< u8 > >) > >
+    generated_files: Mutex< GeneratedFilesCollection >
 }
 
 impl State {
@@ -150,7 +186,7 @@ impl State {
             data: HashMap::new(),
             data_ids: Vec::new(),
             allocation_group_cache: Mutex::new( LruCache::new( 4 ) ),
-            script_files: Default::default()
+            generated_files: Default::default(),
         }
     }
 
@@ -1693,7 +1729,7 @@ impl cli_core::script::Environment for VirtualEnvironment {
 
 fn handler_script_files( req: HttpRequest ) -> Result< HttpResponse > {
     let hash = req.match_info().get( "hash" ).unwrap();
-    let (mime, data) = match req.state().script_files.lock().get( hash ) {
+    let entry = match req.state().generated_files.lock().by_hash.get( hash ) {
         Some( entry ) => entry.clone(),
         None => {
             return Err( ErrorNotFound( "file not found" ) );
@@ -1704,9 +1740,10 @@ fn handler_script_files( req: HttpRequest ) -> Result< HttpResponse > {
     let rx = rx.map_err( |_| ErrorInternalServerError( "internal error" ) );
     let rx = BodyStream::new( rx );
     let body = Body::Message( Box::new( rx ) );
+    let mime = entry.mime;
     thread::spawn( move || {
         use std::io::Write;
-        tx.write_all( &data ).unwrap();
+        tx.write_all( &entry.data ).unwrap();
     });
 
     Ok( HttpResponse::Ok().content_type( mime ).body( body ) )
@@ -1758,7 +1795,7 @@ fn handler_execute_script( req: HttpRequest, body: web::Bytes ) -> Result< HttpR
     let elapsed = timestamp.elapsed();
     let data_id = data.id();
 
-    req.state().script_files.lock().clear();
+    let mut new_files = Vec::new();
     let mut output = Vec::new();
     for item in std::mem::take( &mut env.lock().output ) {
         match item {
@@ -1771,8 +1808,6 @@ fn handler_execute_script( req: HttpRequest, body: web::Bytes ) -> Result< HttpR
             ScriptOutputKind::Image { path, data } => {
                 let hash = format!( "{:x}", md5::compute( &*data ) );
                 let basename = path[ path.rfind( "/" ).unwrap() + 1.. ].to_owned();
-                req.state().script_files.lock().insert( hash.clone(), ("image/svg+xml", data) );
-
                 output.push( serde_json::json! {{
                     "url": format!( "/data/{}/script_files/{}/{}", data_id, hash, basename ),
                     "kind": "image",
@@ -1780,9 +1815,29 @@ fn handler_execute_script( req: HttpRequest, body: web::Bytes ) -> Result< HttpR
                     "path": path,
                     "checksum": hash
                 }});
+
+                let entry = GeneratedFile {
+                    timestamp: Instant::now(),
+                    hash,
+                    mime: "image/svg+xml",
+                    data
+                };
+
+                new_files.push( entry );
             }
         }
     }
+
+    let mut generated = req.state().generated_files.lock();
+    generated.purge_old_if_too_big();
+
+    for entry in new_files {
+        if !generated.by_hash.contains_key( &entry.hash ) {
+            generated.total_size += entry.data.len();
+            generated.by_hash.insert( entry.hash.clone(), entry );
+        }
+    }
+    std::mem::drop( generated );
 
     let result = match result {
         Ok( _ ) => {
