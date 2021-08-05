@@ -483,7 +483,54 @@ struct Graph {
     truncate_until: Option< Duration >,
     lists: Vec< AllocationList >,
     labels: Vec< Option< String > >,
-    gradient: Option< Arc< colorgrad::Gradient > >
+    gradient: Option< Arc< colorgrad::Gradient > >,
+
+    cached_datapoints: Option< Arc< (Vec< u64 >, Vec< Vec< (u64, u64) > >) > >
+}
+
+fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >] ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
+    let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |op| get_timestamp( &data, *op ) ).min().unwrap_or( common::Timestamp::min() );
+    let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |op| get_timestamp( &data, *op ) ).max().unwrap_or( common::Timestamp::min() );
+
+    let mut xs = HashSet::new();
+    let mut datapoints_for_ops = Vec::new();
+    for ops in ops_for_list {
+        if ops.is_empty() {
+            datapoints_for_ops.push( Vec::new() );
+            continue;
+        }
+
+        let datapoints: Vec< _ > = build_timeline( &data, timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
+            xs.insert( point.timestamp );
+            (point.timestamp, point.memory_usage)
+        }).collect();
+
+        datapoints_for_ops.push( datapoints );
+    }
+
+    let mut xs: Vec< _ > = xs.into_iter().collect();
+    xs.sort_unstable();
+
+    for datapoints in &mut datapoints_for_ops {
+        if datapoints.is_empty() {
+            continue;
+        }
+        *datapoints = expand_datapoints( &xs, &datapoints );
+    }
+
+    for index in 0..xs.len() {
+        let mut value = 0;
+        for datapoints in datapoints_for_ops.iter_mut() {
+            if datapoints.is_empty() {
+                continue;
+            }
+
+            value += datapoints[ index ].1;
+            datapoints[ index ].1 = value;
+        }
+    }
+
+    (xs, datapoints_for_ops)
 }
 
 impl Graph {
@@ -498,7 +545,9 @@ impl Graph {
             truncate_until: None,
             lists: Vec::new(),
             labels: Vec::new(),
-            gradient: None
+            gradient: None,
+
+            cached_datapoints: None
         }
     }
 
@@ -506,6 +555,7 @@ impl Graph {
         let mut cloned = self.clone();
         cloned.lists.push( list );
         cloned.labels.push( Some( label ) );
+        cloned.cached_datapoints = None;
         cloned
     }
 
@@ -513,6 +563,7 @@ impl Graph {
         let mut cloned = self.clone();
         cloned.lists.push( list );
         cloned.labels.push( None );
+        cloned.cached_datapoints = None;
         cloned
     }
 
@@ -616,49 +667,13 @@ impl Graph {
         return Ok( cloned );
     }
 
-    fn save_to_string_impl( &self, ops_for_list: &[Vec< OperationId >], labels: &[Option< String >] ) -> Result< String, String > {
+    fn save_to_string_impl( &self, xs: &[u64], datapoints_for_ops: &[Vec< (u64, u64) >], labels: &[Option< String >] ) -> Result< String, String > {
         let data = self.lists[ 0 ].data.clone();
 
-        let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |op| get_timestamp( &data, *op ) ).min().unwrap_or( common::Timestamp::min() );
-        let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |op| get_timestamp( &data, *op ) ).max().unwrap_or( common::Timestamp::min() );
-
-        let mut xs = HashSet::new();
-        let mut datapoints_for_ops = Vec::new();
-        for ops in ops_for_list {
-            if ops.is_empty() {
-                datapoints_for_ops.push( Vec::new() );
-                continue;
-            }
-
-            let datapoints: Vec< _ > = build_timeline( &data, timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
-                xs.insert( point.timestamp );
-                (point.timestamp, point.memory_usage)
-            }).collect();
-
-            datapoints_for_ops.push( datapoints );
-        }
-
-        let mut xs: Vec< _ > = xs.into_iter().collect();
-        xs.sort_unstable();
-
-        for datapoints in &mut datapoints_for_ops {
-            if datapoints.is_empty() {
-                continue;
-            }
-            *datapoints = expand_datapoints( &xs, &datapoints );
-        }
-
         let mut max_usage = 0;
-        for index in 0..xs.len() {
-            let mut value = 0;
-            for datapoints in datapoints_for_ops.iter_mut() {
-                if datapoints.is_empty() {
-                    continue;
-                }
-
-                value += datapoints[ index ].1;
-                datapoints[ index ].1 = value;
-                max_usage = std::cmp::max( max_usage, value );
+        for datapoints in datapoints_for_ops {
+            for (_, value) in datapoints {
+                max_usage = std::cmp::max( max_usage, *value );
             }
         }
 
@@ -911,8 +926,14 @@ impl Graph {
 
     fn save_to_string( &mut self ) -> Result< String, Box< rhai::EvalAltResult > > {
         (|| {
-            let ops_for_list = self.generate_ops()?;
-            self.save_to_string_impl( &ops_for_list, &self.labels )
+            if self.cached_datapoints.is_none() {
+                let ops_for_list = self.generate_ops()?;
+                let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &ops_for_list );
+                self.cached_datapoints = Some( Arc::new( (xs, datapoints_for_ops) ) );
+            }
+
+            let cached = self.cached_datapoints.as_ref().unwrap();
+            self.save_to_string_impl( &cached.0, &cached.1, &self.labels )
         }.map_err( |error| {
             Box::new( rhai::EvalAltResult::from( format!( "failed to generate a graph: {}", error ) ) )
         }))()
@@ -934,7 +955,8 @@ impl Graph {
 
         let ops_for_list = self.generate_ops()?;
         for (index, (ops, label)) in ops_for_list.into_iter().zip( self.labels.iter() ).enumerate() {
-            let data = self.save_to_string_impl( &[ops], &[label.clone()] )?;
+            let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &[ops] );
+            let data = self.save_to_string_impl( &xs, &datapoints_for_ops, &[label.clone()] )?;
 
             let file_path =
                 if let Some( label ) = label {
