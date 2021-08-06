@@ -102,6 +102,7 @@ enum Opt {
     AnalyzeSize {
         input: PathBuf
     },
+    /// Runs give analysis script
     #[structopt(name = "script")]
     Script {
         #[structopt(parse(from_os_str))]
