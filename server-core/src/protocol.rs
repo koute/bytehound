@@ -159,7 +159,9 @@ pub struct AllocationGroupData {
     pub max_timestamp_relative_p: f32,
     pub interval: Timeval,
     pub leaked_count: u64,
-    pub allocated_count: u64
+    pub allocated_count: u64,
+    pub graph_preview_url: Option< String >,
+    pub graph_url: Option< String >
 }
 
 #[derive(Serialize)]
@@ -664,5 +666,7 @@ pub struct RequestAllocationGroups {
     pub count: Option< u32 >,
 
     pub sort_by: Option< AllocGroupsSortBy >,
-    pub order: Option< Order >
+    pub order: Option< Order >,
+
+    pub generate_graphs: Option< bool >
 }

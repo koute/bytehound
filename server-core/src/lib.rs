@@ -171,6 +171,13 @@ impl GeneratedFilesCollection {
             self.by_hash.remove( &entry.hash );
         }
     }
+
+    fn add_file( &mut self, entry: GeneratedFile ) {
+        if !self.by_hash.contains_key( &entry.hash ) {
+            self.total_size += entry.data.len();
+            self.by_hash.insert( entry.hash.clone(), entry );
+        }
+    }
 }
 
 struct State {
@@ -791,7 +798,9 @@ fn get_allocation_group_data< 'a, I >( data: &Data, iter: I ) -> protocol::Alloc
         max_timestamp: group.max_timestamp.into(),
         max_timestamp_relative: (group.max_timestamp - data.initial_timestamp()).into(),
         max_timestamp_relative_p: timestamp_to_fraction( data, group.max_timestamp ),
-        interval: (group.max_timestamp - group.min_timestamp).into()
+        interval: (group.max_timestamp - group.min_timestamp).into(),
+        graph_url: None,
+        graph_preview_url: None,
     }
 }
 
@@ -818,18 +827,22 @@ fn get_global_group_data( data: &Data, backtrace_id: BacktraceId ) -> protocol::
         max_timestamp: max_timestamp.into(),
         max_timestamp_relative: (max_timestamp - data.initial_timestamp()).into(),
         max_timestamp_relative_p: timestamp_to_fraction( data, max_timestamp ),
-        interval: (max_timestamp - min_timestamp).into()
+        interval: (max_timestamp - min_timestamp).into(),
+        graph_url: None,
+        graph_preview_url: None,
     }
 }
 
 fn get_allocation_groups< 'a >(
-    data: &'a Data,
+    state: &'a State,
+    data: &'a Arc< Data >,
     backtrace_format: protocol::BacktraceFormat,
     params: protocol::RequestAllocationGroups,
     allocation_groups: Arc< AllocationGroups >
 ) -> protocol::ResponseAllocationGroups< impl Serialize + 'a > {
     let remaining = params.count.unwrap_or( -1_i32 as _ ) as usize;
     let skip = params.skip.unwrap_or( 0 ) as usize;
+    let generate_graphs = params.generate_graphs.unwrap_or( false );
 
     let total_count = allocation_groups.len();
     let factory = move || {
@@ -841,8 +854,59 @@ fn get_allocation_groups< 'a >(
             .map( move |index| {
                 let (&backtrace_id, matched_allocation_ids) = allocations.allocations_by_backtrace.get( index );
                 let all = get_global_group_data( data, backtrace_id );
-                let only_matched = get_allocation_group_data( data, matched_allocation_ids.into_par_iter().map( |&allocation_id| data.get_allocation( allocation_id ) ) );
+                let mut only_matched = get_allocation_group_data( data, matched_allocation_ids.into_par_iter().map( |&allocation_id| data.get_allocation( allocation_id ) ) );
                 let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect();
+
+                if generate_graphs {
+                    let code = format!( r#"
+                        let graph = graph()
+                            .add("Matched", allocations())
+                            .add("Global", data().allocations().only_matching_backtraces([{}]))
+                            .save()
+                            .without_axes()
+                            .without_legend()
+                            .save();
+                    "#, backtrace_id.raw() );
+
+                    let args = cli_core::script::EngineArgs {
+                        data: Some( data.clone() ),
+                        allocation_ids: Some( Arc::new( matched_allocation_ids.to_owned() ) ),
+                        .. cli_core::script::EngineArgs::default()
+                    };
+
+                    let env = VirtualEnvironment::new();
+                    let engine = cli_core::script::Engine::new( env.clone(), args );
+                    engine.run( &code ).unwrap();
+                    let mut urls = Vec::new();
+                    let files = std::mem::take( &mut env.lock().output );
+                    for file in files {
+                        match file {
+                            ScriptOutputKind::Image { path, data: bytes } => {
+                                let hash = format!( "{:x}", md5::compute( &*bytes ) );
+                                let basename = path[ path.rfind( "/" ).unwrap() + 1.. ].to_owned();
+                                let url = format!( "/data/{}/script_files/{}/{}", data.id(), hash, basename );
+                                let entry = GeneratedFile {
+                                    timestamp: Instant::now(),
+                                    hash,
+                                    mime: "image/svg+xml",
+                                    data: bytes
+                                };
+
+                                let mut generated = state.generated_files.lock();
+                                generated.purge_old_if_too_big();
+                                generated.add_file( entry );
+
+                                urls.push( url );
+                            },
+                            _ => {}
+                        }
+                    }
+
+                    let mut urls = urls.into_iter();
+                    only_matched.graph_url = urls.next();
+                    only_matched.graph_preview_url = urls.next();
+                }
+
                 protocol::AllocationGroup {
                     all,
                     only_matched,
@@ -962,8 +1026,9 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
         req.state().allocation_group_cache.lock().put( key, allocation_groups.clone() );
     }
 
+    let state = req.state().clone();
     let body = async_data_handler( &req, move |data, tx| {
-        let response = get_allocation_groups( &data, backtrace_format, params, allocation_groups );
+        let response = get_allocation_groups( &state, &data, backtrace_format, params, allocation_groups );
         let _ = serde_json::to_writer( tx, &response );
     })?;
 
@@ -1830,12 +1895,8 @@ fn handler_execute_script( req: HttpRequest, body: web::Bytes ) -> Result< HttpR
 
     let mut generated = req.state().generated_files.lock();
     generated.purge_old_if_too_big();
-
     for entry in new_files {
-        if !generated.by_hash.contains_key( &entry.hash ) {
-            generated.total_size += entry.data.len();
-            generated.by_hash.insert( entry.hash.clone(), entry );
-        }
+        generated.add_file( entry );
     }
     std::mem::drop( generated );
 

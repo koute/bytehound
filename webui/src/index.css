@@ -254,13 +254,28 @@ div.-sort-asc {
     margin: 0.2em;
 }
 
+.backtrace-parent {
+    border-bottom: 1px #aaa solid;
+    display: flex;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 0 0.75rem;
+    padding-bottom: 1rem;
+}
+
 .backtrace-cell {
     white-space: nowrap;
     overflow-x: auto;
-    padding: 1em;
-    padding-left: 2em;
-    border-bottom: 1px #aaa solid;
+    padding-left: 0.5em;
+    padding-top: 1rem;
     color: #333;
+    flex-grow: 1;
+}
+
+.backtrace-parent img {
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    opacity: 0.75;
 }
 
 .PageDataAllocations .rt-thead > .rt-tr > .rt-th:first-child {

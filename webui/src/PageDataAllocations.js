@@ -675,6 +675,16 @@ class Control extends React.Component {
             flamegraphUrl = data_url.toString();
         }
 
+        let show_graphs = "";
+        if( this.props.groupByBacktraces ) {
+            show_graphs = (
+                <Label check className="ml-4">
+                    <Input type="checkbox" id="show-graphs" checked={this.props.showGraphs} onChange={this.onShowGraphsChanged.bind(this)} />{' '}
+                    Show graphs
+                </Label>
+            );
+        }
+
         return (
             <div className="navbar flex-column flex-md-nonwrap p-0 shadow w-100 px-3">
                 <div className="d-flex justify-content-between w-100">
@@ -687,11 +697,12 @@ class Control extends React.Component {
                         </div>
                     </div>
                     <div className="d-flex align-items-baseline py-1">
-                        <Label check>
+                        {show_graphs}
+                        <Label check className="ml-5">
                             <Input type="checkbox" id="show-full-backtraces" checked={this.props.showFullBacktraces} onChange={this.onShowFullBacktracesChanged.bind(this)} />{' '}
                             Full backtraces
                         </Label>
-                        <Label check className="ml-4">
+                        <Label check className="ml-5">
                             <Input type="checkbox" id="group-by-backtraces" checked={this.props.groupByBacktraces} onChange={this.onGroupByBacktracesChanged.bind(this)} />{' '}
                             Group by backtraces
                         </Label>
@@ -758,6 +769,12 @@ class Control extends React.Component {
     onPageChange( page ) {
         if( this.props.onPageChange ) {
             this.props.onPageChange( page );
+        }
+    }
+
+    onShowGraphsChanged( event ) {
+        if( this.props.onShowGraphsChanged ) {
+            this.props.onShowGraphsChanged( event.target.checked )
         }
     }
 
@@ -923,6 +940,7 @@ export default class PageDataAllocations extends React.Component {
         const q = new URLSearchParams( this.props.location.search );
         const page = (parseInt( q.get( "page" ), 10 ) || 1) - 1;
         const page_size = parseInt( q.get( "page_size" ), 10 ) || 20;
+        const show_graphs = q.get( "generate_graphs" ) === "true" || q.get( "generate_graphs" ) === "1";
         const show_full_backtraces = q.get( "show_full_backtraces" ) === "true" || q.get( "show_full_backtraces" ) === "1";
         const group_by_backtraces = q.get( "group_allocations" ) === "true" || q.get( "group_allocations" ) === "1";
 
@@ -1207,12 +1225,16 @@ export default class PageDataAllocations extends React.Component {
                     totalCount={this.state.data.total_count}
                     page={page}
                     pageSize={page_size}
+                    showGraphs={show_graphs}
                     showFullBacktraces={show_full_backtraces}
                     groupByBacktraces={group_by_backtraces}
                     filter={extract_query( this.props.location.search )}
                     filterAsScript={this.state.filterAsScript}
                     dataUrl={this.state.lastDataUrl}
                     onPageChange={(page) => update_query( this.props, {page: page + 1} )}
+                    onShowGraphsChanged={value => {
+                        update_query( this.props, {generate_graphs: value} );
+                    }}
                     onShowFullBacktracesChanged={value => {
                         update_query( this.props, {show_full_backtraces: value} );
                     }}
@@ -1259,13 +1281,28 @@ export default class PageDataAllocations extends React.Component {
                         q.backtraces = row.original.backtrace_id;
                         const url = "/#" + this.props.location.pathname + "?" + create_query( q ).toString();
 
-                        return <div className="backtrace-cell" onContextMenu={event => {
-                            this.setState({
-                                showOnlyAllocationsUrl: url,
-                                selectedBacktrace: row.original.backtrace_id
-                            });
-                            return this.menu_trigger.handleContextClick( event );
-                        }}>{cell}</div>;
+                        let graph = "";
+                        if( row.original.only_matched && row.original.only_matched.graph_url ) {
+                            const url_preview = (this.props.sourceUrl || "") + row.original.only_matched.graph_preview_url;
+                            const url_full = (this.props.sourceUrl || "") + row.original.only_matched.graph_url;
+                            graph = (
+                                <a href={url_full} target="_blank">
+                                    <img src={url_preview} style={{maxHeight: "15rem"}} />
+                                </a>
+                            );
+                        }
+
+                        return <div className="backtrace-parent">
+                            <div className="backtrace-cell" onContextMenu={event => {
+                                    this.setState({
+                                        showOnlyAllocationsUrl: url,
+                                        selectedBacktrace: row.original.backtrace_id
+                                    });
+                                    return this.menu_trigger.handleContextClick( event );
+                                }}>{cell}
+                            </div>
+                            {graph}
+                        </div>;
                     }}
                     expanded={expanded}
                 />
