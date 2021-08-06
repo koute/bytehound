@@ -76,6 +76,16 @@ pub fn build_timeline(
         }
     }
 
+    if output.is_empty() {
+        output.push( TimelinePoint {
+            timestamp: current_time * granularity - 1,
+            memory_usage: 0,
+            allocations: 0,
+            allocations_per_time: 0,
+            deallocations_per_time: 0,
+        });
+    }
+
     output.push( TimelinePoint {
         timestamp: current_time * granularity,
         memory_usage: std::cmp::max( 0, current_max_usage ) as u64,

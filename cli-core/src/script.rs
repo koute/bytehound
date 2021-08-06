@@ -882,7 +882,7 @@ impl Graph {
                     }),
                     0_u64,
                     color,
-                ).border_style( RED.stroke_width( 0 ) ),
+                ).border_style( color.stroke_width( 1 ) ),
             ).map_err( |error| format!( "failed to draw a series: {}", error ) )?;
 
             if let Some( label ) = label {
