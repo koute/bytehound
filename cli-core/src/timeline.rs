@@ -105,6 +105,7 @@ pub fn build_timeline(
     output
 }
 
+#[derive(Debug)]
 pub struct TimelinePoint {
     pub timestamp: u64,
     pub memory_usage: u64,

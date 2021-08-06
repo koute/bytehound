@@ -1701,6 +1701,7 @@ impl Engine {
     }
 }
 
+#[derive(Debug)]
 pub struct EvalError {
     pub message: String,
     pub line: Option< usize >,
