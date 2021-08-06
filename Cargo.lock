@@ -304,7 +304,16 @@ version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7a2e47a1fbe209ee101dd6d61285226744c6c8d3c21c8dc878ba6cb9f467f3a"
 dependencies = [
- "gimli",
+ "gimli 0.24.0",
+]
+
+[[package]]
+name = "addr2line"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e61f2b7f93d2c7d2b08263acaa4a363b3e276806c68af6134c44f523bf1aacd"
+dependencies = [
+ "gimli 0.25.0",
 ]
 
 [[package]]
@@ -438,7 +447,7 @@ version = "0.3.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7815ea54e4d821e791162e078acbebfd6d8c8939cd559c9335dceb1c8ca7282"
 dependencies = [
- "addr2line",
+ "addr2line 0.15.2",
  "cc",
  "cfg-if 1.0.0",
  "libc",
@@ -995,7 +1004,14 @@ dependencies = [
 [[package]]
 name = "gimli"
 version = "0.24.0"
-source = "git+https://github.com/gimli-rs/gimli.git?rev=4ea297a#4ea297a35db98ca2aa19f1a8105ab2992f29422f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e4075386626662786ddb0ec9081e7c7eeb1ba31951f447ca780ef9f5d568189"
+
+[[package]]
+name = "gimli"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0a01e0497841a3b2db4f8afa483cce65f7e96a3498bd6c541734792aeac8fe7"
 dependencies = [
  "fallible-iterator",
  "stable_deref_trait",
@@ -1570,13 +1586,13 @@ dependencies = [
 [[package]]
 name = "nwind"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=2d8a5ee#2d8a5ee39a87aa9781ca16bf05bc75448b7239ad"
+source = "git+https://github.com/koute/not-perf.git?rev=bbf1b4d#bbf1b4dc99895c6dcd4d9d800c8c516705128e5f"
 dependencies = [
- "addr2line",
+ "addr2line 0.16.0",
  "byteorder",
  "cc",
  "cpp_demangle 0.3.2",
- "gimli",
+ "gimli 0.25.0",
  "goblin",
  "libc",
  "log",
@@ -1715,7 +1731,7 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 [[package]]
 name = "perf_event_open"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=38c1a6a#38c1a6a7e2ac3514f7061d19151bf14676317e4c"
+source = "git+https://github.com/koute/not-perf.git?rev=bbf1b4d#bbf1b4dc99895c6dcd4d9d800c8c516705128e5f"
 dependencies = [
  "byteorder",
  "libc",
@@ -1834,7 +1850,7 @@ dependencies = [
 [[package]]
 name = "proc-maps"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=2d8a5ee#2d8a5ee39a87aa9781ca16bf05bc75448b7239ad"
+source = "git+https://github.com/koute/not-perf.git?rev=bbf1b4d#bbf1b4dc99895c6dcd4d9d800c8c516705128e5f"
 
 [[package]]
 name = "quick-error"
