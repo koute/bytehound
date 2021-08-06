@@ -1401,6 +1401,16 @@ impl Engine {
                     return Err( error( "expected an array of numbers" ) );
                 }
             }
+
+            if set.len() == 1 && list.allocation_ids.is_none() {
+                let id = set.into_iter().next().unwrap();
+                return Ok( AllocationList {
+                    data: list.data.clone(),
+                    allocation_ids: Some( Arc::new( list.data.get_allocation_ids_by_backtrace( id ).to_owned() ) ),
+                    filter: list.filter.clone()
+                });
+            }
+
             Ok( list.add_filter( |filter| {
                 if let Some( ref mut existing ) = filter.only_matching_backtraces {
                     *existing = existing.intersection( &set ).copied().collect();
