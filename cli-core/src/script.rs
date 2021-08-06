@@ -474,6 +474,7 @@ impl AllocationGroupList {
 
 #[derive(Clone)]
 struct Graph {
+    without_legend: bool,
     without_axes: bool,
     without_grid: bool,
     hide_empty: bool,
@@ -536,6 +537,7 @@ fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >] ) 
 impl Graph {
     fn new() -> Self {
         Graph {
+            without_legend: false,
             without_axes: false,
             without_grid: false,
             hide_empty: false,
@@ -601,6 +603,12 @@ impl Graph {
     fn truncate_until( &mut self, offset: Duration ) -> Self {
         let mut cloned = self.clone();
         cloned.truncate_until = Some( offset );
+        cloned
+    }
+
+    fn without_legend( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.without_legend = true;
         cloned
     }
 
@@ -878,7 +886,7 @@ impl Graph {
             ).map_err( |error| format!( "failed to draw a series: {}", error ) )?;
 
             if let Some( label ) = label {
-                if datapoints.is_empty() && self.hide_empty {
+                if datapoints.is_empty() && self.hide_empty || self.without_legend {
                     continue;
                 }
 
@@ -907,7 +915,7 @@ impl Graph {
                 .map_err( |error| format!( "failed to draw the secondary axes: {}", error ) )?;
         }
 
-        if labels.iter().any( |label| label.is_some() ) {
+        if labels.iter().any( |label| label.is_some() ) && !self.without_legend {
             chart
                 .configure_series_labels()
                 .background_style( &WHITE.mix( 0.75 ) )
@@ -1332,6 +1340,7 @@ impl Engine {
         engine.register_fn( "extend_until", Graph::extend_until );
         engine.register_fn( "truncate_until", Graph::truncate_until );
         engine.register_fn( "only_non_empty_series", Graph::only_non_empty_series );
+        engine.register_fn( "without_legend", Graph::without_legend );
         engine.register_fn( "without_axes", Graph::without_axes );
         engine.register_fn( "without_grid", Graph::without_grid );
         engine.register_result_fn( "with_gradient_color_scheme", Graph::with_gradient_color_scheme );
