@@ -1288,10 +1288,15 @@ impl Engine {
         // Utility functions.
         engine.register_fn( "dirname", dirname );
         engine.register_fn( "h", |value: i64| Duration::from_secs( value as u64 * 3600 ) );
+        engine.register_fn( "h", |value: f64| Duration::from_usecs( (value * 3600.0 * 1_000_000.0) as u64 ) );
         engine.register_fn( "m", |value: i64| Duration::from_secs( value as u64 * 60 ) );
+        engine.register_fn( "m", |value: f64| Duration::from_usecs( (value * 60.0 * 1_000_000.0) as u64 ) );
         engine.register_fn( "s", |value: i64| Duration::from_secs( value as u64 ) );
+        engine.register_fn( "s", |value: f64| Duration::from_secs( (value * 1_000_000.0) as u64 ) );
         engine.register_fn( "ms", |value: i64| Duration::from_msecs( value as u64 ) );
+        engine.register_fn( "ms", |value: f64| Duration::from_usecs( (value * 1_000.0) as u64 ) );
         engine.register_fn( "us", |value: i64| Duration::from_usecs( value as u64 ) );
+        engine.register_fn( "us", |value: f64| Duration::from_usecs( value as u64 ) );
         engine.register_fn( "*", |lhs: Duration, rhs: i64| -> Duration { Duration( lhs.0 * rhs as f64 ) } );
         engine.register_fn( "*", |lhs: i64, rhs: Duration| -> Duration { Duration( rhs.0 * lhs as f64 ) } );
         engine.register_fn( "*", |lhs: Duration, rhs: f64| -> Duration { Duration( lhs.0 * rhs as f64 ) } );
