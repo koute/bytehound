@@ -24,11 +24,19 @@
 ## Screenshots
 
 <p align="center">
-    <img src="screenshot_gui_graphs.png">
+    <img src="screenshot_gui_memory_usage_graph.png">
 </p>
 
 <p align="center">
-    <img src="screenshot_gui_allocations.png">
+    <img src="screenshot_gui_group_by_backtrace.png">
+</p>
+
+<p align="center">
+    <img src="screenshot_gui_scripting_console.png">
+</p>
+
+<p align="center">
+    <img src="screenshot_graph.png">
 </p>
 
 ## Building
