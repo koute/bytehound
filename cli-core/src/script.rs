@@ -1911,7 +1911,7 @@ impl ToCode for BasicFilter {
             ($($name:ident)+) => {
                 $(
                     if self.$name {
-                        write!( &mut ctx.output, "  .{}()", stringify!( $name ) ).unwrap();
+                        writeln!( &mut ctx.output, "  .{}()", stringify!( $name ) ).unwrap();
                     }
                 )+
             }
