@@ -130,14 +130,14 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
 
     match filter.mmaped {
         None => {},
-        Some( protocol::MmapedFilter::Yes ) => output.only_mmaped = true,
-        Some( protocol::MmapedFilter::No ) => output.only_not_mmaped = true
+        Some( protocol::MmapedFilter::Yes ) => output.only_ptmalloc_mmaped = true,
+        Some( protocol::MmapedFilter::No ) => output.only_ptmalloc_not_mmaped = true
     }
 
     match filter.arena {
         None => {},
-        Some( protocol::ArenaFilter::Main ) => output.only_from_main_arena = true,
-        Some( protocol::ArenaFilter::NonMain ) => output.only_from_not_main_arena = true
+        Some( protocol::ArenaFilter::Main ) => output.only_ptmalloc_from_main_arena = true,
+        Some( protocol::ArenaFilter::NonMain ) => output.only_ptmalloc_not_from_main_arena = true
     }
 
     if let Some( ref pattern ) = filter.function_regex {

@@ -1506,10 +1506,10 @@ impl Engine {
 
         register_filter!( only_leaked, bool );
         register_filter!( only_temporary, bool );
-        register_filter!( only_mmaped, bool );
-        register_filter!( only_not_mmaped, bool );
-        register_filter!( only_from_main_arena, bool );
-        register_filter!( only_from_not_main_arena, bool );
+        register_filter!( only_ptmalloc_mmaped, bool );
+        register_filter!( only_ptmalloc_not_mmaped, bool );
+        register_filter!( only_ptmalloc_from_main_arena, bool );
+        register_filter!( only_ptmalloc_not_from_main_arena, bool );
 
         engine.register_fn( "only_with_marker", |list: &mut AllocationList, value: i64| {
             list.add_filter_once( |filter| filter.only_with_marker.is_some(), |filter|
@@ -1968,10 +1968,10 @@ impl ToCode for BasicFilter {
         out_bool! {
             only_leaked
             only_temporary
-            only_mmaped
-            only_not_mmaped
-            only_from_main_arena
-            only_from_not_main_arena
+            only_ptmalloc_mmaped
+            only_ptmalloc_not_mmaped
+            only_ptmalloc_from_main_arena
+            only_ptmalloc_not_from_main_arena
         }
     }
 }

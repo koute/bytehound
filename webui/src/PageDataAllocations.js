@@ -358,24 +358,24 @@ const FIELDS = {
         ...RADIO_FIELD,
         variants: {
             "": "Show all",
-            main: "Only from main arena",
-            non_main: "Only from non-main arena"
+            main: "Only from main arena (ptmalloc)",
+            non_main: "Only from non-main arena (ptmalloc)"
         },
         badge: {
-            main: "Only from main arena",
-            non_main: "Only from non-main arena"
+            main: "Only from main arena (ptmalloc)",
+            non_main: "Only from non-main arena (ptmalloc)"
         }
     },
     mmaped: {
         ...RADIO_FIELD,
         variants: {
             "": "Show all",
-            yes: "Only mmaped",
-            no: "Only non-mmaped"
+            yes: "Only mmaped (ptmalloc)",
+            no: "Only non-mmaped (ptmalloc)"
         },
         badge: {
-            yes: "Only mmaped",
-            no: "Only non-mmaped"
+            yes: "Only mmaped (ptmalloc)",
+            no: "Only non-mmaped (ptmalloc)"
         }
     },
     custom_filter: {

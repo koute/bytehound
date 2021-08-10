@@ -69,10 +69,10 @@ pub struct BasicFilter {
 
     pub only_leaked: bool,
     pub only_temporary: bool,
-    pub only_mmaped: bool,
-    pub only_not_mmaped: bool,
-    pub only_from_main_arena: bool,
-    pub only_from_not_main_arena: bool,
+    pub only_ptmalloc_mmaped: bool,
+    pub only_ptmalloc_not_mmaped: bool,
+    pub only_ptmalloc_from_main_arena: bool,
+    pub only_ptmalloc_not_from_main_arena: bool,
     pub only_with_marker: Option< u32 >
 }
 
@@ -128,8 +128,8 @@ pub struct CompiledBasicFilter {
     only_group_leaked_allocations_at_least: NumberOrFractionOfTotal,
     only_group_leaked_allocations_at_most: NumberOrFractionOfTotal,
 
-    only_mmaped: Option< bool >,
-    only_from_main_arena: Option< bool >,
+    only_ptmalloc_mmaped: Option< bool >,
+    only_ptmalloc_from_main_arena: Option< bool >,
     only_with_marker: Option< u32 >
 }
 
@@ -356,11 +356,11 @@ impl BasicFilter {
             is_impossible = true;
         }
 
-        if self.only_mmaped && self.only_not_mmaped {
+        if self.only_ptmalloc_mmaped && self.only_ptmalloc_not_mmaped {
             is_impossible = true;
         }
 
-        if self.only_from_main_arena && self.only_from_not_main_arena {
+        if self.only_ptmalloc_from_main_arena && self.only_ptmalloc_not_from_main_arena {
             is_impossible = true;
         }
 
@@ -436,18 +436,18 @@ impl BasicFilter {
 
             enable_group_filter,
 
-            only_mmaped:
-                if self.only_mmaped {
+            only_ptmalloc_mmaped:
+                if self.only_ptmalloc_mmaped {
                     Some( true )
-                } else if self.only_not_mmaped {
+                } else if self.only_ptmalloc_not_mmaped {
                     Some( false )
                 } else {
                     None
                 },
-            only_from_main_arena:
-                if self.only_from_main_arena {
+            only_ptmalloc_from_main_arena:
+                if self.only_ptmalloc_from_main_arena {
                     Some( true )
-                } else if self.only_from_not_main_arena {
+                } else if self.only_ptmalloc_not_from_main_arena {
                     Some( false )
                 } else {
                     None
@@ -597,13 +597,21 @@ impl CompiledBasicFilter {
             }
         }
 
-        if let Some( value ) = self.only_mmaped {
+        if let Some( value ) = self.only_ptmalloc_mmaped {
+            if allocation.is_jemalloc() {
+                return false;
+            }
+
             if allocation.is_mmaped() != value {
                 return false;
             }
         }
 
-        if let Some( value ) = self.only_from_main_arena {
+        if let Some( value ) = self.only_ptmalloc_from_main_arena {
+            if allocation.is_jemalloc() {
+                return false;
+            }
+
             if !allocation.in_non_main_arena() != value {
                 return false;
             }
