@@ -52,6 +52,8 @@ fn main() {
         }
     }
 
+    let _ = std::fs::create_dir_all( &target_dir );
+
     let lock_path = target_dir.join( ".webui-lock" );
     let mut lock = Lock {
         semaphore: Some( semalock::Semalock::new( &lock_path ).expect( "failed to acquire a semaphore" ) )
