@@ -1723,11 +1723,20 @@ pub struct EvalError {
     pub column: Option< usize >
 }
 
-pub fn run_script( path: &Path, argv: Vec< String > ) -> Result< (), std::io::Error > {
-    let args = EngineArgs {
+pub fn run_script( path: &Path, data_path: Option< &Path >, argv: Vec< String > ) -> Result< (), std::io::Error > {
+    let mut args = EngineArgs {
         argv,
         .. EngineArgs::default()
     };
+
+    if let Some( data_path ) = data_path {
+        info!( "Loading {:?}...", data_path );
+        let fp = File::open( &data_path )?;
+
+        let debug_symbols: &[PathBuf] = &[];
+        let data = Loader::load_from_stream( fp, debug_symbols )?;
+        args.data = Some( Arc::new( data ) );
+    }
 
     let env = Arc::new( Mutex::new( NativeEnvironment::default() ) );
     let engine = Engine::new( env, args );

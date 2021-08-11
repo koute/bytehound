@@ -108,6 +108,10 @@ enum Opt {
         #[structopt(parse(from_os_str))]
         input: PathBuf,
 
+        // Data file to load
+        #[structopt(long, short = "d", parse(from_os_str))]
+        data: Option< PathBuf >,
+
         args: Vec< String >
     },
 }
@@ -156,8 +160,8 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
             let ifp = File::open( &input )?;
             cli_core::cmd_analyze_size::analyze_size( ifp )?;
         },
-        Opt::Script { input, args } => {
-            cli_core::run_script( &input, args )?;
+        Opt::Script { input, data, args } => {
+            cli_core::run_script( &input, data.as_ref().map( |path| path.as_path() ), args )?;
         },
     }
 
