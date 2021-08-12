@@ -45,7 +45,7 @@
     feature = "cargo-clippy",
     allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)
 )]
-#![deny(missing_docs, intra_doc_link_resolution_failure)]
+#![deny(missing_docs)]
 
 extern crate libc;
 
