@@ -1302,6 +1302,7 @@ impl Engine {
         engine.register_fn( "*", |lhs: Duration, rhs: f64| -> Duration { Duration( lhs.0 * rhs as f64 ) } );
         engine.register_fn( "*", |lhs: f64, rhs: Duration| -> Duration { Duration( rhs.0 * lhs as f64 ) } );
         engine.register_fn( "+", |lhs: Duration, rhs: Duration| -> Duration { Duration( lhs.0 + rhs.0 ) } );
+        engine.register_fn( "-", |lhs: Duration, rhs: Duration| -> Duration { Duration( lhs.0 - rhs.0 ) } );
         engine.register_fn( "kb", |value: i64| value * 1000 );
         engine.register_fn( "mb", |value: i64| value * 1000 * 1000 );
         engine.register_fn( "gb", |value: i64| value * 1000 * 1000 * 1000 );
