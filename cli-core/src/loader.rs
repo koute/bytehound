@@ -1071,7 +1071,7 @@ impl Loader {
             debug_assert!( allocation_ids.is_empty() || allocations[ allocation_ids[ 0 ].raw() as usize ].backtrace == backtrace_id );
             allocation_ids.sort_by( |&a_id, &b_id| cmp_by_time( allocations, a_id, b_id ) );
             let index = allocations_by_backtrace.push( allocation_ids );
-            assert_eq!( index, backtrace_id.raw() as _ );
+            assert_eq!( index, backtrace_id.raw() as usize );
         }
 
         allocations_by_backtrace.shrink_to_fit();
