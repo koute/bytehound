@@ -881,7 +881,10 @@ impl Graph {
                 AreaSeries::new(
                     datapoints.iter().map( |&(x, y)| {
                         (x, y as u64)
-                    }),
+                    }).chain( std::iter::once((
+                        x_max,
+                        datapoints.last().copied().map( |(_, y)| y ).unwrap_or( 0 )
+                    ))),
                     0_u64,
                     color,
                 ).border_style( color.stroke_width( 1 ) ),
