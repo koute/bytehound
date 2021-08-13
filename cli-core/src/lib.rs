@@ -30,6 +30,7 @@ mod threaded_lz4_stream;
 mod repack;
 mod timeline;
 pub mod script;
+mod script_virtual;
 
 pub use crate::data::{Data, DataId, CodePointer, DataPointer, BacktraceId, Timestamp, Operation, OperationId, StringId, Allocation, AllocationId, FrameId, Mallopt, MalloptKind, MmapOperation, MemoryMap, MemoryUnmap, CountAndSize};
 pub use crate::loader::Loader;

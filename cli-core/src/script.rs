@@ -16,6 +16,8 @@ use crate::filter::{BasicFilter, Duration, Filter, NumberOrFractionOfTotal};
 use crate::timeline::build_timeline;
 
 pub use rhai;
+pub use crate::script_virtual::VirtualEnvironment;
+pub use crate::script_virtual::ScriptOutputKind;
 
 struct DecomposedDuration {
     days: u64,

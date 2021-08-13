@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use ahash::AHashMap as HashMap;
 use ahash::AHashSet as HashSet;
+use parking_lot::Mutex;
 
 use regex::{self, Regex};
 
@@ -55,7 +56,7 @@ fn run_custom_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter
             .. cli_core::script::EngineArgs::default()
         };
 
-        let env = crate::VirtualEnvironment::new();
+        let env = Arc::new( Mutex::new( cli_core::script::VirtualEnvironment::new() ) );
         let engine = cli_core::script::Engine::new( env.clone(), args );
         let custom_set = custom_set.get_or_insert( HashSet::new() );
         match engine.run( &custom_filter )? {
