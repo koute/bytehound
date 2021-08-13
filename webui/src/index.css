@@ -363,6 +363,7 @@ div.-sort-asc {
 .PageDataConsole .println {
     font-family: monospace;
     color: #333;
+    white-space: pre-wrap;
 }
 
 .stretch-child > div {
