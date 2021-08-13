@@ -1282,7 +1282,19 @@ fn format( fmt: &str, args: &[&str] ) -> Result< String, Box< rhai::EvalAltResul
 
 impl Engine {
     pub fn new( env: Arc< Mutex< dyn Environment > >, args: EngineArgs ) -> Self {
-        let mut engine = rhai::Engine::new();
+        use rhai::packages::Package;
+
+        let mut engine = rhai::Engine::new_raw();
+        engine.register_global_module( rhai::packages::ArithmeticPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::BasicArrayPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::BasicFnPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::BasicIteratorPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::BasicMapPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::BasicMathPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::BasicStringPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::LogicPackage::new().as_shared_module() );
+        engine.register_global_module( rhai::packages::MoreStringPackage::new().as_shared_module() );
+
         let argv = args.argv;
 
         // Utility functions.
