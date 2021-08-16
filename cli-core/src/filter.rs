@@ -486,7 +486,7 @@ impl CompiledBasicFilter {
         }
 
         if let Some( ref deallocation ) = allocation.deallocation {
-            if deallocation.timestamp > self.only_not_deallocated_after_at_least && deallocation.timestamp < self.only_not_deallocated_until_at_most {
+            if deallocation.timestamp >= self.only_not_deallocated_after_at_least || deallocation.timestamp <= self.only_not_deallocated_until_at_most {
                 return false;
             }
         }
