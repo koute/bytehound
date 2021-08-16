@@ -1657,6 +1657,16 @@ impl Engine {
             let env = env.clone();
             engine.register_fn(
                 "println",
+                move || {
+                    env.lock().println( "" );
+                }
+            );
+        }
+
+        {
+            let env = env.clone();
+            engine.register_fn(
+                "println",
                 move |a0: rhai::plugin::Dynamic| {
                     env.lock().println( &to_string( a0 ) );
                 }
