@@ -1045,10 +1045,8 @@ fn merge_allocations( mut lhs: AllocationList, mut rhs: AllocationList ) -> Resu
 
     if uses_same_list( &lhs, &rhs ) {
         let filter = match (lhs.filter.as_ref(), rhs.filter.as_ref()) {
-            (None, None) => None,
-            (Some( lhs ), None) => Some( lhs.clone() ),
-            (None, Some( rhs )) => Some( rhs.clone() ),
-            (Some( lhs ), Some( rhs )) => Some( Filter::Or( Box::new( lhs.clone() ), Box::new( rhs.clone() ) ) )
+            (Some( lhs ), Some( rhs )) => Some( Filter::Or( Box::new( lhs.clone() ), Box::new( rhs.clone() ) ) ),
+            _ => None
         };
 
         Ok( AllocationList {
@@ -1080,9 +1078,18 @@ fn substract_allocations( lhs: AllocationList, mut rhs: AllocationList ) -> Resu
 
     if uses_same_list( &lhs, &rhs ) {
         let filter = match (lhs.filter.as_ref(), rhs.filter.as_ref()) {
-            (None, None) => None,
-            (Some( lhs ), None) => Some( lhs.clone() ),
-            (None, Some( rhs )) => Some( rhs.clone() ),
+            (_, None) => {
+                return Ok( AllocationList {
+                    data: lhs.data.clone(),
+                    allocation_ids: Some( Arc::new( Vec::new() ) ),
+                    filter: None
+                });
+            },
+            (None, Some( rhs )) => Some(
+                Filter::Not(
+                    Box::new( rhs.clone() )
+                )
+            ),
             (Some( lhs ), Some( rhs )) => Some(
                 Filter::And(
                     Box::new( lhs.clone() ),
