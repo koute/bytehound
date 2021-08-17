@@ -1,0 +1,1865 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Memory profiling for fun and profit</title>
+        <meta name="robots" content="noindex" />
+        <!-- Custom HTML head -->
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="custom.css">
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="memory_leak_analysis.html"><strong aria-hidden="true">3.</strong> Case study: Memory leak analysis</a></li><li class="chapter-item expanded "><a href="common_issues.html"><strong aria-hidden="true">4.</strong> Common issues</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">5.</strong> Configuring the profiler</a></li><li class="chapter-item expanded "><a href="api_reference.html"><strong aria-hidden="true">6.</strong> API reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/globals.html"><strong aria-hidden="true">6.1.</strong> Globally available functions</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/globals/allocations.html"><strong aria-hidden="true">6.1.1.</strong> allocations</a></li><li class="chapter-item expanded "><a href="api_reference/globals/data.html"><strong aria-hidden="true">6.1.2.</strong> data</a></li><li class="chapter-item expanded "><a href="api_reference/globals/graph.html"><strong aria-hidden="true">6.1.3.</strong> graph</a></li><li class="chapter-item expanded "><a href="api_reference/globals/info.html"><strong aria-hidden="true">6.1.4.</strong> info</a></li><li class="chapter-item expanded "><a href="api_reference/globals/load.html"><strong aria-hidden="true">6.1.5.</strong> load</a></li><li class="chapter-item expanded "><a href="api_reference/globals/println.html"><strong aria-hidden="true">6.1.6.</strong> println</a></li><li class="chapter-item expanded "><a href="api_reference/globals/h.html"><strong aria-hidden="true">6.1.7.</strong> h</a></li><li class="chapter-item expanded "><a href="api_reference/globals/m.html"><strong aria-hidden="true">6.1.8.</strong> m</a></li><li class="chapter-item expanded "><a href="api_reference/globals/s.html"><strong aria-hidden="true">6.1.9.</strong> s</a></li><li class="chapter-item expanded "><a href="api_reference/globals/ms.html"><strong aria-hidden="true">6.1.10.</strong> ms</a></li><li class="chapter-item expanded "><a href="api_reference/globals/us.html"><strong aria-hidden="true">6.1.11.</strong> us</a></li><li class="chapter-item expanded "><a href="api_reference/globals/kb.html"><strong aria-hidden="true">6.1.12.</strong> kb</a></li><li class="chapter-item expanded "><a href="api_reference/globals/mb.html"><strong aria-hidden="true">6.1.13.</strong> mb</a></li><li class="chapter-item expanded "><a href="api_reference/globals/gb.html"><strong aria-hidden="true">6.1.14.</strong> gb</a></li><li class="chapter-item expanded "><a href="api_reference/globals/argv.html"><strong aria-hidden="true">6.1.15.</strong> argv</a></li><li class="chapter-item expanded "><a href="api_reference/globals/chdir.html"><strong aria-hidden="true">6.1.16.</strong> chdir</a></li><li class="chapter-item expanded "><a href="api_reference/globals/dirname.html"><strong aria-hidden="true">6.1.17.</strong> dirname</a></li><li class="chapter-item expanded "><a href="api_reference/globals/exit.html"><strong aria-hidden="true">6.1.18.</strong> exit</a></li><li class="chapter-item expanded "><a href="api_reference/globals/mkdir_p.html"><strong aria-hidden="true">6.1.19.</strong> mkdir_p</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Allocation.html"><strong aria-hidden="true">6.2.</strong> Allocation</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Allocation/allocated_at.html"><strong aria-hidden="true">6.2.1.</strong> allocated_at</a></li><li class="chapter-item expanded "><a href="api_reference/Allocation/backtrace.html"><strong aria-hidden="true">6.2.2.</strong> backtrace</a></li><li class="chapter-item expanded "><a href="api_reference/Allocation/deallocated_at.html"><strong aria-hidden="true">6.2.3.</strong> deallocated_at</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/AllocationList.html"><strong aria-hidden="true">6.3.</strong> AllocationList</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_minus.html"><strong aria-hidden="true">6.3.1.</strong> - (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_plus.html"><strong aria-hidden="true">6.3.2.</strong> + (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_and.html"><strong aria-hidden="true">6.3.3.</strong> &amp; (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_square_brackets.html"><strong aria-hidden="true">6.3.4.</strong> [] (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/group_by_backtrace.html"><strong aria-hidden="true">6.3.5.</strong> group_by_backtrace</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/len.html"><strong aria-hidden="true">6.3.6.</strong> len</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_address_at_least.html"><strong aria-hidden="true">6.3.7.</strong> only_address_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_address_at_most.html"><strong aria-hidden="true">6.3.8.</strong> only_address_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_alive_for_at_least.html"><strong aria-hidden="true">6.3.9.</strong> only_alive_for_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_alive_for_at_most.html"><strong aria-hidden="true">6.3.10.</strong> only_alive_for_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_allocated_after_at_least.html"><strong aria-hidden="true">6.3.11.</strong> only_allocated_after_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_allocated_until_at_most.html"><strong aria-hidden="true">6.3.12.</strong> only_allocated_until_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_backtrace_length_at_least.html"><strong aria-hidden="true">6.3.13.</strong> only_backtrace_length_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_backtrace_length_at_most.html"><strong aria-hidden="true">6.3.14.</strong> only_backtrace_length_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_alive_for_at_least.html"><strong aria-hidden="true">6.3.15.</strong> only_chain_alive_for_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_alive_for_at_most.html"><strong aria-hidden="true">6.3.16.</strong> only_chain_alive_for_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_length_at_least.html"><strong aria-hidden="true">6.3.17.</strong> only_chain_length_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_length_at_most.html"><strong aria-hidden="true">6.3.18.</strong> only_chain_length_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_deallocated_after_at_least.html"><strong aria-hidden="true">6.3.19.</strong> only_deallocated_after_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_deallocated_until_at_most.html"><strong aria-hidden="true">6.3.20.</strong> only_deallocated_until_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_larger_or_equal.html"><strong aria-hidden="true">6.3.21.</strong> only_first_size_larger_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_larger.html"><strong aria-hidden="true">6.3.22.</strong> only_first_size_larger</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_smaller_or_equal.html"><strong aria-hidden="true">6.3.23.</strong> only_first_size_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_smaller.html"><strong aria-hidden="true">6.3.24.</strong> only_first_size_smaller</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_allocations_at_least.html"><strong aria-hidden="true">6.3.25.</strong> only_group_allocations_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_allocations_at_most.html"><strong aria-hidden="true">6.3.26.</strong> only_group_allocations_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_interval_at_least.html"><strong aria-hidden="true">6.3.27.</strong> only_group_interval_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_interval_at_most.html"><strong aria-hidden="true">6.3.28.</strong> only_group_interval_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_leaked_allocations_at_least.html"><strong aria-hidden="true">6.3.29.</strong> only_group_leaked_allocations_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_leaked_allocations_at_most.html"><strong aria-hidden="true">6.3.30.</strong> only_group_leaked_allocations_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_larger_or_equal.html"><strong aria-hidden="true">6.3.31.</strong> only_larger_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_larger.html"><strong aria-hidden="true">6.3.32.</strong> only_larger</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_larger_or_equal.html"><strong aria-hidden="true">6.3.33.</strong> only_last_size_larger_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_larger.html"><strong aria-hidden="true">6.3.34.</strong> only_last_size_larger</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_smaller_or_equal.html"><strong aria-hidden="true">6.3.35.</strong> only_last_size_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_smaller.html"><strong aria-hidden="true">6.3.36.</strong> only_last_size_smaller</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_leaked_or_deallocated_after.html"><strong aria-hidden="true">6.3.37.</strong> only_leaked_or_deallocated_after</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_leaked.html"><strong aria-hidden="true">6.3.38.</strong> only_leaked</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_matching_backtraces.html"><strong aria-hidden="true">6.3.39.</strong> only_matching_backtraces</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_deallocated_after_at_least.html"><strong aria-hidden="true">6.3.40.</strong> only_not_deallocated_after_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_deallocated_until_at_most.html"><strong aria-hidden="true">6.3.41.</strong> only_not_deallocated_until_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_matching_backtraces.html"><strong aria-hidden="true">6.3.42.</strong> only_not_matching_backtraces</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_passing_through_function.html"><strong aria-hidden="true">6.3.43.</strong> only_not_passing_through_function</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_passing_through_source.html"><strong aria-hidden="true">6.3.44.</strong> only_not_passing_through_source</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_passing_through_function.html"><strong aria-hidden="true">6.3.45.</strong> only_passing_through_function</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_passing_through_source.html"><strong aria-hidden="true">6.3.46.</strong> only_passing_through_source</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_from_main_arena.html"><strong aria-hidden="true">6.3.47.</strong> only_ptmalloc_from_main_arena</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_mmaped.html"><strong aria-hidden="true">6.3.48.</strong> only_ptmalloc_mmaped</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_not_from_main_arena.html"><strong aria-hidden="true">6.3.49.</strong> only_ptmalloc_not_from_main_arena</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_not_mmaped.html"><strong aria-hidden="true">6.3.50.</strong> only_ptmalloc_not_mmaped</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_smaller_or_equal.html"><strong aria-hidden="true">6.3.51.</strong> only_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_smaller.html"><strong aria-hidden="true">6.3.52.</strong> only_smaller</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_temporary.html"><strong aria-hidden="true">6.3.53.</strong> only_temporary</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/save_as_flamegraph.html"><strong aria-hidden="true">6.3.54.</strong> save_as_flamegraph</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/save_as_graph.html"><strong aria-hidden="true">6.3.55.</strong> save_as_graph</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList.html"><strong aria-hidden="true">6.4.</strong> AllocationGroupList</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/op_iterator.html"><strong aria-hidden="true">6.4.1.</strong> (iterator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/op_square_brackets.html"><strong aria-hidden="true">6.4.2.</strong> [] (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/len.html"><strong aria-hidden="true">6.4.3.</strong> len</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/only_all_leaked.html"><strong aria-hidden="true">6.4.4.</strong> only_all_leaked</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/only_count_at_least.html"><strong aria-hidden="true">6.4.5.</strong> only_count_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_count_ascending.html"><strong aria-hidden="true">6.4.6.</strong> sort_by_count_ascending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_count_descending.html"><strong aria-hidden="true">6.4.7.</strong> sort_by_count_descending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_count.html"><strong aria-hidden="true">6.4.8.</strong> sort_by_count</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_size_ascending.html"><strong aria-hidden="true">6.4.9.</strong> sort_by_size_ascending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_size_descending.html"><strong aria-hidden="true">6.4.10.</strong> sort_by_size_descending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_size.html"><strong aria-hidden="true">6.4.11.</strong> sort_by_size</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/take.html"><strong aria-hidden="true">6.4.12.</strong> take</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/ungroup.html"><strong aria-hidden="true">6.4.13.</strong> ungroup</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Backtrace.html"><strong aria-hidden="true">6.5.</strong> Backtrace</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Backtrace/strip.html"><strong aria-hidden="true">6.5.1.</strong> strip</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Data.html"><strong aria-hidden="true">6.6.</strong> Data</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Data/allocations.html"><strong aria-hidden="true">6.6.1.</strong> allocations</a></li><li class="chapter-item expanded "><a href="api_reference/Data/runtime.html"><strong aria-hidden="true">6.6.2.</strong> runtime</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Duration.html"><strong aria-hidden="true">6.7.</strong> Duration</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Duration/op_plus.html"><strong aria-hidden="true">6.7.1.</strong> + (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/Duration/op_minus.html"><strong aria-hidden="true">6.7.2.</strong> - (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/Duration/op_multiply.html"><strong aria-hidden="true">6.7.3.</strong> * (operator)</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Graph.html"><strong aria-hidden="true">6.8.</strong> Graph</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Graph/add.html"><strong aria-hidden="true">6.8.1.</strong> add</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/extend_until.html"><strong aria-hidden="true">6.8.2.</strong> extend_until</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/only_non_empty_series.html"><strong aria-hidden="true">6.8.3.</strong> only_non_empty_series</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/save_each_series_as_flamegraph.html"><strong aria-hidden="true">6.8.4.</strong> save_each_series_as_flamegraph</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/save_each_series_as_graph.html"><strong aria-hidden="true">6.8.5.</strong> save_each_series_as_graph</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/save.html"><strong aria-hidden="true">6.8.6.</strong> save</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/trim_left.html"><strong aria-hidden="true">6.8.7.</strong> trim_left</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/trim_right.html"><strong aria-hidden="true">6.8.8.</strong> trim_right</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/trim.html"><strong aria-hidden="true">6.8.9.</strong> trim</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/truncate_until.html"><strong aria-hidden="true">6.8.10.</strong> truncate_until</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/with_gradient_color_scheme.html"><strong aria-hidden="true">6.8.11.</strong> with_gradient_color_scheme</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/without_axes.html"><strong aria-hidden="true">6.8.12.</strong> without_axes</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/without_grid.html"><strong aria-hidden="true">6.8.13.</strong> without_grid</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/without_legend.html"><strong aria-hidden="true">6.8.14.</strong> without_legend</a></li></ol></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Memory profiling for fun and profit</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Is your application leaking memory? Using too much memory? Making too many allocations?
+Do you want to figure out why, and where exactly?</p>
+<p>If so you're in the right place!</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="getting-started"><a class="header" href="#getting-started">Getting started</a></h1>
+<h2 id="download-prebuilt-binaries"><a class="header" href="#download-prebuilt-binaries">Download prebuilt binaries</a></h2>
+<p>You can download a precompiled binary release of the profiler from <a href="https://github.com/koute/bytehound/releases">here</a>.</p>
+<h2 id="build-from-source"><a class="header" href="#build-from-source">Build from source</a></h2>
+<p>Alternatively you can build everything from sources yourself.</p>
+<p>Make sure you have the following installed:</p>
+<ol>
+<li>Rust nightly</li>
+<li>Full GCC toolchain</li>
+<li><a href="https://yarnpkg.com">Yarn</a> package manager</li>
+</ol>
+<p>Then you can build the profiler:</p>
+<pre><code>$ cargo build --release -p bytehound-preload
+$ cargo build --release -p bytehound-cli
+</code></pre>
+<p>...and grab the binaries from from <code>target/release/libbytehound.so</code> and <code>target/release/bytehound</code>.</p>
+<h2 id="gathering-data"><a class="header" href="#gathering-data">Gathering data</a></h2>
+<p>You can gather the profiling data by attaching the profiler to your application using <code>LD_PRELOAD</code>.
+Just put the <code>libbytehound.so</code> in the same directory as your program and then run the following:</p>
+<pre><code>$ export MEMORY_PROFILER_LOG=info
+$ LD_PRELOAD=./libbytehound.so ./your_application
+</code></pre>
+<p>You can further configure the profiler <a href="./configuration.html">through environment variables</a>,
+although often that is not be necessary.</p>
+<h2 id="analysis"><a class="header" href="#analysis">Analysis</a></h2>
+<p>After you've gathered your data you can load it for analysis:</p>
+<pre><code>$ ./bytehound server memory-profiling_*.dat
+</code></pre>
+<p>Then open your web browser and point it at <code>http://localhost:8080</code> to access the GUI.</p>
+<p>If the profiler crashes when loading the data you most likely don't have
+enough RAM to load the whole thing into memory; see the <a href="./common_issues.html">common issues</a>
+section for how to handle such situation.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-memory-leak-analysis"><a class="header" href="#case-study-memory-leak-analysis">Case study: Memory leak analysis</a></h1>
+<p>If you'd like to follow along this example check out the <code>simulation</code>
+directory in the root of the profiler's repository where you'll find
+the program being analyzed here.</p>
+<p>We use the built-in scripting capabilities of the profiler for analysis
+here (which is available either through the <code>script</code> subcommand of the CLI,
+or through the scripting console in the GUI), however you can also use the
+built-in GUI to achieve roughly similar results. This example is more about
+demonstrating the mindset you need to have when analyzing the data in search
+of memory leaks as opposed to a step-by-step guide which you could apply everywhere.</p>
+<h3 id="step-one-lets-take-a-look-at-the-timeline"><a class="header" href="#step-one-lets-take-a-look-at-the-timeline">Step one: let's take a look at the timeline</a></h3>
+<p>First let's try to graph all of the allocations:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save();
+</code></pre>
+<p><a href="generated/8d27d47f850811fa5ff2db299694e6ed.svg"><img src="generated/8d27d47f850811fa5ff2db299694e6ed.svg" alt="" /></a></p>
+<p>It definitely looks like we might have some sort of a memory leak here,
+but we can't see much on this graph alone due to all of the noise.</p>
+<h3 id="step-two-lets-find-all-of-the-obvious-memory-leaks"><a class="header" href="#step-two-lets-find-all-of-the-obvious-memory-leaks">Step two: let's find all of the obvious memory leaks</a></h3>
+<p>Let's try the simplest thing imaginable: graph only those allocations
+which were <em>never</em> deallocated up until the very end:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Leaked&quot;, allocations().only_leaked())
+    .add(&quot;Temporary&quot;, allocations())
+    .save();
+</code></pre>
+<p><a href="generated/0976bdc8aeeab857e63ac1fe9db53720.svg"><img src="generated/0976bdc8aeeab857e63ac1fe9db53720.svg" alt="" /></a></p>
+<p>Aha! We can see an obvious linear growth here! Let's try to split up the leaking part by backtrace:</p>
+<pre><code class="language-rust ignore">let groups = allocations()
+    .only_leaked()
+    .group_by_backtrace()
+        .sort_by_size();
+
+graph().add(groups).save();
+</code></pre>
+<p><a href="generated/7c0d87b156e5afb4a03233f10de4edbe.svg"><img src="generated/7c0d87b156e5afb4a03233f10de4edbe.svg" alt="" /></a></p>
+<p>Looks like we have a few potential leaks here. First, let's start will
+defining a small helper function which will graph <em>all</em> of the allocations
+coming from that one single backtrace, and also print out that backtrace:</p>
+<pre><code class="language-rust ignore">fn analyze_group(list) {
+    let list_all = allocations().only_matching_backtraces(list);
+
+    graph()
+        .add(&quot;Leaked&quot;, list_all.only_leaked())
+        .add(&quot;Temporary&quot;, list_all)
+        .save();
+
+    println(&quot;Total: {}&quot;, list_all.len());
+    println(&quot;Leaked: {}&quot;, list_all.only_leaked().len());
+    println();
+    println(&quot;Backtrace:&quot;);
+    println(list_all[0].backtrace().strip());
+}
+</code></pre>
+<h4 id="group-0"><a class="header" href="#group-0">Group #0</a></h4>
+<p>So now let's start with the biggest one:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[0]);
+</code></pre>
+<p><a href="generated/24754851a402533a85c7b44a02ae6301.svg"><img src="generated/24754851a402533a85c7b44a02ae6301.svg" alt="" /></a></p>
+<pre><code>Total: 1425
+Leaked: 1425
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:122]
+#17 [simulation] simulation::allocate_linear_leak_never_deallocated [main.rs:32]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>We have a clear-cut memory leak here! Every allocation from this backtrace was leaked.</p>
+<h4 id="group-1"><a class="header" href="#group-1">Group #1</a></h4>
+<p>Let's try the next one:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[1]);
+</code></pre>
+<p><a href="generated/649fa08f5c3c885a6fb60650ee96c3d0.svg"><img src="generated/649fa08f5c3c885a6fb60650ee96c3d0.svg" alt="" /></a></p>
+<pre><code>Total: 1
+Leaked: 1
+
+Backtrace:
+#00 [ld-2.33.so] 7f9e318920c9
+#01 [ld-2.33.so] _dl_init
+#02 [ld-2.33.so] call_init
+#03 [libstdc++.so.6.0.29] _GLOBAL__sub_I_eh_alloc.cc [eh_alloc.cc:338]
+#04 [libstdc++.so.6.0.29] __static_initialization_and_destruction_0 [eh_alloc.cc:262]
+#05 [libstdc++.so.6.0.29] pool [eh_alloc.cc:123]
+</code></pre>
+<p>Looks like while this is <em>technically</em> a leak it's just one allocation
+made at the very start; we can just ignore this one.</p>
+<h4 id="group-2"><a class="header" href="#group-2">Group #2</a></h4>
+<p>Let's try yet another one:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[2]);
+</code></pre>
+<p><a href="generated/b9aa89771abf19e7f64a0b592d4ff604.svg"><img src="generated/b9aa89771abf19e7f64a0b592d4ff604.svg" alt="" /></a></p>
+<pre><code>Total: 1563
+Leaked: 795
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:127]
+#17 [simulation] simulation::allocate_bounded_leak [main.rs:72]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>Now this is interesting. If we only look at the supposedly leaked part it
+sure does look like it's an unbounded memory leak which grows lineary with time,
+but if we graph <em>every</em> allocation from this backtrace we can see that its memory
+usage is actually bounded! The longer we would profile this program the more &quot;flat&quot;
+the leaked part would get.</p>
+<p>So is this a problem? Usually not. If you have something like, say, an LRU cache,
+you might see this kind of allocation pattern.</p>
+<h4 id="group-3"><a class="header" href="#group-3">Group #3</a></h4>
+<p>Let's look at the last group from our original leaked graph:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[3]);
+</code></pre>
+<p><a href="generated/5654130c8ff737808c4ca9b4b7f58037.svg"><img src="generated/5654130c8ff737808c4ca9b4b7f58037.svg" alt="" /></a></p>
+<pre><code>Total: 154975
+Leaked: 165
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:132]
+#17 [simulation] simulation::allocate_both_temporary_and_linear_leak [main.rs:96]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>This is the toughest case so far. Do we have a memory leak here on not? Well, it depends.</p>
+<p>It could be a case of a bounded leak which hasn't yet reached a saturation point, or it could
+be simply a case of only some allocations ending up leaked. We'd either need to profile
+for a longer period of time, or analyze the code.</p>
+<h3 id="step-three-we-need-to-go-deeper"><a class="header" href="#step-three-we-need-to-go-deeper">Step three: we need to go deeper</a></h3>
+<p>So is this all? Did we actually find all of the memory leaks? Not necessarily.</p>
+<p>What we did was that we only looked at those allocations which were <strong>never</strong> deallocated.
+So what about those allocations which <em>were</em> deallocated, but <em>only</em> at the very end when
+the program was shut down? Should we consider those allocations as leaks? Well, probably!</p>
+<p>First, let's try to graph the memory usage again, but only including the allocations
+which <em>were</em> deallocated before the program ended.</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations().only_temporary())
+    .save();
+</code></pre>
+<p><a href="generated/acf90cf6dd57bbc218470f21c4e96c74.svg"><img src="generated/acf90cf6dd57bbc218470f21c4e96c74.svg" alt="" /></a></p>
+<p>Hmm... there might or might not be a leak here. We need a more powerful filter!</p>
+<p>First, let's filter out all of the allocations from the previous section; we've
+already analyzed those so we don't want them here to confuse us:</p>
+<pre><code class="language-rust ignore">let remaining = allocations().only_not_matching_backtraces(groups);
+</code></pre>
+<p>And now, we want a list of allocations which weren't deallocated <em>right until the end</em>, right?
+Well, we can do that!</p>
+<pre><code class="language-rust ignore">let leaked_until_end = remaining
+    .only_not_deallocated_until_at_most(data().runtime() * 0.98);
+
+graph().add(leaked_until_end).save();
+</code></pre>
+<p><a href="generated/a2d6c5dda065be1bc37e05f55a7035c1.svg"><img src="generated/a2d6c5dda065be1bc37e05f55a7035c1.svg" alt="" /></a></p>
+<p>This indeed looks promising. But let's clean in up a little first.</p>
+<p>What's with the peak right at the end? Well, we asked for allocations which were
+<em>not deallocated until 98% of the runtime has elapsed</em>, so naturally those short
+lived allocations from near the end which were also deallocated after that time
+will still be included.</p>
+<p>Let's get rid of them:</p>
+<pre><code class="language-rust ignore">let leaked_until_end = remaining
+    .only_not_deallocated_until_at_most(data().runtime() * 0.98)
+    .only_alive_for_at_least(data().runtime() * 0.02);
+
+graph().add(leaked_until_end).save();
+</code></pre>
+<p><a href="generated/4604cdf1065c4a861fd6f14c2018b222.svg"><img src="generated/4604cdf1065c4a861fd6f14c2018b222.svg" alt="" /></a></p>
+<p>Much better!</p>
+<p>Now let's graph those by backtrace:</p>
+<pre><code class="language-rust ignore">let groups = leaked_until_end.group_by_backtrace().sort_by_size();
+graph().add(groups).save();
+</code></pre>
+<p><a href="generated/496ef092549602dd72c86e91d92669d1.svg"><img src="generated/496ef092549602dd72c86e91d92669d1.svg" alt="" /></a></p>
+<p>Bingo! There <em>was</em> something hidden in all of those temporary allocations after all!</p>
+<p>Let's define another helper function to help us with our analysis:</p>
+<pre><code class="language-rust ignore">fn analyze_group(list) {
+    let list_all = allocations().only_matching_backtraces(list);
+    let list_selected = list_all
+        .only_deallocated_after_at_least(data().runtime() * 0.98);
+
+    graph()
+        .add(&quot;Deallocated after 98%&quot;, list_selected)
+        .add(&quot;Deallocated before 98%&quot;, list_all)
+        .save();
+
+    println(&quot;Total: {}&quot;, list_all.len());
+    println(&quot;Deallocated after 98%: {}&quot;, list_selected.len());
+    println();
+    println(&quot;Backtrace:&quot;);
+    println(list_all[0].backtrace().strip());
+}
+</code></pre>
+<p>Let's try to use it!</p>
+<h4 id="group-0-1"><a class="header" href="#group-0-1">Group #0</a></h4>
+<pre><code class="language-rust ignore">analyze_group(groups[0]);
+</code></pre>
+<p><a href="generated/15958c55f360590cedf1f4a949f3dffe.svg"><img src="generated/15958c55f360590cedf1f4a949f3dffe.svg" alt="" /></a></p>
+<pre><code>Total: 1478
+Deallocated after 98%: 1478
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:123]
+#17 [simulation] simulation::allocate_linear_leak_deallocated_at_the_end [main.rs:44]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>We have a winner! This definitely looks like a leak.</p>
+<h4 id="group-1-1"><a class="header" href="#group-1-1">Group #1</a></h4>
+<pre><code class="language-rust ignore">analyze_group(groups[1]);
+</code></pre>
+<p><a href="generated/b0b7769b6b0256eb236a4a5831529ef2.svg"><img src="generated/b0b7769b6b0256eb236a4a5831529ef2.svg" alt="" /></a></p>
+<pre><code>Total: 9
+Deallocated after 98%: 1
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:123]
+#17 [simulation] simulation::allocate_linear_leak_deallocated_at_the_end [main.rs:45]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::push [mod.rs:1668]
+#19 [simulation] alloc::vec::Vec&lt;T,A&gt;::reserve [mod.rs:805]
+#20 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::reserve [raw_vec.rs:337]
+#21 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::reserve::do_reserve_and_handle [raw_vec.rs:333]
+#22 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::grow_amortized [raw_vec.rs:442]
+#23 [simulation] alloc::raw_vec::finish_grow [raw_vec.rs:508]
+#24 [simulation] &lt;alloc::alloc::Global as core::alloc::Allocator&gt;::grow [alloc.rs:251]
+#25 [simulation] alloc::alloc::Global::grow_impl [alloc.rs:198]
+#26 [simulation] alloc::alloc::realloc [alloc.rs:122]
+</code></pre>
+<p>This is <code>Vec</code> that, from the look of it, is just growing in size.</p>
+<p>It probably <em>contains</em> whenever is leaking (and if you read the backtrace
+it actualy <em>does</em>), but it's not what we're looking for.</p>
+<p>In fact, if we look at the original graph most of what we have remaining are
+probably cases like this. Let's double-check by filtering out the leak we've already
+found and graph everything again:</p>
+<pre><code class="language-rust ignore">let group = groups
+    .ungroup()
+    .only_not_matching_backtraces(groups[0])
+    .group_by_backtrace();
+
+graph().add(group).save();
+</code></pre>
+<p><a href="generated/d94520e9086ee1219e8ad78b22ac5cca.svg"><img src="generated/d94520e9086ee1219e8ad78b22ac5cca.svg" alt="" /></a></p>
+<p>This does indeed look like all of the long lived allocations here might have been just <code>Vec</code>s.</p>
+<p>Let's verify that hypothesis:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Vecs&quot;, group.ungroup().only_passing_through_function(&quot;raw_vec::finish_grow&quot;))
+    .add(&quot;Remaining&quot;, group.ungroup())
+    .save();
+</code></pre>
+<p><a href="generated/55ceed48b9458feeafe5500f5843721c.svg"><img src="generated/55ceed48b9458feeafe5500f5843721c.svg" alt="" /></a></p>
+<p>Indeed we were right!</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="common-issues"><a class="header" href="#common-issues">Common issues</a></h1>
+<h2 id="the-profiler-generates-too-much-data-and-i-dont-have-enough-disk-space-to-hold-it"><a class="header" href="#the-profiler-generates-too-much-data-and-i-dont-have-enough-disk-space-to-hold-it">The profiler generates too much data, and I don't have enough disk space to hold it!</a></h2>
+<p>By default the profiler will gather every allocation that's made by your application.
+If you don't need all of that data then you can set the <a href="configuration.html#memory_profiler_cull_temporary_allocations"><code>MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS</code></a>
+environment variable to <code>1</code> before you start profiling. This will prevent the profiler from emitting
+the majority of short-lived allocations which should cut down on how big the resulting file will be.</p>
+<p>You can also adjust the <a href="configuration.html#memory_profiler_temporary_allocation_lifetime_threshold"><code>MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD</code></a>
+option to specify which allocations will be considered temporary by the profiler.</p>
+<h2 id="the-profiler-crashes-andor-is-killed-when-i-try-to-load-my-data-file"><a class="header" href="#the-profiler-crashes-andor-is-killed-when-i-try-to-load-my-data-file">The profiler crashes and/or is killed when I try to load my data file!</a></h2>
+<p>You're most likely trying to load a really big file, and you're running out of RAM.</p>
+<p>You can use the <code>strip</code> subcommand to strip away unnecessary allocations making
+it possible to load your data file for analysis even if you don't have enough RAM.</p>
+<p>For example, here's how you'd strip away all of the allocations with a lifetime of less than 60 seconds:</p>
+<pre><code>$ ./bytehound strip --threshold 60 -o stripped.dat original.dat
+</code></pre>
+<p>After running this command the <code>stripped.dat</code> will only contain allocations which
+lived for at least 60 seconds or more.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="configuring-the-profiler"><a class="header" href="#configuring-the-profiler">Configuring the profiler</a></h1>
+<p>The profiler is configured through environment variables; here's a list of all of the
+supported environment variables that you can set.</p>
+<h3 id="memory_profiler_output"><a class="header" href="#memory_profiler_output"><code>MEMORY_PROFILER_OUTPUT</code></a></h3>
+<p><em>Default: <code>memory-profiling_%e_%t_%p.dat</code></em></p>
+<p>A path to a file to which the data will be written to.</p>
+<p>This environment variable supports placeholders which will be replaced at
+runtime with the following:</p>
+<ul>
+<li><code>%p</code> -&gt; PID of the process</li>
+<li><code>%t</code> -&gt; number of seconds since UNIX epoch</li>
+<li><code>%e</code> -&gt; name of the executable</li>
+<li><code>%n</code> -&gt; auto-incrementing counter (0, 1, .., 9, 10, etc.)</li>
+</ul>
+<h3 id="memory_profiler_log"><a class="header" href="#memory_profiler_log"><code>MEMORY_PROFILER_LOG</code></a></h3>
+<p><em>Default: unset</em></p>
+<p>The log level to use; possible values:</p>
+<ul>
+<li><code>trace</code></li>
+<li><code>debug</code></li>
+<li><code>info</code></li>
+<li><code>warn</code></li>
+<li><code>error</code></li>
+</ul>
+<p>Unset by default, which disables logging altogether.</p>
+<h3 id="memory_profiler_logfile"><a class="header" href="#memory_profiler_logfile"><code>MEMORY_PROFILER_LOGFILE</code></a></h3>
+<p><em>Default: unset</em></p>
+<p>Path to the file to which the logs will be written to; if unset the logs will
+be emitted to stderr (if they're enabled with <code>MEMORY_PROFILER_LOG</code>).</p>
+<p>This supports placeholders similar to <code>MEMORY_PROFILER_OUTPUT</code> (except <code>%n</code>).</p>
+<h3 id="memory_profiler_cull_temporary_allocations"><a class="header" href="#memory_profiler_cull_temporary_allocations"><code>MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>When set to <code>1</code> the profiler will cull temporary allocations
+and omit them from the output.</p>
+<p>Use this if you only care about memory leaks or you want
+to do long term profiling over several days.</p>
+<h3 id="memory_profiler_temporary_allocation_lifetime_threshold"><a class="header" href="#memory_profiler_temporary_allocation_lifetime_threshold"><code>MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD</code></a></h3>
+<p><em>Default: <code>10000</code></em></p>
+<p>The minimum lifetime of an allocation, in milliseconds, to <strong>not</strong> be
+considered a temporary allocation, and hence not get culled.</p>
+<p>Only makes sense when <code>MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS</code> is turned on.</p>
+<h3 id="memory_profiler_temporary_allocation_pending_threshold"><a class="header" href="#memory_profiler_temporary_allocation_pending_threshold"><code>MEMORY_PROFILER_TEMPORARY_ALLOCATION_PENDING_THRESHOLD</code></a></h3>
+<p><em>Default: <code>65536</code></em></p>
+<p>The maximum number of allocations to be kept in memory when tracking which
+allocations are temporary and which are not.</p>
+<p>Every allocation whose lifetime hasn't yet crossed the temporary allocation interval
+will be temporarily kept in a buffer, and removed from it once it either gets deallocated
+or its lifetime crosses the temporary allocation interval.</p>
+<p>If the number of allocations stored in this buffer exceeds the value set here the buffer will be
+cleared and all of the allocations contained within will be written to disk, regardless of their lifetime.</p>
+<p>Only makes sense when <code>MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS</code> is turned on.</p>
+<h3 id="memory_profiler_disable_by_default"><a class="header" href="#memory_profiler_disable_by_default"><code>MEMORY_PROFILER_DISABLE_BY_DEFAULT</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>When set to <code>1</code> the tracing will be disabled be default at startup.</p>
+<h3 id="memory_profiler_register_sigusr1"><a class="header" href="#memory_profiler_register_sigusr1"><code>MEMORY_PROFILER_REGISTER_SIGUSR1</code></a></h3>
+<p><em>Default: <code>1</code></em></p>
+<p>When set to <code>1</code> the profiler will register a <code>SIGUSR1</code> signal handler
+which can be used to toggle (enable or disable) profiling.</p>
+<h3 id="memory_profiler_register_sigusr2"><a class="header" href="#memory_profiler_register_sigusr2"><code>MEMORY_PROFILER_REGISTER_SIGUSR2</code></a></h3>
+<p><em>Default: <code>1</code></em></p>
+<p>When set to <code>1</code> the profiler will register a <code>SIGUSR2</code> signal handler
+which can be used to toggle (enable or disable) profiling.</p>
+<h3 id="memory_profiler_enable_server"><a class="header" href="#memory_profiler_enable_server"><code>MEMORY_PROFILER_ENABLE_SERVER</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>When set to <code>1</code> the profiled process will start an embedded server which can
+be used to stream the profiling data through TCP using <code>bytehound gather</code> and <code>bytehound-gather</code>.</p>
+<p>This server will only be started when profiling is first enabled.</p>
+<h3 id="memory_profiler_base_server_port"><a class="header" href="#memory_profiler_base_server_port"><code>MEMORY_PROFILER_BASE_SERVER_PORT</code></a></h3>
+<p><em>Default: <code>8100</code></em></p>
+<p>TCP port of the embedded server on which the profiler will listen on.</p>
+<p>If the profiler won't be able to bind a socket to this port it will
+try to find the next free port to bind to. It will succesively probe
+the ports in a linear fashion, e.g. 8100, 8101, 8102, etc.,
+up to 100 times before giving up.</p>
+<p>Requires <code>MEMORY_PROFILER_ENABLE_SERVER</code> to be set to <code>1</code>.</p>
+<h3 id="memory_profiler_enable_broadcast"><a class="header" href="#memory_profiler_enable_broadcast"><code>MEMORY_PROFILER_ENABLE_BROADCAST</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>When set to <code>1</code> the profiled process will send UDP broadcasts announcing that
+it's being profiled. This is used by <code>bytehound gather</code> and <code>bytehound-gather</code>
+to automatically discover <code>bytehound</code> instances to which to connect.</p>
+<p>Requires <code>MEMORY_PROFILER_ENABLE_SERVER</code> to be set to <code>1</code>.</p>
+<h3 id="memory_profiler_precise_timestamps"><a class="header" href="#memory_profiler_precise_timestamps"><code>MEMORY_PROFILER_PRECISE_TIMESTAMPS</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>Decides whenever timestamps will be gathered for every event, or only for chunks of events.
+When enabled the timestamps will be more precise at a cost of extra CPU usage.</p>
+<h3 id="memory_profiler_write_binaries_to_output"><a class="header" href="#memory_profiler_write_binaries_to_output"><code>MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT</code></a></h3>
+<p><em>Default: <code>1</code></em></p>
+<p>Controls whenever the profiler will embed the profiled application (and all of the libraries
+used by the application) inside of the profiling data it writes to disk.</p>
+<p>This makes it possible to later decode the profiling data without having to manually
+hunt down the original binaries.</p>
+<h3 id="memory_profiler_zero_memory"><a class="header" href="#memory_profiler_zero_memory"><code>MEMORY_PROFILER_ZERO_MEMORY</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>Decides whenever <code>malloc</code> will behave like <code>calloc</code> and fill the memory it returns with zeros.</p>
+<h3 id="memory_profiler_backtrace_cache_size"><a class="header" href="#memory_profiler_backtrace_cache_size"><code>MEMORY_PROFILER_BACKTRACE_CACHE_SIZE</code></a></h3>
+<p><em>Default: <code>32768</code></em></p>
+<p>Controls the size of the internal backtrace cache used to deduplicate emitted stack traces.</p>
+<h3 id="memory_profiler_gather_mmap_calls"><a class="header" href="#memory_profiler_gather_mmap_calls"><code>MEMORY_PROFILER_GATHER_MMAP_CALLS</code></a></h3>
+<p><em>Default: <code>0</code></em></p>
+<p>Controls whenever the profiler will also gather calls to <code>mmap</code> and <code>munmap</code>.</p>
+<p>(Those are <em>not</em> treated as allocations and are only available under the <code>/mmaps</code> API endpoint.)</p>
+<h3 id="memory_profiler_use_shadow_stack"><a class="header" href="#memory_profiler_use_shadow_stack"><code>MEMORY_PROFILER_USE_SHADOW_STACK</code></a></h3>
+<p><em>Default: <code>1</code></em></p>
+<p>Whenever to use a more intrusive, faster unwinding algorithm; enabled by default.</p>
+<p>Setting it to <code>0</code> will on average significantly slow down unwinding. This option
+is provided only for debugging purposes.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="api-reference"><a class="header" href="#api-reference">API reference</a></h1>
+<p>The profiler supports an embedded domain specific language based on <a href="https://rhai.rs">Rhai</a>
+for easy data analysis. Here's an API reference of everything the DSL exposes.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="globally-available-functions"><a class="header" href="#globally-available-functions">Globally available functions</a></h1>
+<p>These are the functions that are globally defined and can be called anywhere.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocations"><a class="header" href="#allocations">allocations</a></h2>
+<pre><code class="language-rust ignore">fn allocations() -&gt; AllocationList
+</code></pre>
+<p>Returns an allocation list of the the currently globally loaded data file; equivalent to <code>data().allocations()</code>.</p>
+<p>If there is no globally loaded data file then it will throw an exception.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="data"><a class="header" href="#data">data</a></h2>
+<pre><code class="language-rust ignore">fn data() -&gt; Data
+</code></pre>
+<p>Return the currently globally loaded data file.</p>
+<p>When running the script through the scripting console this will return whatever data
+you currently have loaded. When running through the <code>script</code> subcommand it will return
+the data file specified with the <code>--data</code> parameter; if it wasn't specified then it
+will throw an exception.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graph"><a class="header" href="#graph">graph</a></h2>
+<pre><code class="language-rust ignore">fn graph() -&gt; Graph
+</code></pre>
+<p>Constructs a new <a href="api_reference/globals/../Graph.html"><code>Graph</code></a> object.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="info"><a class="header" href="#info">info</a></h2>
+<pre><code class="language-rust ignore">fn info(
+    message: String
+)
+</code></pre>
+<p>Generates an info print; only visible on the command-line.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="load"><a class="header" href="#load">load</a></h2>
+<pre><code class="language-rust ignore">fn load(
+    path: String
+) -&gt; Data
+</code></pre>
+<p>Loads a new data file from the given path.</p>
+<p>Makes sense only for scripts executed through the <code>script</code> subcommand.
+Will throw an exception when called from the scripting console.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="println"><a class="header" href="#println">println</a></h2>
+<pre><code class="language-rust ignore">fn println()
+</code></pre>
+<pre><code class="language-rust ignore">fn println(
+    value: Any
+)
+</code></pre>
+<pre><code class="language-rust ignore">fn println(
+    format: String,
+    arg_1: Any
+)
+</code></pre>
+<pre><code class="language-rust ignore">fn println(
+    format: String,
+    arg_1: Any,
+    arg_2: Any
+)
+</code></pre>
+<pre><code class="language-rust ignore">fn println(
+    format: String,
+    arg_1: Any,
+    arg_2: Any,
+    arg_3: Any
+)
+</code></pre>
+<p>Prints out a given value or message, with optional Rust-like string interpolation.
+(At the moment only <code>{}</code> is supported in the format string.)</p>
+<p>For scripts executed through the scripting console it will print out the message
+directly on the web page; for scripts executed through the <code>script</code> subcommand
+it will print out the message on stdout.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="h"><a class="header" href="#h">h</a></h2>
+<pre><code class="language-rust ignore">fn h(
+    hours: Integer|Float
+) -&gt; Duration
+</code></pre>
+<p>Returns a new <a href="api_reference/globals/../Duration.html"><code>Duration</code></a> with the specified number of <code>hours</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="m"><a class="header" href="#m">m</a></h2>
+<pre><code class="language-rust ignore">fn m(
+    minutes: Integer|Float
+) -&gt; Duration
+</code></pre>
+<p>Returns a new <a href="api_reference/globals/../Duration.html"><code>Duration</code></a> with the specified number of <code>minutes</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="s"><a class="header" href="#s">s</a></h2>
+<pre><code class="language-rust ignore">fn s(
+    seconds: Integer|Float
+) -&gt; Duration
+</code></pre>
+<p>Returns a new <a href="api_reference/globals/../Duration.html"><code>Duration</code></a> with the specified number of <code>seconds</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="ms"><a class="header" href="#ms">ms</a></h2>
+<pre><code class="language-rust ignore">fn ms(
+    milliseconds: Integer|Float
+) -&gt; Duration
+</code></pre>
+<p>Returns a new <a href="api_reference/globals/../Duration.html"><code>Duration</code></a> with the specified number of <code>milliseconds</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="us"><a class="header" href="#us">us</a></h2>
+<pre><code class="language-rust ignore">fn us(
+    microseconds: Integer|Float
+) -&gt; Duration
+</code></pre>
+<p>Returns a new <a href="api_reference/globals/../Duration.html"><code>Duration</code></a> with the specified number of <code>microseconds</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="kb"><a class="header" href="#kb">kb</a></h2>
+<pre><code class="language-rust ignore">fn kb(
+    value: Integer
+) -&gt; Integer
+</code></pre>
+<p>A convenience function equivalent to <code>value * 1000</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="mb"><a class="header" href="#mb">mb</a></h2>
+<pre><code class="language-rust ignore">fn mb(
+    value: Integer
+) -&gt; Integer
+</code></pre>
+<p>A convenience function equivalent to <code>value * 1000 * 1000</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="gb"><a class="header" href="#gb">gb</a></h2>
+<pre><code class="language-rust ignore">fn gb(
+    value: Integer
+) -&gt; Integer
+</code></pre>
+<p>A convenience function equivalent to <code>value * 1000 * 1000 * 1000</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="argv"><a class="header" href="#argv">argv</a></h2>
+<pre><code class="language-rust ignore">fn argv() -&gt; [String]
+</code></pre>
+<p>Returns a list of arguments passed on the command-line.</p>
+<p>Makes sense only for scripts executed through the <code>script</code> subcommand.
+For scripts executed from the scripting console this will always return
+an empty array.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="chdir"><a class="header" href="#chdir">chdir</a></h2>
+<pre><code class="language-rust ignore">fn chdir(
+    path: String
+)
+</code></pre>
+<p>Changes the current directory to the given <code>path</code>.</p>
+<p>Will physically change the current directory only for scripts executed through the <code>script</code> subcommand.
+For scripts executed from the scripting console no access to the local filesystem is provided,
+and a virtual filesystem will be simulated instead.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="dirname"><a class="header" href="#dirname">dirname</a></h2>
+<pre><code class="language-rust ignore">fn dirname(
+    path: String
+) -&gt; String
+</code></pre>
+<p>Returns the given path without its final component.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="exit"><a class="header" href="#exit">exit</a></h2>
+<pre><code class="language-rust ignore">fn exit()
+</code></pre>
+<pre><code class="language-rust ignore">fn exit(
+    status_code: Integer
+) -&gt; Duration
+</code></pre>
+<p>Immediately aborts execution with the given <code>status_code</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="mkdir_p"><a class="header" href="#mkdir_p">mkdir_p</a></h2>
+<pre><code class="language-rust ignore">fn mkdir_p(
+    path: String
+)
+</code></pre>
+<p>Creates a new directory and all of its parent components if they are missing.</p>
+<p>Equivalent to Rust's <code>std::fs::create_dir_all</code> or <code>mkdir -p</code>.</p>
+<p>Will physically create directories only for scripts executed through the <code>script</code> subcommand.
+For scripts executed from the scripting console no access to the local filesystem is provided,
+and a virtual filesystem will be simulated instead.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="allocation"><a class="header" href="#allocation">Allocation</a></h1>
+<p><code>Allocation</code> is an object representing a single allocation.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationallocated_at"><a class="header" href="#allocationallocated_at">Allocation::allocated_at</a></h2>
+<pre><code class="language-rust ignore">fn allocated_at(
+    self: Allocation
+) -&gt; Duration
+</code></pre>
+<p>Returns when this allocation was made, as a time offset from the start of the profiling.</p>
+<h3 id="examples"><a class="header" href="#examples">Examples</a></h3>
+<pre><code class="language-rust ignore">println(allocations()[0].allocated_at());
+</code></pre>
+<pre><code>328ms 379us
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationbacktrace"><a class="header" href="#allocationbacktrace">Allocation::backtrace</a></h2>
+<pre><code class="language-rust ignore">fn backtrace(
+    self: Allocation
+) -&gt; Backtrace
+</code></pre>
+<p>Returns the backtrace of this allocation.</p>
+<h3 id="examples-1"><a class="header" href="#examples-1">Examples</a></h3>
+<pre><code class="language-rust ignore">println(allocations()[0].backtrace());
+</code></pre>
+<pre><code>#00 [ld-2.33.so] 7f9e318920c9
+#01 [ld-2.33.so] _dl_init
+#02 [ld-2.33.so] call_init
+#03 [libstdc++.so.6.0.29] _GLOBAL__sub_I_eh_alloc.cc [eh_alloc.cc:338]
+#04 [libstdc++.so.6.0.29] __static_initialization_and_destruction_0 [eh_alloc.cc:262]
+#05 [libstdc++.so.6.0.29] pool [eh_alloc.cc:123]
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationdeallocated_at"><a class="header" href="#allocationdeallocated_at">Allocation::deallocated_at</a></h2>
+<pre><code class="language-rust ignore">fn deallocated_at(
+    self: Allocation
+) -&gt; Option&lt;Duration&gt;
+</code></pre>
+<p>Returns when this allocation was freed, as a time offset from the start of the profiling.</p>
+<h3 id="examples-2"><a class="header" href="#examples-2">Examples</a></h3>
+<pre><code class="language-rust ignore">println((allocations().only_leaked())[0].deallocated_at());
+println((allocations().only_temporary())[0].deallocated_at());
+</code></pre>
+<pre><code>None
+Some(328ms 379us)
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="allocationlist"><a class="header" href="#allocationlist">AllocationList</a></h1>
+<p><code>AllocationList</code> is an object which holds a list of allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlist-"><a class="header" href="#allocationlist-">AllocationList::-</a></h2>
+<pre><code class="language-rust ignore">fn -(
+    lhs: AllocationList,
+    rhs: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new allocation list with all of the allocations from <code>lhs</code> which are not present in <code>rhs</code>.</p>
+<h3 id="examples-3"><a class="header" href="#examples-3">Examples</a></h3>
+<p>Here are graphs of two distinct allocation lists:</p>
+<p><a href="api_reference/AllocationList/../../generated/f661418b61508ba2c749747f14f6a614.svg"><img src="api_reference/AllocationList/../../generated/f661418b61508ba2c749747f14f6a614.svg" alt="" /></a></p>
+<p><a href="api_reference/AllocationList/../../generated/6e7df3088ea719de17d4b2b67074d387.svg"><img src="api_reference/AllocationList/../../generated/6e7df3088ea719de17d4b2b67074d387.svg" alt="" /></a></p>
+<p>And here's how they look when merged through the <code>-</code> operator:</p>
+<pre><code class="language-rust ignore">let lhs = allocations()
+    .only_temporary()
+    .only_deallocated_until_at_most(data().runtime() * 0.7);
+
+let rhs = allocations()
+    .only_temporary()
+    .only_allocated_after_at_least(data().runtime() * 0.3);
+
+graph()
+    .add(lhs - rhs)
+    .save();
+</code></pre>
+<p><a href="api_reference/AllocationList/../../generated/acc3ef5cdb442d9ba0bdf5b294df36eb.svg"><img src="api_reference/AllocationList/../../generated/acc3ef5cdb442d9ba0bdf5b294df36eb.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlist-1"><a class="header" href="#allocationlist-1">AllocationList::+</a></h2>
+<pre><code class="language-rust ignore">fn +(
+    lhs: AllocationList,
+    rhs: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new allocation list with all of the allocations from <code>lhs</code> and <code>rhs</code> combined.</p>
+<h3 id="examples-4"><a class="header" href="#examples-4">Examples</a></h3>
+<p>Here are graphs of two distinct allocation lists:</p>
+<p><a href="api_reference/AllocationList/../../generated/31d13b0c9e0b33b36321ad925c2c02b3.svg"><img src="api_reference/AllocationList/../../generated/31d13b0c9e0b33b36321ad925c2c02b3.svg" alt="" /></a></p>
+<p><a href="api_reference/AllocationList/../../generated/b48535da8d3929556f2b71f5c7dfebfc.svg"><img src="api_reference/AllocationList/../../generated/b48535da8d3929556f2b71f5c7dfebfc.svg" alt="" /></a></p>
+<p>And here's how they look when merged through the <code>+</code> operator:</p>
+<pre><code class="language-rust ignore">let lhs = allocations()
+    .only_temporary()
+    .only_deallocated_until_at_most(data().runtime() * 0.6);
+
+let rhs = allocations()
+    .only_temporary()
+    .only_allocated_after_at_least(data().runtime() * 0.4);
+
+graph()
+    .add(lhs + rhs)
+    .save();
+</code></pre>
+<p><a href="api_reference/AllocationList/../../generated/f31feae4d294ff0a90ec55a1bce608f0.svg"><img src="api_reference/AllocationList/../../generated/f31feae4d294ff0a90ec55a1bce608f0.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlist-2"><a class="header" href="#allocationlist-2">AllocationList::&amp;</a></h2>
+<pre><code class="language-rust ignore">fn &amp;(
+    lhs: AllocationList,
+    rhs: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new allocation list with all of the allocations that are both in <code>lhs</code> and <code>rhs</code>.</p>
+<h3 id="examples-5"><a class="header" href="#examples-5">Examples</a></h3>
+<p>Here are graphs of two distinct allocation lists:</p>
+<p><a href="api_reference/AllocationList/../../generated/31d13b0c9e0b33b36321ad925c2c02b3.svg"><img src="api_reference/AllocationList/../../generated/31d13b0c9e0b33b36321ad925c2c02b3.svg" alt="" /></a></p>
+<p><a href="api_reference/AllocationList/../../generated/b48535da8d3929556f2b71f5c7dfebfc.svg"><img src="api_reference/AllocationList/../../generated/b48535da8d3929556f2b71f5c7dfebfc.svg" alt="" /></a></p>
+<p>And here's how they look when merged through the <code>&amp;</code> operator:</p>
+<pre><code class="language-rust ignore">let lhs = allocations()
+    .only_temporary()
+    .only_deallocated_until_at_most(data().runtime() * 0.6);
+
+let rhs = allocations()
+    .only_temporary()
+    .only_allocated_after_at_least(data().runtime() * 0.4);
+
+graph()
+    .add(lhs &amp; rhs)
+    .save();
+</code></pre>
+<p><a href="api_reference/AllocationList/../../generated/133aab053e82884a64a928e3645b2d88.svg"><img src="api_reference/AllocationList/../../generated/133aab053e82884a64a928e3645b2d88.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlist-3"><a class="header" href="#allocationlist-3">AllocationList::[]</a></h2>
+<pre><code class="language-rust ignore">fn [](
+    index: Integer
+) -&gt; Allocation
+</code></pre>
+<p>Returns a given <a href="api_reference/AllocationList/../Allocation.html"><code>Allocation</code></a> from the list.</p>
+<h3 id="examples-6"><a class="header" href="#examples-6">Examples</a></h3>
+<pre><code class="language-rust ignore">println(allocations()[0].backtrace());
+</code></pre>
+<pre><code>#00 [ld-2.33.so] 7f9e318920c9
+#01 [ld-2.33.so] _dl_init
+#02 [ld-2.33.so] call_init
+#03 [libstdc++.so.6.0.29] _GLOBAL__sub_I_eh_alloc.cc [eh_alloc.cc:338]
+#04 [libstdc++.so.6.0.29] __static_initialization_and_destruction_0 [eh_alloc.cc:262]
+#05 [libstdc++.so.6.0.29] pool [eh_alloc.cc:123]
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistgroup_by_backtrace"><a class="header" href="#allocationlistgroup_by_backtrace">AllocationList::group_by_backtrace</a></h2>
+<pre><code class="language-rust ignore">fn group_by_backtrace(
+    self: AllocationList
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Groups all of the allocations according to their backtrace.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistlen"><a class="header" href="#allocationlistlen">AllocationList::len</a></h2>
+<pre><code class="language-rust ignore">fn len(
+    self: AllocationList
+) -&gt; Integer
+</code></pre>
+<p>Returns the number of allocations within the list.</p>
+<h3 id="examples-7"><a class="header" href="#examples-7">Examples</a></h3>
+<pre><code class="language-rust ignore">println(allocations().len());
+</code></pre>
+<pre><code>275859
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_address_at_least"><a class="header" href="#allocationlistonly_address_at_least">AllocationList::only_address_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_address_at_least(
+    self: AllocationList,
+    address: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose address is equal or higher than the one specified.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_address_at_most"><a class="header" href="#allocationlistonly_address_at_most">AllocationList::only_address_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_address_at_most(
+    self: AllocationList,
+    address: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose address is equal or lower than the one specified.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_alive_for_at_least"><a class="header" href="#allocationlistonly_alive_for_at_least">AllocationList::only_alive_for_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_alive_for_at_least(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were alive for at least the given <code>duration</code>.</p>
+<p>This only considers the span of time from when the allocation was last allocated (e.g. through <code>malloc</code> or <code>realloc</code>)
+until it was freed or reallocated (e.g. through <code>free</code> or <code>realloc</code>), or until the profiling was stopped.</p>
+<p>For example, for the following allocation pattern:</p>
+<pre><code class="language-c">void * a0 = malloc(size);
+sleep(1);
+
+void * a1 = realloc(a0, size + 1);
+void * a2 = realloc(a2, size + 2);
+free(a2);
+</code></pre>
+<p>this code:</p>
+<pre><code class="language-rust ignore">allocations().only_alive_for_at_least(s(1))
+</code></pre>
+<p>will only match the first <code>a0</code> allocation since only it lived for at least one second.</p>
+<p>You can use <a href="api_reference/AllocationList/./only_chain_alive_for_at_least.html"><code>only_chain_alive_for_at_least</code></a> if you'd like to take
+the lifetime of the whole allocation chain into account starting from the very first <code>malloc</code> and
+persisting through any future reallocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_alive_for_at_most"><a class="header" href="#allocationlistonly_alive_for_at_most">AllocationList::only_alive_for_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_alive_for_at_most(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were alive for at most the given <code>duration</code>.</p>
+<p>This only considers the span of time from when the allocation was last allocated (e.g. through <code>malloc</code> or <code>realloc</code>)
+until it was freed or reallocated (e.g. through <code>free</code> or <code>realloc</code>), or until the profiling was stopped.</p>
+<p>For example, for the following allocation pattern:</p>
+<pre><code class="language-c">void * a0 = malloc(size);
+sleep(1);
+
+void * a1 = realloc(a0, size + 1);
+void * a2 = realloc(a2, size + 2);
+free(a2);
+</code></pre>
+<p>this code:</p>
+<pre><code class="language-rust ignore">allocations().only_alive_for_at_most(s(0.5))
+</code></pre>
+<p>will only match the last two allocations (<code>a1</code> and <code>a2</code>) since only they were alive for at most half a second.</p>
+<p>You can use <a href="api_reference/AllocationList/./only_chain_alive_for_at_most.html"><code>only_chain_alive_for_at_most</code></a> if you'd like to take
+the lifetime of the whole allocation chain into account starting from the very first <code>malloc</code> and
+persisting through any future reallocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_allocated_after_at_least"><a class="header" href="#allocationlistonly_allocated_after_at_least">AllocationList::only_allocated_after_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_allocated_after_at_least(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were allocated after at least <code>duration</code>
+from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_allocated_until_at_most"><a class="header" href="#allocationlistonly_allocated_until_at_most">AllocationList::only_allocated_until_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_allocated_until_at_most(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were allocated until at most <code>duration</code>
+from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_backtrace_length_at_least"><a class="header" href="#allocationlistonly_backtrace_length_at_least">AllocationList::only_backtrace_length_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_backtrace_length_at_least(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that have a backtrace which has at least <code>threshold</code> many frames.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_backtrace_length_at_most"><a class="header" href="#allocationlistonly_backtrace_length_at_most">AllocationList::only_backtrace_length_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_backtrace_length_at_most(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that have a backtrace which has at most <code>threshold</code> many frames.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_chain_alive_for_at_least"><a class="header" href="#allocationlistonly_chain_alive_for_at_least">AllocationList::only_chain_alive_for_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_chain_alive_for_at_least(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose whole allocation chain was alive for at least the given <code>duration</code>.</p>
+<p>This considers the whole span of time from when the allocation was first allocated (e.g. through <code>malloc</code>), through any potential reallocations,
+and until it was freed (e.g. through <code>free</code>) or the profiling was stopped. It will match every allocation in that chain.</p>
+<p>For example, for the following allocation pattern:</p>
+<pre><code class="language-c">void * a0 = malloc(size);
+sleep(1);
+
+void * a1 = realloc(a0, size + 1);
+void * a2 = realloc(a2, size + 2);
+free(a2);
+</code></pre>
+<p>this code:</p>
+<pre><code class="language-rust ignore">allocations().only_chain_alive_for_at_least(s(1))
+</code></pre>
+<p>will match all three allocations (<code>a0</code>, <code>a1</code>, <code>a2</code>), since their whole allocation chain lived for at least a second.</p>
+<p>You can use <a href="api_reference/AllocationList/./only_alive_for_at_least.html"><code>only_alive_for_at_least</code></a> if you'd like to only take
+the lifetime of a single allocation into account.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_chain_alive_for_at_most"><a class="header" href="#allocationlistonly_chain_alive_for_at_most">AllocationList::only_chain_alive_for_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_chain_alive_for_at_most(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose whole allocation chain was alive for at most the given <code>duration</code>.</p>
+<p>This considers the whole span of time from when the allocation was first allocated (e.g. through <code>malloc</code>), through any potential reallocations,
+and until it was freed (e.g. through <code>free</code>) or the profiling was stopped. It will match every allocation in that chain.</p>
+<p>For example, for the following allocation pattern:</p>
+<pre><code class="language-c">void * a0 = malloc(size);
+sleep(1);
+
+void * a1 = realloc(a0, size + 1);
+void * a2 = realloc(a2, size + 2);
+free(a2);
+</code></pre>
+<p>this code:</p>
+<pre><code class="language-rust ignore">allocations().only_chain_alive_for_at_most(s(2))
+</code></pre>
+<p>will match all three allocations (<code>a0</code>, <code>a1</code>, <code>a2</code>), since their whole allocation chain lived for less than two seconds.</p>
+<p>You can use <a href="api_reference/AllocationList/./only_alive_for_at_most.html"><code>only_alive_for_at_most</code></a> if you'd like to only take
+the lifetime of a single allocation into account.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_chain_length_at_least"><a class="header" href="#allocationlistonly_chain_length_at_least">AllocationList::only_chain_length_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_chain_length_at_least(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose whole allocation chain was at least <code>threshold</code> allocations long.</p>
+<p>For example, for the following allocation pattern:</p>
+<pre><code class="language-c">void * a0 = malloc(size);
+
+void * b0 = malloc(size);
+void * b1 = realloc(b0, size + 1);
+</code></pre>
+<p>this code:</p>
+<pre><code class="language-rust ignore">allocations().only_chain_length_at_least(2)
+</code></pre>
+<p>will only match <code>b0</code> and <code>b1</code>, since their whole allocation chain has at least two allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_chain_length_at_most"><a class="header" href="#allocationlistonly_chain_length_at_most">AllocationList::only_chain_length_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_chain_length_at_most(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose whole allocation chain was at most <code>threshold</code> allocations long.</p>
+<p>For example, for the following allocation pattern:</p>
+<pre><code class="language-c">void * a0 = malloc(size);
+void * a1 = realloc(a0, size + 1);
+
+void * b0 = malloc(size);
+void * b1 = realloc(b0, size + 1);
+void * b2 = realloc(b1, size + 2);
+</code></pre>
+<p>this code:</p>
+<pre><code class="language-rust ignore">allocations().only_chain_length_at_most(2)
+</code></pre>
+<p>will only match <code>a0</code> and <code>a1</code>, since their whole allocation chain has at most two allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_deallocated_after_at_least"><a class="header" href="#allocationlistonly_deallocated_after_at_least">AllocationList::only_deallocated_after_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_deallocated_after_at_least(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were deallocated after at least <code>duration</code>
+from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_deallocated_until_at_most"><a class="header" href="#allocationlistonly_deallocated_until_at_most">AllocationList::only_deallocated_until_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_deallocated_until_at_most(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were deallocated until at most <code>duration</code>
+from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_first_size_larger_or_equal"><a class="header" href="#allocationlistonly_first_size_larger_or_equal">AllocationList::only_first_size_larger_or_equal</a></h2>
+<pre><code class="language-rust ignore">fn only_first_size_larger_or_equal(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the first allocation's size is larger or equal to the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_first_size_larger"><a class="header" href="#allocationlistonly_first_size_larger">AllocationList::only_first_size_larger</a></h2>
+<pre><code class="language-rust ignore">fn only_first_size_larger(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the first allocation's size is larger than the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_first_size_smaller_or_equal"><a class="header" href="#allocationlistonly_first_size_smaller_or_equal">AllocationList::only_first_size_smaller_or_equal</a></h2>
+<pre><code class="language-rust ignore">fn only_first_size_smaller_or_equal(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the first allocation's size is smaller or equal to the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_first_size_smaller"><a class="header" href="#allocationlistonly_first_size_smaller">AllocationList::only_first_size_smaller</a></h2>
+<pre><code class="language-rust ignore">fn only_first_size_smaller(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the first allocation's size is smaller than the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_group_allocations_at_least"><a class="header" href="#allocationlistonly_group_allocations_at_least">AllocationList::only_group_allocations_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_group_allocations_at_least(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from a stack trace which produced at least <code>threshold</code> allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_group_allocations_at_most"><a class="header" href="#allocationlistonly_group_allocations_at_most">AllocationList::only_group_allocations_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_group_allocations_at_most(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from a stack trace which produced at most <code>threshold</code> allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_group_interval_at_least"><a class="header" href="#allocationlistonly_group_interval_at_least">AllocationList::only_group_interval_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_group_interval_at_least(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from a stack trace which produced allocations spanning at least <code>duration</code>,
+as measured from the very first allocation, to the very last allocation from the same location.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_group_interval_at_most"><a class="header" href="#allocationlistonly_group_interval_at_most">AllocationList::only_group_interval_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_group_interval_at_most(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from a stack trace which produced allocations spanning at most <code>duration</code>,
+as measured from the very first allocation, to the very last allocation from the same location.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_group_leaked_allocations_at_least"><a class="header" href="#allocationlistonly_group_leaked_allocations_at_least">AllocationList::only_group_leaked_allocations_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_group_leaked_allocations_at_least(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from a stack trace which produced at least <code>threshold</code> leaked allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_group_leaked_allocations_at_most"><a class="header" href="#allocationlistonly_group_leaked_allocations_at_most">AllocationList::only_group_leaked_allocations_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_group_leaked_allocations_at_most(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from a stack trace which produced at most <code>threshold</code> leaked allocations.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_larger_or_equal"><a class="header" href="#allocationlistonly_larger_or_equal">AllocationList::only_larger_or_equal</a></h2>
+<pre><code class="language-rust ignore">fn only_larger_or_equal(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose size is larger or equal to the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_larger"><a class="header" href="#allocationlistonly_larger">AllocationList::only_larger</a></h2>
+<pre><code class="language-rust ignore">fn only_larger(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose size is larger than the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_last_size_larger_or_equal"><a class="header" href="#allocationlistonly_last_size_larger_or_equal">AllocationList::only_last_size_larger_or_equal</a></h2>
+<pre><code class="language-rust ignore">fn only_last_size_larger_or_equal(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the last allocation's size is larger or equal to the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_last_size_larger"><a class="header" href="#allocationlistonly_last_size_larger">AllocationList::only_last_size_larger</a></h2>
+<pre><code class="language-rust ignore">fn only_last_size_larger(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the last allocation's size is larger than the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_last_size_smaller_or_equal"><a class="header" href="#allocationlistonly_last_size_smaller_or_equal">AllocationList::only_last_size_smaller_or_equal</a></h2>
+<pre><code class="language-rust ignore">fn only_last_size_smaller_or_equal(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the last allocation's size is smaller or equal to the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_last_size_smaller"><a class="header" href="#allocationlistonly_last_size_smaller">AllocationList::only_last_size_smaller</a></h2>
+<pre><code class="language-rust ignore">fn only_last_size_smaller(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that are part of an allocation chain where the last allocation's size is smaller than the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_leaked_or_deallocated_after"><a class="header" href="#allocationlistonly_leaked_or_deallocated_after">AllocationList::only_leaked_or_deallocated_after</a></h2>
+<pre><code class="language-rust ignore">fn only_leaked_or_deallocated_after(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were either leaked or deallocated
+after <code>duration</code> from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_leaked"><a class="header" href="#allocationlistonly_leaked">AllocationList::only_leaked</a></h2>
+<pre><code class="language-rust ignore">fn only_leaked(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only leaked allocations.</p>
+<p>A leaked allocation is an allocation which was never deallocated.</p>
+<p>Opposite of <a href="api_reference/AllocationList/./only_temporary.html"><code>only_temporary</code></a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_matching_backtraces"><a class="header" href="#allocationlistonly_matching_backtraces">AllocationList::only_matching_backtraces</a></h2>
+<pre><code class="language-rust ignore">fn only_matching_backtraces(
+    self: AllocationList,
+    backtrace_ids: [Backtrace|AllocationList|AllocationGroupList|Integer]
+) -&gt; AllocationList
+</code></pre>
+<pre><code class="language-rust ignore">fn only_matching_backtraces(
+    self: AllocationList,
+    backtrace_ids: Backtrace|AllocationList|AllocationGroupList|Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from one of the given <code>backtrace_ids</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_not_deallocated_after_at_least"><a class="header" href="#allocationlistonly_not_deallocated_after_at_least">AllocationList::only_not_deallocated_after_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_not_deallocated_after_at_least(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were <strong>not</strong> deallocated after at least <code>duration</code>
+from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_not_deallocated_until_at_most"><a class="header" href="#allocationlistonly_not_deallocated_until_at_most">AllocationList::only_not_deallocated_until_at_most</a></h2>
+<pre><code class="language-rust ignore">fn only_not_deallocated_until_at_most(
+    self: AllocationList,
+    duration: Duration
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that were <strong>not</strong> deallocated until at most <code>duration</code>
+from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_not_matching_backtraces"><a class="header" href="#allocationlistonly_not_matching_backtraces">AllocationList::only_not_matching_backtraces</a></h2>
+<pre><code class="language-rust ignore">fn only_not_matching_backtraces(
+    self: AllocationList,
+    backtrace_ids: [Backtrace|AllocationList|AllocationGroupList|Integer]
+) -&gt; AllocationList
+</code></pre>
+<pre><code class="language-rust ignore">fn only_not_matching_backtraces(
+    self: AllocationList,
+    backtrace_ids: Backtrace|AllocationList|AllocationGroupList|Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations that come from one of the given <code>backtrace_ids</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_not_passing_through_function"><a class="header" href="#allocationlistonly_not_passing_through_function">AllocationList::only_not_passing_through_function</a></h2>
+<pre><code class="language-rust ignore">fn only_not_passing_through_function(
+    self: AllocationList,
+    regex: String
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose backtrace does <strong>not</strong> contain a function which matches a given regex.</p>
+<p>The flavor of regexps used here is the same as Rust's <a href="https://docs.rs/regex"><code>regex</code> crate</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_not_passing_through_source"><a class="header" href="#allocationlistonly_not_passing_through_source">AllocationList::only_not_passing_through_source</a></h2>
+<pre><code class="language-rust ignore">fn only_not_passing_through_source(
+    self: AllocationList,
+    regex: String
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose backtrace does <strong>not</strong> contain a frame which passes through a source file which matches a given regex.</p>
+<p>The flavor of regexps used here is the same as Rust's <a href="https://docs.rs/regex"><code>regex</code> crate</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_passing_through_function"><a class="header" href="#allocationlistonly_passing_through_function">AllocationList::only_passing_through_function</a></h2>
+<pre><code class="language-rust ignore">fn only_passing_through_function(
+    self: AllocationList,
+    regex: String
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose backtrace contains a function which matches a given regex.</p>
+<p>The flavor of regexps used here is the same as Rust's <a href="https://docs.rs/regex"><code>regex</code> crate</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_passing_through_source"><a class="header" href="#allocationlistonly_passing_through_source">AllocationList::only_passing_through_source</a></h2>
+<pre><code class="language-rust ignore">fn only_passing_through_source(
+    self: AllocationList,
+    regex: String
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose backtrace contains a frame which passes through a source file which matches a given regex.</p>
+<p>The flavor of regexps used here is the same as Rust's <a href="https://docs.rs/regex"><code>regex</code> crate</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_ptmalloc_from_main_arena"><a class="header" href="#allocationlistonly_ptmalloc_from_main_arena">AllocationList::only_ptmalloc_from_main_arena</a></h2>
+<pre><code class="language-rust ignore">fn only_ptmalloc_from_main_arena(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only ptmalloc allocations which were internally allocated on the main arena.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_ptmalloc_mmaped"><a class="header" href="#allocationlistonly_ptmalloc_mmaped">AllocationList::only_ptmalloc_mmaped</a></h2>
+<pre><code class="language-rust ignore">fn only_ptmalloc_mmaped(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only ptmalloc allocations which were internally allocated through <code>mmap</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_ptmalloc_not_from_main_arena"><a class="header" href="#allocationlistonly_ptmalloc_not_from_main_arena">AllocationList::only_ptmalloc_not_from_main_arena</a></h2>
+<pre><code class="language-rust ignore">fn only_ptmalloc_not_from_main_arena(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only ptmalloc allocations which were internally not allocated on the main arena.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_ptmalloc_not_mmaped"><a class="header" href="#allocationlistonly_ptmalloc_not_mmaped">AllocationList::only_ptmalloc_not_mmaped</a></h2>
+<pre><code class="language-rust ignore">fn only_ptmalloc_not_mmaped(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only ptmalloc allocations which were internally not allocated through <code>mmap</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_smaller_or_equal"><a class="header" href="#allocationlistonly_smaller_or_equal">AllocationList::only_smaller_or_equal</a></h2>
+<pre><code class="language-rust ignore">fn only_smaller_or_equal(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose size is smaller or equal to the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_smaller"><a class="header" href="#allocationlistonly_smaller">AllocationList::only_smaller</a></h2>
+<pre><code class="language-rust ignore">fn only_smaller(
+    self: AllocationList,
+    threshold: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only the allocations whose size is smaller than the given <code>threshold</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistonly_temporary"><a class="header" href="#allocationlistonly_temporary">AllocationList::only_temporary</a></h2>
+<pre><code class="language-rust ignore">fn only_temporary(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only temporary allocations.</p>
+<p>A temporary allocation is an allocation which was eventually deallocated.</p>
+<p>Opposite of <a href="api_reference/AllocationList/./only_leaked.html"><code>only_leaked</code></a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistsave_as_flamegraph"><a class="header" href="#allocationlistsave_as_flamegraph">AllocationList::save_as_flamegraph</a></h2>
+<pre><code class="language-rust ignore">fn save_as_flamegraph(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<pre><code class="language-rust ignore">fn save_as_flamegraph(
+    self: AllocationList,
+    path: String
+) -&gt; AllocationList
+</code></pre>
+<p>Saves the allocation list as a flamegraph. The <code>path</code> argument is optional; if missing the filename will be automatically generated.</p>
+<h3 id="examples-8"><a class="header" href="#examples-8">Examples</a></h3>
+<pre><code class="language-rust ignore">allocations()
+    .only_temporary()
+    .save_as_flamegraph(&quot;allocations.svg&quot;);
+</code></pre>
+<p><a href="api_reference/AllocationList/../../generated/10cb024a2d6b401c5bf6996d17b750a1.svg"><img src="api_reference/AllocationList/../../generated/10cb024a2d6b401c5bf6996d17b750a1.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationlistsave_as_graph"><a class="header" href="#allocationlistsave_as_graph">AllocationList::save_as_graph</a></h2>
+<pre><code class="language-rust ignore">fn save_as_graph(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<pre><code class="language-rust ignore">fn save_as_graph(
+    self: AllocationList,
+    path: String
+) -&gt; AllocationList
+</code></pre>
+<p>Saves the allocation list as a graph. The <code>path</code> argument is optional; if missing the filename will be automatically generated.</p>
+<h3 id="examples-9"><a class="header" href="#examples-9">Examples</a></h3>
+<pre><code class="language-rust ignore">allocations()
+    .only_temporary()
+    .save_as_graph(&quot;allocations.svg&quot;);
+</code></pre>
+<p><a href="api_reference/AllocationList/../../generated/acf90cf6dd57bbc218470f21c4e96c74.svg"><img src="api_reference/AllocationList/../../generated/acf90cf6dd57bbc218470f21c4e96c74.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="allocationgrouplist"><a class="header" href="#allocationgrouplist">AllocationGroupList</a></h1>
+<p><code>AllocationGroupList</code> is an object which holds multiple <a href="api_reference/AllocationList.html"><code>AllocationList</code>s</a>
+grouped according to a specified criteria.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistiterator"><a class="header" href="#allocationgrouplistiterator">AllocationGroupList::(iterator)</a></h2>
+<p><code>AllocationGroupList</code> can be iterated with a <code>for</code>.</p>
+<h3 id="examples-10"><a class="header" href="#examples-10">Examples</a></h3>
+<pre><code class="language-rust ignore">for group in allocations().group_by_backtrace().take(2) {
+    println(&quot;Allocations in group: {}&quot;, group.len());
+}
+</code></pre>
+<pre><code>Allocations in group: 8
+Allocations in group: 9
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplist-1"><a class="header" href="#allocationgrouplist-1">AllocationGroupList::[]</a></h2>
+<pre><code class="language-rust ignore">fn [](
+    index: Integer
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a given <a href="api_reference/AllocationGroupList/../AllocationList.html"><code>AllocationList</code></a> from the list.</p>
+<h3 id="examples-11"><a class="header" href="#examples-11">Examples</a></h3>
+<pre><code class="language-rust ignore">let groups = allocations().group_by_backtrace().sort_by_count();
+println(groups[0].len());
+println(groups[1].len());
+</code></pre>
+<pre><code>154975
+116372
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistlen"><a class="header" href="#allocationgrouplistlen">AllocationGroupList::len</a></h2>
+<pre><code class="language-rust ignore">fn len(
+    self: AllocationGroupList
+) -&gt; Integer
+</code></pre>
+<p>Returns the number of allocation groups within the list.</p>
+<h3 id="examples-12"><a class="header" href="#examples-12">Examples</a></h3>
+<pre><code class="language-rust ignore">println(allocations().group_by_backtrace().len());
+</code></pre>
+<pre><code>25
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistonly_all_leaked"><a class="header" href="#allocationgrouplistonly_all_leaked">AllocationGroupList::only_all_leaked</a></h2>
+<pre><code class="language-rust ignore">fn only_all_leaked(
+    self: AllocationGroupList
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Returns a new <code>AllocationGroupList</code> with only those groups where all of the allocations where leaked.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistonly_count_at_least"><a class="header" href="#allocationgrouplistonly_count_at_least">AllocationGroupList::only_count_at_least</a></h2>
+<pre><code class="language-rust ignore">fn only_count_at_least(
+    self: AllocationGroupList,
+    threshold: Integer
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Returns a new <code>AllocationGroupList</code> with only those groups where the number of allocations is
+at least <code>threshold</code> allocations or more.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistsort_by_count_ascending"><a class="header" href="#allocationgrouplistsort_by_count_ascending">AllocationGroupList::sort_by_count_ascending</a></h2>
+<pre><code class="language-rust ignore">fn sort_by_count_ascending(
+    self: AllocationGroupList
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Sorts the groups by allocation count in an ascending order.</p>
+<h3 id="examples-13"><a class="header" href="#examples-13">Examples</a></h3>
+<pre><code class="language-rust ignore">let groups = allocations().group_by_backtrace().sort_by_count_ascending();
+println(groups[0].len());
+println(groups[1].len());
+println(groups[groups.len() - 1].len());
+</code></pre>
+<pre><code>1
+1
+154975
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistsort_by_count_descending"><a class="header" href="#allocationgrouplistsort_by_count_descending">AllocationGroupList::sort_by_count_descending</a></h2>
+<pre><code class="language-rust ignore">fn sort_by_count_descending(
+    self: AllocationGroupList
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Sorts the groups by allocation count in a descending order.</p>
+<h3 id="examples-14"><a class="header" href="#examples-14">Examples</a></h3>
+<pre><code class="language-rust ignore">let groups = allocations().group_by_backtrace().sort_by_count_descending();
+println(groups[0].len());
+println(groups[1].len());
+println(groups[groups.len() - 1].len());
+</code></pre>
+<pre><code>154975
+116372
+1
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistsort_by_count"><a class="header" href="#allocationgrouplistsort_by_count">AllocationGroupList::sort_by_count</a></h2>
+<p>Alias for <a href="api_reference/AllocationGroupList/sort_by_count_descending.html">sort_by_count_descending</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistsort_by_size_ascending"><a class="header" href="#allocationgrouplistsort_by_size_ascending">AllocationGroupList::sort_by_size_ascending</a></h2>
+<pre><code class="language-rust ignore">fn sort_by_size_ascending(
+    self: AllocationGroupList
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Sorts the groups by their memory usage in an ascending order.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistsort_by_size_descending"><a class="header" href="#allocationgrouplistsort_by_size_descending">AllocationGroupList::sort_by_size_descending</a></h2>
+<pre><code class="language-rust ignore">fn sort_by_size_descending(
+    self: AllocationGroupList
+) -&gt; AllocationGroupList
+</code></pre>
+<p>Sorts the groups by their memory usage in a descending order.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistsort_by_size"><a class="header" href="#allocationgrouplistsort_by_size">AllocationGroupList::sort_by_size</a></h2>
+<p>Alias for <a href="api_reference/AllocationGroupList/sort_by_size_descending.html">sort_by_size_descending</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplisttake"><a class="header" href="#allocationgrouplisttake">AllocationGroupList::take</a></h2>
+<pre><code class="language-rust ignore">fn take(
+    self: AllocationGroupList,
+    count: AllocationGroupList
+) -&gt; AllocanioGroupList
+</code></pre>
+<p>Returns a new list with at most <code>count</code> items.</p>
+<h3 id="examples-15"><a class="header" href="#examples-15">Examples</a></h3>
+<pre><code class="language-rust ignore">let groups = allocations().group_by_backtrace();
+println(groups.len());
+println(groups.take(3).len());
+println(groups.take(100).len());
+</code></pre>
+<pre><code>25
+3
+25
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="allocationgrouplistungroup"><a class="header" href="#allocationgrouplistungroup">AllocationGroupList::ungroup</a></h2>
+<pre><code class="language-rust ignore">fn ungroup(
+    self: AllocationGroupList
+) -&gt; AllocationList
+</code></pre>
+<p>Ungroups all of the allocations back into a flat list.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="backtrace"><a class="header" href="#backtrace">Backtrace</a></h1>
+<p><code>Backtrace</code> is an object representing a single backtrace.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="backtracestrip"><a class="header" href="#backtracestrip">Backtrace::strip</a></h2>
+<pre><code class="language-rust ignore">fn strip(
+    self: Backtrace
+) -&gt; Backtrace
+</code></pre>
+<p>Strips out useless junk from the backtrace.</p>
+<h3 id="examples-16"><a class="header" href="#examples-16">Examples</a></h3>
+<pre><code class="language-rust ignore">let groups = allocations().group_by_backtrace().sort_by_size();
+let backtrace = groups[0][0].backtrace();
+
+println(&quot;Before:&quot;);
+println(backtrace);
+
+println();
+println(&quot;After:&quot;);
+println(backtrace.strip());
+</code></pre>
+<pre><code>Before:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#03 [simulation] std::rt::lang_start [rt.rs:62]
+#04 [simulation] std::rt::lang_start_internal [rt.rs:45]
+#05 [simulation] std::panic::catch_unwind [panic.rs:434]
+#06 [simulation] std::panicking::try [panicking.rs:365]
+#07 [simulation] std::panicking::try::do_call [panicking.rs:401]
+#08 [simulation] std::rt::lang_start_internal::{{closure}} [rt.rs:45]
+#09 [simulation] std::panic::catch_unwind [panic.rs:434]
+#10 [simulation] std::panicking::try [panicking.rs:365]
+#11 [simulation] std::panicking::try::do_call [panicking.rs:401]
+#12 [simulation] core::ops::function::impls::&lt;impl core::ops::function::FnOnce&lt;A&gt; for &amp;F&gt;::call_once [function.rs:259]
+#13 [simulation] std::rt::lang_start::{{closure}} [rt.rs:63]
+#14 [simulation] std::sys_common::backtrace::__rust_begin_short_backtrace [backtrace.rs:125]
+#15 [simulation] core::ops::function::FnOnce::call_once [function.rs:227]
+#16 [simulation] simulation::main [main.rs:121]
+#17 [simulation] simulation::allocate_temporary [main.rs:16]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+#19 [simulation] alloc::vec::Vec&lt;T,A&gt;::extend_with [mod.rs:2234]
+#20 [simulation] alloc::vec::Vec&lt;T,A&gt;::reserve [mod.rs:805]
+#21 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::reserve [raw_vec.rs:337]
+#22 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::reserve::do_reserve_and_handle [raw_vec.rs:333]
+#23 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::grow_amortized [raw_vec.rs:442]
+#24 [simulation] alloc::raw_vec::finish_grow [raw_vec.rs:511]
+#25 [simulation] &lt;alloc::alloc::Global as core::alloc::Allocator&gt;::allocate [alloc.rs:226]
+#26 [simulation] alloc::alloc::Global::alloc_impl [alloc.rs:166]
+#27 [simulation] alloc::alloc::alloc [alloc.rs:86]
+
+After:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:121]
+#17 [simulation] simulation::allocate_temporary [main.rs:16]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="data-1"><a class="header" href="#data-1">Data</a></h1>
+<p><code>Data</code> is an object which holds a loaded data file.</p>
+<p>You can either use <a href="api_reference/./globals/data.html"><code>data</code></a> to access the currently loaded data file,
+or you can use <a href="api_reference/./globals/load.html"><code>load</code></a> to load one.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="dataallocations"><a class="header" href="#dataallocations">Data::allocations</a></h2>
+<pre><code class="language-rust ignore">fn allocation(
+    self: Data
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a list of all of the allocations for this data file.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="dataruntime"><a class="header" href="#dataruntime">Data::runtime</a></h2>
+<pre><code class="language-rust ignore">fn runtime(
+    self: Data
+) -&gt; Duration
+</code></pre>
+<p>Returns the whole duration of the runtime as measured from the start of profiling.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="duration"><a class="header" href="#duration">Duration</a></h1>
+<p><code>Duration</code> is an object which represents a span of time.</p>
+<p>Usually you'd use one of these functions to create one:</p>
+<ul>
+<li><a href="api_reference/./globals/h.html">h</a></li>
+<li><a href="api_reference/./globals/m.html">m</a></li>
+<li><a href="api_reference/./globals/s.html">s</a></li>
+<li><a href="api_reference/./globals/ms.html">ms</a></li>
+<li><a href="api_reference/./globals/us.html">us</a></li>
+<li><a href="api_reference/./Data/runtime.html">Data::runtime</a></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="duration-1"><a class="header" href="#duration-1">Duration::+</a></h2>
+<pre><code class="language-rust ignore">fn +(
+    lhs: Duration,
+    rhs: Duration
+) -&gt; Duration
+</code></pre>
+<p>Adds two durations together.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="duration-"><a class="header" href="#duration-">Duration::-</a></h2>
+<pre><code class="language-rust ignore">fn -(
+    lhs: Duration,
+    rhs: Duration
+) -&gt; Duration
+</code></pre>
+<p>Subtracts two durations together.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="duration-2"><a class="header" href="#duration-2">Duration::*</a></h2>
+<pre><code class="language-rust ignore">fn *(
+    lhs: Integer|Float,
+    rhs: Duration
+) -&gt; Duration
+</code></pre>
+<pre><code class="language-rust ignore">fn *(
+    lhs: Duration,
+    rhs: Integer|Float
+) -&gt; Duration
+</code></pre>
+<p>Multiplies a given duration by a number.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="graph-1"><a class="header" href="#graph-1">Graph</a></h1>
+<p><code>Graph</code> is a builder object used to render an allocation graph.</p>
+<p>Use <a href="api_reference/./globals/graph.html"><code>graph</code></a> to construct a new instance.</p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphadd"><a class="header" href="#graphadd">Graph::add</a></h2>
+<pre><code class="language-rust ignore">fn add(
+    self: Graph,
+    allocations: AllocationList|AllocationGroupList
+) -&gt; Graph
+</code></pre>
+<pre><code class="language-rust ignore">fn add(
+    self: Graph,
+    series_name: String,
+    allocations: AllocationList
+) -&gt; Graph
+</code></pre>
+<p>Adds a new series to the graph with the given <code>allocations</code>.</p>
+<p>If you add multiple allocation lists the graph will become an area graph, where every extra <code>add</code> will
+only add new allocations to the graph which were not present in any of the previously added lists.</p>
+<h3 id="examples-17"><a class="header" href="#examples-17">Examples</a></h3>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Only leaked&quot;, allocations().only_leaked())
+    .add(&quot;Remaining&quot;, allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/932d9cc0dc575851e9d14e8fc1d1770c.svg"><img src="api_reference/Graph/../../generated/932d9cc0dc575851e9d14e8fc1d1770c.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphextend_until"><a class="header" href="#graphextend_until">Graph::extend_until</a></h2>
+<pre><code class="language-rust ignore">fn extend_until(
+    self: Graph,
+    duration: Duration
+) -&gt; Graph
+</code></pre>
+<p>Extends the graph until given <code>duration</code> as measured from the start of the profiling.</p>
+<h3 id="examples-18"><a class="header" href="#examples-18">Examples</a></h3>
+<p>Assuming we have the following graph:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/bae7cd0a08ec228933f1227f0f1b3c8c.svg"><img src="api_reference/Graph/../../generated/bae7cd0a08ec228933f1227f0f1b3c8c.svg" alt="" /></a></p>
+<p>We can extend it to the right like this:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .extend_until(data().runtime() + s(5))
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/09b60b16c9ff7c576970489b9be4fb6e.svg"><img src="api_reference/Graph/../../generated/09b60b16c9ff7c576970489b9be4fb6e.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphonly_non_empty_series"><a class="header" href="#graphonly_non_empty_series">Graph::only_non_empty_series</a></h2>
+<pre><code class="language-rust ignore">fn only_non_empty_series(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Hides legend entries for any series which are empty.</p>
+<h3 id="examples-19"><a class="header" href="#examples-19">Examples</a></h3>
+<p>Let's say we have the following code:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Leaked&quot;, allocations().only_leaked())
+    .add(&quot;Temporary&quot;, allocations().only_temporary())
+    .add(&quot;Remaining&quot;, allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/cec0690e96f7cc0976bb96270ca40559.svg"><img src="api_reference/Graph/../../generated/cec0690e96f7cc0976bb96270ca40559.svg" alt="" /></a></p>
+<p>As we can see we have an extra &quot;Remaining&quot; series which is empty; we can automatically hide it using <code>only_non_empty_series</code>:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Leaked&quot;, allocations().only_leaked())
+    .add(&quot;Temporary&quot;, allocations().only_temporary())
+    .add(&quot;Remaining&quot;, allocations())
+    .only_non_empty_series()
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/3946fd3198694b1fccd5e421ca0090f6.svg"><img src="api_reference/Graph/../../generated/3946fd3198694b1fccd5e421ca0090f6.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphsave_each_series_as_flamegraph"><a class="header" href="#graphsave_each_series_as_flamegraph">Graph::save_each_series_as_flamegraph</a></h2>
+<pre><code class="language-rust ignore">fn save_each_series_as_flamegraph(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<pre><code class="language-rust ignore">fn save_each_series_as_flamegraph(
+    self: Graph,
+    output_directory: String
+) -&gt; Graph
+</code></pre>
+<p>Saves each series of the graph into a separate file as a flamegraph. The <code>output_directory</code> argument is optional;
+if missing the files will be generated in the current directory.</p>
+<h3 id="examples-20"><a class="header" href="#examples-20">Examples</a></h3>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Temporary&quot;, allocations().only_temporary())
+    .add(&quot;Leaked&quot;, allocations().only_leaked())
+    .save_each_series_as_flamegraph();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/10cb024a2d6b401c5bf6996d17b750a1.svg"><img src="api_reference/Graph/../../generated/10cb024a2d6b401c5bf6996d17b750a1.svg" alt="" /></a>
+<a href="api_reference/Graph/../../generated/e0a4e21e0a13220ea719d2f366d22580.svg"><img src="api_reference/Graph/../../generated/e0a4e21e0a13220ea719d2f366d22580.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphsave_each_series_as_graph"><a class="header" href="#graphsave_each_series_as_graph">Graph::save_each_series_as_graph</a></h2>
+<pre><code class="language-rust ignore">fn save_each_series_as_graph(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<pre><code class="language-rust ignore">fn save_each_series_as_graph(
+    self: Graph,
+    output_directory: String
+) -&gt; Graph
+</code></pre>
+<p>Saves each series of the graph into a separate file. The <code>output_directory</code> argument is optional;
+if missing the files will be generated in the current directory.</p>
+<h3 id="examples-21"><a class="header" href="#examples-21">Examples</a></h3>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Temporary&quot;, allocations().only_temporary())
+    .add(&quot;Leaked&quot;, allocations().only_leaked())
+    .save_each_series_as_graph();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/9be05e1e3601eaf2beb6b3599129399c.svg"><img src="api_reference/Graph/../../generated/9be05e1e3601eaf2beb6b3599129399c.svg" alt="" /></a>
+<a href="api_reference/Graph/../../generated/35d8eb2b06e42ba4e977a2544128fa83.svg"><img src="api_reference/Graph/../../generated/35d8eb2b06e42ba4e977a2544128fa83.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphsave"><a class="header" href="#graphsave">Graph::save</a></h2>
+<pre><code class="language-rust ignore">fn save(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<pre><code class="language-rust ignore">fn save(
+    self: Graph,
+    path: String
+) -&gt; Graph
+</code></pre>
+<p>Saves the graph to a file. The <code>path</code> argument is optional; if missing the filename will be automatically generated.</p>
+<h3 id="examples-22"><a class="header" href="#examples-22">Examples</a></h3>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save(&quot;allocations.svg&quot;);
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/8d27d47f850811fa5ff2db299694e6ed.svg"><img src="api_reference/Graph/../../generated/8d27d47f850811fa5ff2db299694e6ed.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphtrim_left"><a class="header" href="#graphtrim_left">Graph::trim_left</a></h2>
+<pre><code class="language-rust ignore">fn trim_left(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Trims any empty space in the left portion of the graph.</p>
+<h3 id="examples-23"><a class="header" href="#examples-23">Examples</a></h3>
+<p>Here's a graph which has a significant amount of empty space at the start with no allocations:</p>
+<p><a href="api_reference/Graph/../../generated/1f17ade12fb22f27606519faa8afe52f.svg"><img src="api_reference/Graph/../../generated/1f17ade12fb22f27606519faa8afe52f.svg" alt="" /></a></p>
+<p>By applying <code>trim_left</code> to it here's how it'll look like:</p>
+<p><a href="api_reference/Graph/../../generated/a72c35e9a6d1cdbb899d648fcc9a9480.svg"><img src="api_reference/Graph/../../generated/a72c35e9a6d1cdbb899d648fcc9a9480.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphtrim_right"><a class="header" href="#graphtrim_right">Graph::trim_right</a></h2>
+<pre><code class="language-rust ignore">fn trim_right(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Trims any empty space in the right portion of the graph.</p>
+<h3 id="examples-24"><a class="header" href="#examples-24">Examples</a></h3>
+<p>Here's a graph which has a significant amount of empty space at the end:</p>
+<p><a href="api_reference/Graph/../../generated/669f17d132deac2fbeffad12e5f17f95.svg"><img src="api_reference/Graph/../../generated/669f17d132deac2fbeffad12e5f17f95.svg" alt="" /></a></p>
+<p>By applying <code>trim_right</code> to it here's how it'll look like:</p>
+<p><a href="api_reference/Graph/../../generated/8dffb9270fde6f069061eeb69fe31369.svg"><img src="api_reference/Graph/../../generated/8dffb9270fde6f069061eeb69fe31369.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphtrim"><a class="header" href="#graphtrim">Graph::trim</a></h2>
+<pre><code class="language-rust ignore">fn trim_right(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Trims any empty space on both sides of the graph.</p>
+<h3 id="examples-25"><a class="header" href="#examples-25">Examples</a></h3>
+<p>Here's a graph which has a significant amount of empty on both sides:</p>
+<p><a href="api_reference/Graph/../../generated/94985faf9980e81579cd0ba758520c72.svg"><img src="api_reference/Graph/../../generated/94985faf9980e81579cd0ba758520c72.svg" alt="" /></a></p>
+<p>By applying <code>trim</code> to it here's how it'll look like:</p>
+<p><a href="api_reference/Graph/../../generated/c0a9ff00748097bcbbe445154b02b644.svg"><img src="api_reference/Graph/../../generated/c0a9ff00748097bcbbe445154b02b644.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphtruncate_until"><a class="header" href="#graphtruncate_until">Graph::truncate_until</a></h2>
+<pre><code class="language-rust ignore">fn truncate_until(
+    self: Graph,
+    duration: Duration
+) -&gt; Graph
+</code></pre>
+<p>Truncate the graph until given <code>duration</code> as measured from the start of the profiling.</p>
+<h3 id="examples-26"><a class="header" href="#examples-26">Examples</a></h3>
+<p>Assuming we have the following graph:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/bae7cd0a08ec228933f1227f0f1b3c8c.svg"><img src="api_reference/Graph/../../generated/bae7cd0a08ec228933f1227f0f1b3c8c.svg" alt="" /></a></p>
+<p>We can truncate it like this:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .truncate_until(data().runtime() - s(2))
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/08678f89e2a9f9208cdb9e6429d0a968.svg"><img src="api_reference/Graph/../../generated/08678f89e2a9f9208cdb9e6429d0a968.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphwith_gradient_color_scheme"><a class="header" href="#graphwith_gradient_color_scheme">Graph::with_gradient_color_scheme</a></h2>
+<pre><code class="language-rust ignore">fn with_gradient_color_scheme(
+    self: Graph,
+    start: String,
+    end: String
+) -&gt; Graph
+</code></pre>
+<p>Sets the graph color scheme so that the bottommost series is of the <code>start</code> color
+and the topmost series is of the <code>end</code> color.</p>
+<h3 id="examples-27"><a class="header" href="#examples-27">Examples</a></h3>
+<pre><code class="language-rust ignore">let xs = allocations().only_temporary();
+graph()
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.8))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.7))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.6))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.5))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.4))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.3))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.2))
+    .add(xs.only_alive_for_at_least(data().runtime() * 0.1))
+    .with_gradient_color_scheme(&quot;red&quot;, &quot;blue&quot;)
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/19075188ace6d94a2653272e65242967.svg"><img src="api_reference/Graph/../../generated/19075188ace6d94a2653272e65242967.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphwithout_axes"><a class="header" href="#graphwithout_axes">Graph::without_axes</a></h2>
+<pre><code class="language-rust ignore">fn without_axes(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Removes the horizonal and vertical axis of the graph.</p>
+<h3 id="examples-28"><a class="header" href="#examples-28">Examples</a></h3>
+<p>Before:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/ef6ef40631ef3636dceca2eab717cb7c.svg"><img src="api_reference/Graph/../../generated/ef6ef40631ef3636dceca2eab717cb7c.svg" alt="" /></a></p>
+<p>After:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .without_axes()
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/e1e229f6fc4c5e67319207223a7d46b9.svg"><img src="api_reference/Graph/../../generated/e1e229f6fc4c5e67319207223a7d46b9.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphwithout_grid"><a class="header" href="#graphwithout_grid">Graph::without_grid</a></h2>
+<pre><code class="language-rust ignore">fn without_grid(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Removes the grid from the graph.</p>
+<h3 id="examples-29"><a class="header" href="#examples-29">Examples</a></h3>
+<p>Before:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/ef6ef40631ef3636dceca2eab717cb7c.svg"><img src="api_reference/Graph/../../generated/ef6ef40631ef3636dceca2eab717cb7c.svg" alt="" /></a></p>
+<p>After:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .without_grid()
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/ac41abf750c74345d2c7f95058ff711d.svg"><img src="api_reference/Graph/../../generated/ac41abf750c74345d2c7f95058ff711d.svg" alt="" /></a></p>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="graphwithout_legend"><a class="header" href="#graphwithout_legend">Graph::without_legend</a></h2>
+<pre><code class="language-rust ignore">fn without_legend(
+    self: Graph
+) -&gt; Graph
+</code></pre>
+<p>Removes the legend from the graph.</p>
+<h3 id="examples-30"><a class="header" href="#examples-30">Examples</a></h3>
+<p>Before:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Allocations&quot;, allocations())
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/e81e5c6d7f05bedd4c9830abc7ce4d32.svg"><img src="api_reference/Graph/../../generated/e81e5c6d7f05bedd4c9830abc7ce4d32.svg" alt="" /></a></p>
+<p>After:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Allocations&quot;, allocations())
+    .without_legend()
+    .save();
+</code></pre>
+<p><a href="api_reference/Graph/../../generated/ef6ef40631ef3636dceca2eab717cb7c.svg"><img src="api_reference/Graph/../../generated/ef6ef40631ef3636dceca2eab717cb7c.svg" alt="" /></a></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+            </nav>
+
+        </div>
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        <script type="text/javascript">
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+    </body>
+</html>

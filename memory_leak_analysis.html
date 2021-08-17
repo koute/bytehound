@@ -1,0 +1,436 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Case study: Memory leak analysis - Memory profiling for fun and profit</title>
+        <!-- Custom HTML head -->
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="custom.css">
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="memory_leak_analysis.html" class="active"><strong aria-hidden="true">3.</strong> Case study: Memory leak analysis</a></li><li class="chapter-item expanded "><a href="common_issues.html"><strong aria-hidden="true">4.</strong> Common issues</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">5.</strong> Configuring the profiler</a></li><li class="chapter-item expanded "><a href="api_reference.html"><strong aria-hidden="true">6.</strong> API reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/globals.html"><strong aria-hidden="true">6.1.</strong> Globally available functions</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/globals/allocations.html"><strong aria-hidden="true">6.1.1.</strong> allocations</a></li><li class="chapter-item expanded "><a href="api_reference/globals/data.html"><strong aria-hidden="true">6.1.2.</strong> data</a></li><li class="chapter-item expanded "><a href="api_reference/globals/graph.html"><strong aria-hidden="true">6.1.3.</strong> graph</a></li><li class="chapter-item expanded "><a href="api_reference/globals/info.html"><strong aria-hidden="true">6.1.4.</strong> info</a></li><li class="chapter-item expanded "><a href="api_reference/globals/load.html"><strong aria-hidden="true">6.1.5.</strong> load</a></li><li class="chapter-item expanded "><a href="api_reference/globals/println.html"><strong aria-hidden="true">6.1.6.</strong> println</a></li><li class="chapter-item expanded "><a href="api_reference/globals/h.html"><strong aria-hidden="true">6.1.7.</strong> h</a></li><li class="chapter-item expanded "><a href="api_reference/globals/m.html"><strong aria-hidden="true">6.1.8.</strong> m</a></li><li class="chapter-item expanded "><a href="api_reference/globals/s.html"><strong aria-hidden="true">6.1.9.</strong> s</a></li><li class="chapter-item expanded "><a href="api_reference/globals/ms.html"><strong aria-hidden="true">6.1.10.</strong> ms</a></li><li class="chapter-item expanded "><a href="api_reference/globals/us.html"><strong aria-hidden="true">6.1.11.</strong> us</a></li><li class="chapter-item expanded "><a href="api_reference/globals/kb.html"><strong aria-hidden="true">6.1.12.</strong> kb</a></li><li class="chapter-item expanded "><a href="api_reference/globals/mb.html"><strong aria-hidden="true">6.1.13.</strong> mb</a></li><li class="chapter-item expanded "><a href="api_reference/globals/gb.html"><strong aria-hidden="true">6.1.14.</strong> gb</a></li><li class="chapter-item expanded "><a href="api_reference/globals/argv.html"><strong aria-hidden="true">6.1.15.</strong> argv</a></li><li class="chapter-item expanded "><a href="api_reference/globals/chdir.html"><strong aria-hidden="true">6.1.16.</strong> chdir</a></li><li class="chapter-item expanded "><a href="api_reference/globals/dirname.html"><strong aria-hidden="true">6.1.17.</strong> dirname</a></li><li class="chapter-item expanded "><a href="api_reference/globals/exit.html"><strong aria-hidden="true">6.1.18.</strong> exit</a></li><li class="chapter-item expanded "><a href="api_reference/globals/mkdir_p.html"><strong aria-hidden="true">6.1.19.</strong> mkdir_p</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Allocation.html"><strong aria-hidden="true">6.2.</strong> Allocation</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Allocation/allocated_at.html"><strong aria-hidden="true">6.2.1.</strong> allocated_at</a></li><li class="chapter-item expanded "><a href="api_reference/Allocation/backtrace.html"><strong aria-hidden="true">6.2.2.</strong> backtrace</a></li><li class="chapter-item expanded "><a href="api_reference/Allocation/deallocated_at.html"><strong aria-hidden="true">6.2.3.</strong> deallocated_at</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/AllocationList.html"><strong aria-hidden="true">6.3.</strong> AllocationList</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_minus.html"><strong aria-hidden="true">6.3.1.</strong> - (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_plus.html"><strong aria-hidden="true">6.3.2.</strong> + (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_and.html"><strong aria-hidden="true">6.3.3.</strong> &amp; (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/op_square_brackets.html"><strong aria-hidden="true">6.3.4.</strong> [] (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/group_by_backtrace.html"><strong aria-hidden="true">6.3.5.</strong> group_by_backtrace</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/len.html"><strong aria-hidden="true">6.3.6.</strong> len</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_address_at_least.html"><strong aria-hidden="true">6.3.7.</strong> only_address_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_address_at_most.html"><strong aria-hidden="true">6.3.8.</strong> only_address_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_alive_for_at_least.html"><strong aria-hidden="true">6.3.9.</strong> only_alive_for_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_alive_for_at_most.html"><strong aria-hidden="true">6.3.10.</strong> only_alive_for_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_allocated_after_at_least.html"><strong aria-hidden="true">6.3.11.</strong> only_allocated_after_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_allocated_until_at_most.html"><strong aria-hidden="true">6.3.12.</strong> only_allocated_until_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_backtrace_length_at_least.html"><strong aria-hidden="true">6.3.13.</strong> only_backtrace_length_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_backtrace_length_at_most.html"><strong aria-hidden="true">6.3.14.</strong> only_backtrace_length_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_alive_for_at_least.html"><strong aria-hidden="true">6.3.15.</strong> only_chain_alive_for_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_alive_for_at_most.html"><strong aria-hidden="true">6.3.16.</strong> only_chain_alive_for_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_length_at_least.html"><strong aria-hidden="true">6.3.17.</strong> only_chain_length_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_chain_length_at_most.html"><strong aria-hidden="true">6.3.18.</strong> only_chain_length_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_deallocated_after_at_least.html"><strong aria-hidden="true">6.3.19.</strong> only_deallocated_after_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_deallocated_until_at_most.html"><strong aria-hidden="true">6.3.20.</strong> only_deallocated_until_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_larger_or_equal.html"><strong aria-hidden="true">6.3.21.</strong> only_first_size_larger_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_larger.html"><strong aria-hidden="true">6.3.22.</strong> only_first_size_larger</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_smaller_or_equal.html"><strong aria-hidden="true">6.3.23.</strong> only_first_size_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_first_size_smaller.html"><strong aria-hidden="true">6.3.24.</strong> only_first_size_smaller</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_allocations_at_least.html"><strong aria-hidden="true">6.3.25.</strong> only_group_allocations_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_allocations_at_most.html"><strong aria-hidden="true">6.3.26.</strong> only_group_allocations_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_interval_at_least.html"><strong aria-hidden="true">6.3.27.</strong> only_group_interval_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_interval_at_most.html"><strong aria-hidden="true">6.3.28.</strong> only_group_interval_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_leaked_allocations_at_least.html"><strong aria-hidden="true">6.3.29.</strong> only_group_leaked_allocations_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_group_leaked_allocations_at_most.html"><strong aria-hidden="true">6.3.30.</strong> only_group_leaked_allocations_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_larger_or_equal.html"><strong aria-hidden="true">6.3.31.</strong> only_larger_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_larger.html"><strong aria-hidden="true">6.3.32.</strong> only_larger</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_larger_or_equal.html"><strong aria-hidden="true">6.3.33.</strong> only_last_size_larger_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_larger.html"><strong aria-hidden="true">6.3.34.</strong> only_last_size_larger</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_smaller_or_equal.html"><strong aria-hidden="true">6.3.35.</strong> only_last_size_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_last_size_smaller.html"><strong aria-hidden="true">6.3.36.</strong> only_last_size_smaller</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_leaked_or_deallocated_after.html"><strong aria-hidden="true">6.3.37.</strong> only_leaked_or_deallocated_after</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_leaked.html"><strong aria-hidden="true">6.3.38.</strong> only_leaked</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_matching_backtraces.html"><strong aria-hidden="true">6.3.39.</strong> only_matching_backtraces</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_deallocated_after_at_least.html"><strong aria-hidden="true">6.3.40.</strong> only_not_deallocated_after_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_deallocated_until_at_most.html"><strong aria-hidden="true">6.3.41.</strong> only_not_deallocated_until_at_most</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_matching_backtraces.html"><strong aria-hidden="true">6.3.42.</strong> only_not_matching_backtraces</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_passing_through_function.html"><strong aria-hidden="true">6.3.43.</strong> only_not_passing_through_function</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_not_passing_through_source.html"><strong aria-hidden="true">6.3.44.</strong> only_not_passing_through_source</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_passing_through_function.html"><strong aria-hidden="true">6.3.45.</strong> only_passing_through_function</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_passing_through_source.html"><strong aria-hidden="true">6.3.46.</strong> only_passing_through_source</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_from_main_arena.html"><strong aria-hidden="true">6.3.47.</strong> only_ptmalloc_from_main_arena</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_mmaped.html"><strong aria-hidden="true">6.3.48.</strong> only_ptmalloc_mmaped</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_not_from_main_arena.html"><strong aria-hidden="true">6.3.49.</strong> only_ptmalloc_not_from_main_arena</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_ptmalloc_not_mmaped.html"><strong aria-hidden="true">6.3.50.</strong> only_ptmalloc_not_mmaped</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_smaller_or_equal.html"><strong aria-hidden="true">6.3.51.</strong> only_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_smaller.html"><strong aria-hidden="true">6.3.52.</strong> only_smaller</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/only_temporary.html"><strong aria-hidden="true">6.3.53.</strong> only_temporary</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/save_as_flamegraph.html"><strong aria-hidden="true">6.3.54.</strong> save_as_flamegraph</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationList/save_as_graph.html"><strong aria-hidden="true">6.3.55.</strong> save_as_graph</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList.html"><strong aria-hidden="true">6.4.</strong> AllocationGroupList</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/op_iterator.html"><strong aria-hidden="true">6.4.1.</strong> (iterator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/op_square_brackets.html"><strong aria-hidden="true">6.4.2.</strong> [] (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/len.html"><strong aria-hidden="true">6.4.3.</strong> len</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/only_all_leaked.html"><strong aria-hidden="true">6.4.4.</strong> only_all_leaked</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/only_count_at_least.html"><strong aria-hidden="true">6.4.5.</strong> only_count_at_least</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_count_ascending.html"><strong aria-hidden="true">6.4.6.</strong> sort_by_count_ascending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_count_descending.html"><strong aria-hidden="true">6.4.7.</strong> sort_by_count_descending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_count.html"><strong aria-hidden="true">6.4.8.</strong> sort_by_count</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_size_ascending.html"><strong aria-hidden="true">6.4.9.</strong> sort_by_size_ascending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_size_descending.html"><strong aria-hidden="true">6.4.10.</strong> sort_by_size_descending</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/sort_by_size.html"><strong aria-hidden="true">6.4.11.</strong> sort_by_size</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/take.html"><strong aria-hidden="true">6.4.12.</strong> take</a></li><li class="chapter-item expanded "><a href="api_reference/AllocationGroupList/ungroup.html"><strong aria-hidden="true">6.4.13.</strong> ungroup</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Backtrace.html"><strong aria-hidden="true">6.5.</strong> Backtrace</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Backtrace/strip.html"><strong aria-hidden="true">6.5.1.</strong> strip</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Data.html"><strong aria-hidden="true">6.6.</strong> Data</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Data/allocations.html"><strong aria-hidden="true">6.6.1.</strong> allocations</a></li><li class="chapter-item expanded "><a href="api_reference/Data/runtime.html"><strong aria-hidden="true">6.6.2.</strong> runtime</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Duration.html"><strong aria-hidden="true">6.7.</strong> Duration</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Duration/op_plus.html"><strong aria-hidden="true">6.7.1.</strong> + (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/Duration/op_minus.html"><strong aria-hidden="true">6.7.2.</strong> - (operator)</a></li><li class="chapter-item expanded "><a href="api_reference/Duration/op_multiply.html"><strong aria-hidden="true">6.7.3.</strong> * (operator)</a></li></ol></li><li class="chapter-item expanded "><a href="api_reference/Graph.html"><strong aria-hidden="true">6.8.</strong> Graph</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="api_reference/Graph/add.html"><strong aria-hidden="true">6.8.1.</strong> add</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/extend_until.html"><strong aria-hidden="true">6.8.2.</strong> extend_until</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/only_non_empty_series.html"><strong aria-hidden="true">6.8.3.</strong> only_non_empty_series</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/save_each_series_as_flamegraph.html"><strong aria-hidden="true">6.8.4.</strong> save_each_series_as_flamegraph</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/save_each_series_as_graph.html"><strong aria-hidden="true">6.8.5.</strong> save_each_series_as_graph</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/save.html"><strong aria-hidden="true">6.8.6.</strong> save</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/trim_left.html"><strong aria-hidden="true">6.8.7.</strong> trim_left</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/trim_right.html"><strong aria-hidden="true">6.8.8.</strong> trim_right</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/trim.html"><strong aria-hidden="true">6.8.9.</strong> trim</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/truncate_until.html"><strong aria-hidden="true">6.8.10.</strong> truncate_until</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/with_gradient_color_scheme.html"><strong aria-hidden="true">6.8.11.</strong> with_gradient_color_scheme</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/without_axes.html"><strong aria-hidden="true">6.8.12.</strong> without_axes</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/without_grid.html"><strong aria-hidden="true">6.8.13.</strong> without_grid</a></li><li class="chapter-item expanded "><a href="api_reference/Graph/without_legend.html"><strong aria-hidden="true">6.8.14.</strong> without_legend</a></li></ol></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Memory profiling for fun and profit</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="case-study-memory-leak-analysis"><a class="header" href="#case-study-memory-leak-analysis">Case study: Memory leak analysis</a></h1>
+<p>If you'd like to follow along this example check out the <code>simulation</code>
+directory in the root of the profiler's repository where you'll find
+the program being analyzed here.</p>
+<p>We use the built-in scripting capabilities of the profiler for analysis
+here (which is available either through the <code>script</code> subcommand of the CLI,
+or through the scripting console in the GUI), however you can also use the
+built-in GUI to achieve roughly similar results. This example is more about
+demonstrating the mindset you need to have when analyzing the data in search
+of memory leaks as opposed to a step-by-step guide which you could apply everywhere.</p>
+<h3 id="step-one-lets-take-a-look-at-the-timeline"><a class="header" href="#step-one-lets-take-a-look-at-the-timeline">Step one: let's take a look at the timeline</a></h3>
+<p>First let's try to graph all of the allocations:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations())
+    .save();
+</code></pre>
+<p><a href="generated/8d27d47f850811fa5ff2db299694e6ed.svg"><img src="generated/8d27d47f850811fa5ff2db299694e6ed.svg" alt="" /></a></p>
+<p>It definitely looks like we might have some sort of a memory leak here,
+but we can't see much on this graph alone due to all of the noise.</p>
+<h3 id="step-two-lets-find-all-of-the-obvious-memory-leaks"><a class="header" href="#step-two-lets-find-all-of-the-obvious-memory-leaks">Step two: let's find all of the obvious memory leaks</a></h3>
+<p>Let's try the simplest thing imaginable: graph only those allocations
+which were <em>never</em> deallocated up until the very end:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Leaked&quot;, allocations().only_leaked())
+    .add(&quot;Temporary&quot;, allocations())
+    .save();
+</code></pre>
+<p><a href="generated/0976bdc8aeeab857e63ac1fe9db53720.svg"><img src="generated/0976bdc8aeeab857e63ac1fe9db53720.svg" alt="" /></a></p>
+<p>Aha! We can see an obvious linear growth here! Let's try to split up the leaking part by backtrace:</p>
+<pre><code class="language-rust ignore">let groups = allocations()
+    .only_leaked()
+    .group_by_backtrace()
+        .sort_by_size();
+
+graph().add(groups).save();
+</code></pre>
+<p><a href="generated/7c0d87b156e5afb4a03233f10de4edbe.svg"><img src="generated/7c0d87b156e5afb4a03233f10de4edbe.svg" alt="" /></a></p>
+<p>Looks like we have a few potential leaks here. First, let's start will
+defining a small helper function which will graph <em>all</em> of the allocations
+coming from that one single backtrace, and also print out that backtrace:</p>
+<pre><code class="language-rust ignore">fn analyze_group(list) {
+    let list_all = allocations().only_matching_backtraces(list);
+
+    graph()
+        .add(&quot;Leaked&quot;, list_all.only_leaked())
+        .add(&quot;Temporary&quot;, list_all)
+        .save();
+
+    println(&quot;Total: {}&quot;, list_all.len());
+    println(&quot;Leaked: {}&quot;, list_all.only_leaked().len());
+    println();
+    println(&quot;Backtrace:&quot;);
+    println(list_all[0].backtrace().strip());
+}
+</code></pre>
+<h4 id="group-0"><a class="header" href="#group-0">Group #0</a></h4>
+<p>So now let's start with the biggest one:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[0]);
+</code></pre>
+<p><a href="generated/24754851a402533a85c7b44a02ae6301.svg"><img src="generated/24754851a402533a85c7b44a02ae6301.svg" alt="" /></a></p>
+<pre><code>Total: 1425
+Leaked: 1425
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:122]
+#17 [simulation] simulation::allocate_linear_leak_never_deallocated [main.rs:32]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>We have a clear-cut memory leak here! Every allocation from this backtrace was leaked.</p>
+<h4 id="group-1"><a class="header" href="#group-1">Group #1</a></h4>
+<p>Let's try the next one:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[1]);
+</code></pre>
+<p><a href="generated/649fa08f5c3c885a6fb60650ee96c3d0.svg"><img src="generated/649fa08f5c3c885a6fb60650ee96c3d0.svg" alt="" /></a></p>
+<pre><code>Total: 1
+Leaked: 1
+
+Backtrace:
+#00 [ld-2.33.so] 7f9e318920c9
+#01 [ld-2.33.so] _dl_init
+#02 [ld-2.33.so] call_init
+#03 [libstdc++.so.6.0.29] _GLOBAL__sub_I_eh_alloc.cc [eh_alloc.cc:338]
+#04 [libstdc++.so.6.0.29] __static_initialization_and_destruction_0 [eh_alloc.cc:262]
+#05 [libstdc++.so.6.0.29] pool [eh_alloc.cc:123]
+</code></pre>
+<p>Looks like while this is <em>technically</em> a leak it's just one allocation
+made at the very start; we can just ignore this one.</p>
+<h4 id="group-2"><a class="header" href="#group-2">Group #2</a></h4>
+<p>Let's try yet another one:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[2]);
+</code></pre>
+<p><a href="generated/b9aa89771abf19e7f64a0b592d4ff604.svg"><img src="generated/b9aa89771abf19e7f64a0b592d4ff604.svg" alt="" /></a></p>
+<pre><code>Total: 1563
+Leaked: 795
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:127]
+#17 [simulation] simulation::allocate_bounded_leak [main.rs:72]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>Now this is interesting. If we only look at the supposedly leaked part it
+sure does look like it's an unbounded memory leak which grows lineary with time,
+but if we graph <em>every</em> allocation from this backtrace we can see that its memory
+usage is actually bounded! The longer we would profile this program the more &quot;flat&quot;
+the leaked part would get.</p>
+<p>So is this a problem? Usually not. If you have something like, say, an LRU cache,
+you might see this kind of allocation pattern.</p>
+<h4 id="group-3"><a class="header" href="#group-3">Group #3</a></h4>
+<p>Let's look at the last group from our original leaked graph:</p>
+<pre><code class="language-rust ignore">analyze_group(groups[3]);
+</code></pre>
+<p><a href="generated/5654130c8ff737808c4ca9b4b7f58037.svg"><img src="generated/5654130c8ff737808c4ca9b4b7f58037.svg" alt="" /></a></p>
+<pre><code>Total: 154975
+Leaked: 165
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:132]
+#17 [simulation] simulation::allocate_both_temporary_and_linear_leak [main.rs:96]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>This is the toughest case so far. Do we have a memory leak here on not? Well, it depends.</p>
+<p>It could be a case of a bounded leak which hasn't yet reached a saturation point, or it could
+be simply a case of only some allocations ending up leaked. We'd either need to profile
+for a longer period of time, or analyze the code.</p>
+<h3 id="step-three-we-need-to-go-deeper"><a class="header" href="#step-three-we-need-to-go-deeper">Step three: we need to go deeper</a></h3>
+<p>So is this all? Did we actually find all of the memory leaks? Not necessarily.</p>
+<p>What we did was that we only looked at those allocations which were <strong>never</strong> deallocated.
+So what about those allocations which <em>were</em> deallocated, but <em>only</em> at the very end when
+the program was shut down? Should we consider those allocations as leaks? Well, probably!</p>
+<p>First, let's try to graph the memory usage again, but only including the allocations
+which <em>were</em> deallocated before the program ended.</p>
+<pre><code class="language-rust ignore">graph()
+    .add(allocations().only_temporary())
+    .save();
+</code></pre>
+<p><a href="generated/acf90cf6dd57bbc218470f21c4e96c74.svg"><img src="generated/acf90cf6dd57bbc218470f21c4e96c74.svg" alt="" /></a></p>
+<p>Hmm... there might or might not be a leak here. We need a more powerful filter!</p>
+<p>First, let's filter out all of the allocations from the previous section; we've
+already analyzed those so we don't want them here to confuse us:</p>
+<pre><code class="language-rust ignore">let remaining = allocations().only_not_matching_backtraces(groups);
+</code></pre>
+<p>And now, we want a list of allocations which weren't deallocated <em>right until the end</em>, right?
+Well, we can do that!</p>
+<pre><code class="language-rust ignore">let leaked_until_end = remaining
+    .only_not_deallocated_until_at_most(data().runtime() * 0.98);
+
+graph().add(leaked_until_end).save();
+</code></pre>
+<p><a href="generated/a2d6c5dda065be1bc37e05f55a7035c1.svg"><img src="generated/a2d6c5dda065be1bc37e05f55a7035c1.svg" alt="" /></a></p>
+<p>This indeed looks promising. But let's clean in up a little first.</p>
+<p>What's with the peak right at the end? Well, we asked for allocations which were
+<em>not deallocated until 98% of the runtime has elapsed</em>, so naturally those short
+lived allocations from near the end which were also deallocated after that time
+will still be included.</p>
+<p>Let's get rid of them:</p>
+<pre><code class="language-rust ignore">let leaked_until_end = remaining
+    .only_not_deallocated_until_at_most(data().runtime() * 0.98)
+    .only_alive_for_at_least(data().runtime() * 0.02);
+
+graph().add(leaked_until_end).save();
+</code></pre>
+<p><a href="generated/4604cdf1065c4a861fd6f14c2018b222.svg"><img src="generated/4604cdf1065c4a861fd6f14c2018b222.svg" alt="" /></a></p>
+<p>Much better!</p>
+<p>Now let's graph those by backtrace:</p>
+<pre><code class="language-rust ignore">let groups = leaked_until_end.group_by_backtrace().sort_by_size();
+graph().add(groups).save();
+</code></pre>
+<p><a href="generated/496ef092549602dd72c86e91d92669d1.svg"><img src="generated/496ef092549602dd72c86e91d92669d1.svg" alt="" /></a></p>
+<p>Bingo! There <em>was</em> something hidden in all of those temporary allocations after all!</p>
+<p>Let's define another helper function to help us with our analysis:</p>
+<pre><code class="language-rust ignore">fn analyze_group(list) {
+    let list_all = allocations().only_matching_backtraces(list);
+    let list_selected = list_all
+        .only_deallocated_after_at_least(data().runtime() * 0.98);
+
+    graph()
+        .add(&quot;Deallocated after 98%&quot;, list_selected)
+        .add(&quot;Deallocated before 98%&quot;, list_all)
+        .save();
+
+    println(&quot;Total: {}&quot;, list_all.len());
+    println(&quot;Deallocated after 98%: {}&quot;, list_selected.len());
+    println();
+    println(&quot;Backtrace:&quot;);
+    println(list_all[0].backtrace().strip());
+}
+</code></pre>
+<p>Let's try to use it!</p>
+<h4 id="group-0-1"><a class="header" href="#group-0-1">Group #0</a></h4>
+<pre><code class="language-rust ignore">analyze_group(groups[0]);
+</code></pre>
+<p><a href="generated/15958c55f360590cedf1f4a949f3dffe.svg"><img src="generated/15958c55f360590cedf1f4a949f3dffe.svg" alt="" /></a></p>
+<pre><code>Total: 1478
+Deallocated after 98%: 1478
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:123]
+#17 [simulation] simulation::allocate_linear_leak_deallocated_at_the_end [main.rs:44]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::resize [mod.rs:2130]
+</code></pre>
+<p>We have a winner! This definitely looks like a leak.</p>
+<h4 id="group-1-1"><a class="header" href="#group-1-1">Group #1</a></h4>
+<pre><code class="language-rust ignore">analyze_group(groups[1]);
+</code></pre>
+<p><a href="generated/b0b7769b6b0256eb236a4a5831529ef2.svg"><img src="generated/b0b7769b6b0256eb236a4a5831529ef2.svg" alt="" /></a></p>
+<pre><code>Total: 9
+Deallocated after 98%: 1
+
+Backtrace:
+#00 [simulation] _start
+#01 [libc-2.33.so] __libc_start_main
+#02 [simulation] main
+#16 [simulation] simulation::main [main.rs:123]
+#17 [simulation] simulation::allocate_linear_leak_deallocated_at_the_end [main.rs:45]
+#18 [simulation] alloc::vec::Vec&lt;T,A&gt;::push [mod.rs:1668]
+#19 [simulation] alloc::vec::Vec&lt;T,A&gt;::reserve [mod.rs:805]
+#20 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::reserve [raw_vec.rs:337]
+#21 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::reserve::do_reserve_and_handle [raw_vec.rs:333]
+#22 [simulation] alloc::raw_vec::RawVec&lt;T,A&gt;::grow_amortized [raw_vec.rs:442]
+#23 [simulation] alloc::raw_vec::finish_grow [raw_vec.rs:508]
+#24 [simulation] &lt;alloc::alloc::Global as core::alloc::Allocator&gt;::grow [alloc.rs:251]
+#25 [simulation] alloc::alloc::Global::grow_impl [alloc.rs:198]
+#26 [simulation] alloc::alloc::realloc [alloc.rs:122]
+</code></pre>
+<p>This is <code>Vec</code> that, from the look of it, is just growing in size.</p>
+<p>It probably <em>contains</em> whenever is leaking (and if you read the backtrace
+it actualy <em>does</em>), but it's not what we're looking for.</p>
+<p>In fact, if we look at the original graph most of what we have remaining are
+probably cases like this. Let's double-check by filtering out the leak we've already
+found and graph everything again:</p>
+<pre><code class="language-rust ignore">let group = groups
+    .ungroup()
+    .only_not_matching_backtraces(groups[0])
+    .group_by_backtrace();
+
+graph().add(group).save();
+</code></pre>
+<p><a href="generated/d94520e9086ee1219e8ad78b22ac5cca.svg"><img src="generated/d94520e9086ee1219e8ad78b22ac5cca.svg" alt="" /></a></p>
+<p>This does indeed look like all of the long lived allocations here might have been just <code>Vec</code>s.</p>
+<p>Let's verify that hypothesis:</p>
+<pre><code class="language-rust ignore">graph()
+    .add(&quot;Vecs&quot;, group.ungroup().only_passing_through_function(&quot;raw_vec::finish_grow&quot;))
+    .add(&quot;Remaining&quot;, group.ungroup())
+    .save();
+</code></pre>
+<p><a href="generated/55ceed48b9458feeafe5500f5843721c.svg"><img src="generated/55ceed48b9458feeafe5500f5843721c.svg" alt="" /></a></p>
+<p>Indeed we were right!</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="getting_started.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                            <a rel="next" href="common_issues.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="getting_started.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                    <a rel="next" href="common_issues.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+    </body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>only_ptmalloc_not_mmaped - Memory profiling for fun and profit</title>
+        <!-- Custom HTML head -->
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../../highlight.css">
+        <link rel="stylesheet" href="../../tomorrow-night.css">
+        <link rel="stylesheet" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../../custom.css">
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../../introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="../../getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="../../memory_leak_analysis.html"><strong aria-hidden="true">3.</strong> Case study: Memory leak analysis</a></li><li class="chapter-item expanded "><a href="../../common_issues.html"><strong aria-hidden="true">4.</strong> Common issues</a></li><li class="chapter-item expanded "><a href="../../configuration.html"><strong aria-hidden="true">5.</strong> Configuring the profiler</a></li><li class="chapter-item expanded "><a href="../../api_reference.html"><strong aria-hidden="true">6.</strong> API reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/globals.html"><strong aria-hidden="true">6.1.</strong> Globally available functions</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/globals/allocations.html"><strong aria-hidden="true">6.1.1.</strong> allocations</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/data.html"><strong aria-hidden="true">6.1.2.</strong> data</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/graph.html"><strong aria-hidden="true">6.1.3.</strong> graph</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/info.html"><strong aria-hidden="true">6.1.4.</strong> info</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/load.html"><strong aria-hidden="true">6.1.5.</strong> load</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/println.html"><strong aria-hidden="true">6.1.6.</strong> println</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/h.html"><strong aria-hidden="true">6.1.7.</strong> h</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/m.html"><strong aria-hidden="true">6.1.8.</strong> m</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/s.html"><strong aria-hidden="true">6.1.9.</strong> s</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/ms.html"><strong aria-hidden="true">6.1.10.</strong> ms</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/us.html"><strong aria-hidden="true">6.1.11.</strong> us</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/kb.html"><strong aria-hidden="true">6.1.12.</strong> kb</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/mb.html"><strong aria-hidden="true">6.1.13.</strong> mb</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/gb.html"><strong aria-hidden="true">6.1.14.</strong> gb</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/argv.html"><strong aria-hidden="true">6.1.15.</strong> argv</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/chdir.html"><strong aria-hidden="true">6.1.16.</strong> chdir</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/dirname.html"><strong aria-hidden="true">6.1.17.</strong> dirname</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/exit.html"><strong aria-hidden="true">6.1.18.</strong> exit</a></li><li class="chapter-item expanded "><a href="../../api_reference/globals/mkdir_p.html"><strong aria-hidden="true">6.1.19.</strong> mkdir_p</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/Allocation.html"><strong aria-hidden="true">6.2.</strong> Allocation</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/Allocation/allocated_at.html"><strong aria-hidden="true">6.2.1.</strong> allocated_at</a></li><li class="chapter-item expanded "><a href="../../api_reference/Allocation/backtrace.html"><strong aria-hidden="true">6.2.2.</strong> backtrace</a></li><li class="chapter-item expanded "><a href="../../api_reference/Allocation/deallocated_at.html"><strong aria-hidden="true">6.2.3.</strong> deallocated_at</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList.html"><strong aria-hidden="true">6.3.</strong> AllocationList</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/op_minus.html"><strong aria-hidden="true">6.3.1.</strong> - (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/op_plus.html"><strong aria-hidden="true">6.3.2.</strong> + (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/op_and.html"><strong aria-hidden="true">6.3.3.</strong> &amp; (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/op_square_brackets.html"><strong aria-hidden="true">6.3.4.</strong> [] (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/group_by_backtrace.html"><strong aria-hidden="true">6.3.5.</strong> group_by_backtrace</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/len.html"><strong aria-hidden="true">6.3.6.</strong> len</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_address_at_least.html"><strong aria-hidden="true">6.3.7.</strong> only_address_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_address_at_most.html"><strong aria-hidden="true">6.3.8.</strong> only_address_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_alive_for_at_least.html"><strong aria-hidden="true">6.3.9.</strong> only_alive_for_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_alive_for_at_most.html"><strong aria-hidden="true">6.3.10.</strong> only_alive_for_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_allocated_after_at_least.html"><strong aria-hidden="true">6.3.11.</strong> only_allocated_after_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_allocated_until_at_most.html"><strong aria-hidden="true">6.3.12.</strong> only_allocated_until_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_backtrace_length_at_least.html"><strong aria-hidden="true">6.3.13.</strong> only_backtrace_length_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_backtrace_length_at_most.html"><strong aria-hidden="true">6.3.14.</strong> only_backtrace_length_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_chain_alive_for_at_least.html"><strong aria-hidden="true">6.3.15.</strong> only_chain_alive_for_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_chain_alive_for_at_most.html"><strong aria-hidden="true">6.3.16.</strong> only_chain_alive_for_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_chain_length_at_least.html"><strong aria-hidden="true">6.3.17.</strong> only_chain_length_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_chain_length_at_most.html"><strong aria-hidden="true">6.3.18.</strong> only_chain_length_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_deallocated_after_at_least.html"><strong aria-hidden="true">6.3.19.</strong> only_deallocated_after_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_deallocated_until_at_most.html"><strong aria-hidden="true">6.3.20.</strong> only_deallocated_until_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_first_size_larger_or_equal.html"><strong aria-hidden="true">6.3.21.</strong> only_first_size_larger_or_equal</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_first_size_larger.html"><strong aria-hidden="true">6.3.22.</strong> only_first_size_larger</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_first_size_smaller_or_equal.html"><strong aria-hidden="true">6.3.23.</strong> only_first_size_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_first_size_smaller.html"><strong aria-hidden="true">6.3.24.</strong> only_first_size_smaller</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_group_allocations_at_least.html"><strong aria-hidden="true">6.3.25.</strong> only_group_allocations_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_group_allocations_at_most.html"><strong aria-hidden="true">6.3.26.</strong> only_group_allocations_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_group_interval_at_least.html"><strong aria-hidden="true">6.3.27.</strong> only_group_interval_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_group_interval_at_most.html"><strong aria-hidden="true">6.3.28.</strong> only_group_interval_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_group_leaked_allocations_at_least.html"><strong aria-hidden="true">6.3.29.</strong> only_group_leaked_allocations_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_group_leaked_allocations_at_most.html"><strong aria-hidden="true">6.3.30.</strong> only_group_leaked_allocations_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_larger_or_equal.html"><strong aria-hidden="true">6.3.31.</strong> only_larger_or_equal</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_larger.html"><strong aria-hidden="true">6.3.32.</strong> only_larger</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_last_size_larger_or_equal.html"><strong aria-hidden="true">6.3.33.</strong> only_last_size_larger_or_equal</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_last_size_larger.html"><strong aria-hidden="true">6.3.34.</strong> only_last_size_larger</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_last_size_smaller_or_equal.html"><strong aria-hidden="true">6.3.35.</strong> only_last_size_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_last_size_smaller.html"><strong aria-hidden="true">6.3.36.</strong> only_last_size_smaller</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_leaked_or_deallocated_after.html"><strong aria-hidden="true">6.3.37.</strong> only_leaked_or_deallocated_after</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_leaked.html"><strong aria-hidden="true">6.3.38.</strong> only_leaked</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_matching_backtraces.html"><strong aria-hidden="true">6.3.39.</strong> only_matching_backtraces</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_not_deallocated_after_at_least.html"><strong aria-hidden="true">6.3.40.</strong> only_not_deallocated_after_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_not_deallocated_until_at_most.html"><strong aria-hidden="true">6.3.41.</strong> only_not_deallocated_until_at_most</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_not_matching_backtraces.html"><strong aria-hidden="true">6.3.42.</strong> only_not_matching_backtraces</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_not_passing_through_function.html"><strong aria-hidden="true">6.3.43.</strong> only_not_passing_through_function</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_not_passing_through_source.html"><strong aria-hidden="true">6.3.44.</strong> only_not_passing_through_source</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_passing_through_function.html"><strong aria-hidden="true">6.3.45.</strong> only_passing_through_function</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_passing_through_source.html"><strong aria-hidden="true">6.3.46.</strong> only_passing_through_source</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_ptmalloc_from_main_arena.html"><strong aria-hidden="true">6.3.47.</strong> only_ptmalloc_from_main_arena</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_ptmalloc_mmaped.html"><strong aria-hidden="true">6.3.48.</strong> only_ptmalloc_mmaped</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_ptmalloc_not_from_main_arena.html"><strong aria-hidden="true">6.3.49.</strong> only_ptmalloc_not_from_main_arena</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_ptmalloc_not_mmaped.html" class="active"><strong aria-hidden="true">6.3.50.</strong> only_ptmalloc_not_mmaped</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_smaller_or_equal.html"><strong aria-hidden="true">6.3.51.</strong> only_smaller_or_equal</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_smaller.html"><strong aria-hidden="true">6.3.52.</strong> only_smaller</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/only_temporary.html"><strong aria-hidden="true">6.3.53.</strong> only_temporary</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/save_as_flamegraph.html"><strong aria-hidden="true">6.3.54.</strong> save_as_flamegraph</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationList/save_as_graph.html"><strong aria-hidden="true">6.3.55.</strong> save_as_graph</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList.html"><strong aria-hidden="true">6.4.</strong> AllocationGroupList</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/op_iterator.html"><strong aria-hidden="true">6.4.1.</strong> (iterator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/op_square_brackets.html"><strong aria-hidden="true">6.4.2.</strong> [] (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/len.html"><strong aria-hidden="true">6.4.3.</strong> len</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/only_all_leaked.html"><strong aria-hidden="true">6.4.4.</strong> only_all_leaked</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/only_count_at_least.html"><strong aria-hidden="true">6.4.5.</strong> only_count_at_least</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/sort_by_count_ascending.html"><strong aria-hidden="true">6.4.6.</strong> sort_by_count_ascending</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/sort_by_count_descending.html"><strong aria-hidden="true">6.4.7.</strong> sort_by_count_descending</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/sort_by_count.html"><strong aria-hidden="true">6.4.8.</strong> sort_by_count</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/sort_by_size_ascending.html"><strong aria-hidden="true">6.4.9.</strong> sort_by_size_ascending</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/sort_by_size_descending.html"><strong aria-hidden="true">6.4.10.</strong> sort_by_size_descending</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/sort_by_size.html"><strong aria-hidden="true">6.4.11.</strong> sort_by_size</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/take.html"><strong aria-hidden="true">6.4.12.</strong> take</a></li><li class="chapter-item expanded "><a href="../../api_reference/AllocationGroupList/ungroup.html"><strong aria-hidden="true">6.4.13.</strong> ungroup</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/Backtrace.html"><strong aria-hidden="true">6.5.</strong> Backtrace</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/Backtrace/strip.html"><strong aria-hidden="true">6.5.1.</strong> strip</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/Data.html"><strong aria-hidden="true">6.6.</strong> Data</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/Data/allocations.html"><strong aria-hidden="true">6.6.1.</strong> allocations</a></li><li class="chapter-item expanded "><a href="../../api_reference/Data/runtime.html"><strong aria-hidden="true">6.6.2.</strong> runtime</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/Duration.html"><strong aria-hidden="true">6.7.</strong> Duration</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/Duration/op_plus.html"><strong aria-hidden="true">6.7.1.</strong> + (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/Duration/op_minus.html"><strong aria-hidden="true">6.7.2.</strong> - (operator)</a></li><li class="chapter-item expanded "><a href="../../api_reference/Duration/op_multiply.html"><strong aria-hidden="true">6.7.3.</strong> * (operator)</a></li></ol></li><li class="chapter-item expanded "><a href="../../api_reference/Graph.html"><strong aria-hidden="true">6.8.</strong> Graph</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../../api_reference/Graph/add.html"><strong aria-hidden="true">6.8.1.</strong> add</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/extend_until.html"><strong aria-hidden="true">6.8.2.</strong> extend_until</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/only_non_empty_series.html"><strong aria-hidden="true">6.8.3.</strong> only_non_empty_series</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/save_each_series_as_flamegraph.html"><strong aria-hidden="true">6.8.4.</strong> save_each_series_as_flamegraph</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/save_each_series_as_graph.html"><strong aria-hidden="true">6.8.5.</strong> save_each_series_as_graph</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/save.html"><strong aria-hidden="true">6.8.6.</strong> save</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/trim_left.html"><strong aria-hidden="true">6.8.7.</strong> trim_left</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/trim_right.html"><strong aria-hidden="true">6.8.8.</strong> trim_right</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/trim.html"><strong aria-hidden="true">6.8.9.</strong> trim</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/truncate_until.html"><strong aria-hidden="true">6.8.10.</strong> truncate_until</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/with_gradient_color_scheme.html"><strong aria-hidden="true">6.8.11.</strong> with_gradient_color_scheme</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/without_axes.html"><strong aria-hidden="true">6.8.12.</strong> without_axes</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/without_grid.html"><strong aria-hidden="true">6.8.13.</strong> without_grid</a></li><li class="chapter-item expanded "><a href="../../api_reference/Graph/without_legend.html"><strong aria-hidden="true">6.8.14.</strong> without_legend</a></li></ol></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Memory profiling for fun and profit</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h2 id="allocationlistonly_ptmalloc_not_mmaped"><a class="header" href="#allocationlistonly_ptmalloc_not_mmaped">AllocationList::only_ptmalloc_not_mmaped</a></h2>
+<pre><code class="language-rust ignore">fn only_ptmalloc_not_mmaped(
+    self: AllocationList
+) -&gt; AllocationList
+</code></pre>
+<p>Returns a new <code>AllocationList</code> with only ptmalloc allocations which were internally not allocated through <code>mmap</code>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../api_reference/AllocationList/only_ptmalloc_not_from_main_arena.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                            <a rel="next" href="../../api_reference/AllocationList/only_smaller_or_equal.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../api_reference/AllocationList/only_ptmalloc_not_from_main_arena.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                    <a rel="next" href="../../api_reference/AllocationList/only_smaller_or_equal.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        <script src="../../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../../searcher.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+    </body>
+</html>
