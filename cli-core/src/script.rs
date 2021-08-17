@@ -1789,6 +1789,125 @@ pub fn run_script( path: &Path, data_path: Option< &Path >, argv: Vec< String > 
     Ok(())
 }
 
+pub fn run_script_slave( data_path: Option< &Path > ) -> Result< (), std::io::Error > {
+    let mut args = EngineArgs::default();
+
+    if let Some( data_path ) = data_path {
+        info!( "Loading {:?}...", data_path );
+        let fp = File::open( &data_path )?;
+
+        let debug_symbols: &[PathBuf] = &[];
+        let data = Loader::load_from_stream( fp, debug_symbols )?;
+        args.data = Some( Arc::new( data ) );
+    }
+
+    let env = Arc::new( Mutex::new( VirtualEnvironment::new() ) );
+    let engine = Engine::new( env.clone(), args );
+    let mut scope = rhai::Scope::new();
+    let mut global_ast: rhai::AST = Default::default();
+
+    let stdin = std::io::stdin();
+    let mut stdin = stdin.lock();
+    let mut buffer = Vec::new();
+    loop {
+        use std::io::BufRead;
+
+        buffer.clear();
+        match stdin.read_until( 0, &mut buffer ) {
+            Ok( count ) => {
+                if count == 0 {
+                    return Ok(());
+                }
+            },
+            Err( _ ) => return Ok(())
+        }
+
+        if buffer.ends_with( b"\0" ) {
+            buffer.pop();
+        }
+
+        let input = match std::str::from_utf8( &buffer ) {
+            Ok( input ) => input,
+            Err( _ ) => {
+                let payload = serde_json::json! {{
+                    "kind": "syntax_error",
+                    "message": "invalid utf-8"
+                }};
+
+                println!( "{}", serde_json::to_string( &payload ).unwrap() );
+
+                let payload = serde_json::json! {{
+                    "kind": "idle"
+                }};
+
+                println!( "{}", serde_json::to_string( &payload ).unwrap() );
+
+                continue;
+            }
+        };
+
+        match engine.inner.compile_with_scope( &scope, &input ) {
+            Ok( ast ) => {
+                global_ast += ast;
+                let result = engine.inner.eval_ast_with_scope::< rhai::Dynamic >( &mut scope, &global_ast );
+                global_ast.clear_statements();
+
+                let output = std::mem::take( &mut env.lock().output );
+                for entry in output {
+                    match entry {
+                        ScriptOutputKind::PrintLine( message ) => {
+                            let payload = serde_json::json! {{
+                                "kind": "println",
+                                "message": message,
+                            }};
+
+                            println!( "{}", serde_json::to_string( &payload ).unwrap() );
+                        },
+                        ScriptOutputKind::Image { path, data } => {
+                            let payload = serde_json::json! {{
+                                "kind": "image",
+                                "path": path,
+                                "data": &data[..]
+                            }};
+
+                            println!( "{}", serde_json::to_string( &payload ).unwrap() );
+                        }
+                    }
+                }
+
+                if let Err( error ) = result {
+                    let p = error.position();
+                    let payload = serde_json::json! {{
+                        "kind": "runtime_error",
+                        "message": error.to_string(),
+                        "line": p.line(),
+                        "column": p.position()
+                    }};
+
+                    println!( "{}", serde_json::to_string( &payload ).unwrap() );
+                }
+            },
+            Err( error ) => {
+                let p = error.1;
+                let payload = serde_json::json! {{
+                    "kind": "syntax_error",
+                    "message": error.to_string(),
+                    "line": p.line(),
+                    "column": p.position()
+                }};
+
+                println!( "{}", serde_json::to_string( &payload ).unwrap() );
+            }
+        }
+
+        let payload = serde_json::json! {{
+            "kind": "idle"
+        }};
+
+        println!( "{}", serde_json::to_string( &payload ).unwrap() );
+    }
+}
+
 struct ToCodeContext {
     allocation_source: String,
     output: String

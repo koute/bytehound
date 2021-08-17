@@ -133,6 +133,11 @@ enum Opt {
 
         args: Vec< String >
     },
+    #[structopt(name = "script-slave", raw(setting = "structopt::clap::AppSettings::Hidden"))]
+    ScriptSlave {
+        #[structopt(long, short = "d", parse(from_os_str))]
+        data: Option< PathBuf >
+    },
 }
 
 fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
@@ -182,6 +187,9 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
         Opt::Script { input, data, args } => {
             cli_core::run_script( &input, data.as_ref().map( |path| path.as_path() ), args )?;
         },
+        Opt::ScriptSlave { data } => {
+            cli_core::script::run_script_slave( data.as_ref().map( |path| path.as_path() ) )?;
+        }
     }
 
     Ok(())

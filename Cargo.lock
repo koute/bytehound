@@ -592,6 +592,7 @@ dependencies = [
  "rayon",
  "regex",
  "rhai",
+ "serde_json",
  "smallvec 1.6.1",
  "string-interner",
 ]
