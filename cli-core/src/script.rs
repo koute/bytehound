@@ -142,6 +142,122 @@ impl DataRef {
     }
 }
 
+lazy_static::lazy_static! {
+    static ref NOISY_FRAMES: HashSet< &'static str > = {
+        let mut set = HashSet::new();
+        let list = &[
+            "core::ops::function::FnOnce::call_once",
+            "core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once",
+            "std::panic::catch_unwind",
+            "std::panicking::try::do_call",
+            "std::panicking::try",
+            "std::rt::lang_start_internal::{{closure}}",
+            "std::rt::lang_start_internal",
+            "std::rt::lang_start::{{closure}}",
+            "std::rt::lang_start",
+            "std::sys_common::backtrace::__rust_begin_short_backtrace",
+        ];
+        for &entry in list {
+            set.insert( entry );
+        }
+        set
+    };
+    static ref TERMINAL_FRAMES: HashSet< &'static str > = {
+        let mut set = HashSet::new();
+        let list = &[
+            "alloc::vec::Vec<T,A>::resize",
+        ];
+        for &entry in list {
+            set.insert( entry );
+        }
+        set
+    };
+}
+
+#[derive(Clone)]
+pub struct Backtrace {
+    data: DataRef,
+    id: BacktraceId,
+    strip: bool
+}
+
+impl Backtrace {
+    fn write_to( &self, mut fmt: impl std::fmt::Write ) -> std::fmt::Result {
+        let mut is_first = true;
+        let interner = self.data.interner();
+        for (index, (_, frame)) in self.data.get_backtrace( self.id ).enumerate() {
+            let function = frame.any_function().map( |function| interner.resolve( function ).unwrap() );
+            if self.strip {
+                if let Some( function ) = function {
+                    if NOISY_FRAMES.contains( function ) {
+                        continue;
+                    }
+                }
+            }
+            if !is_first {
+                write!( fmt, "\n" )?;
+            }
+
+            is_first = false;
+
+            write!( fmt, "#{:02}", index )?;
+            if let Some( library ) = frame.library() {
+                write!( fmt, " [{}]", interner.resolve( library ).unwrap() )?;
+            }
+            if let Some( function ) = function {
+                write!( fmt, " {}", function )?;
+            } else {
+                write!( fmt, " {:0x}", frame.address().raw() )?;
+            }
+            if let Some( source ) = frame.source() {
+                let mut source = interner.resolve( source ).unwrap();
+                if let Some( index ) = source.rfind( "/" ) {
+                    source = &source[ index + 1.. ];
+                }
+                write!( fmt, " [{}", source )?;
+                if let Some( line ) = frame.line() {
+                    write!( fmt, ":{}", line )?;
+                }
+                write!( fmt, "]" )?;
+            }
+
+            if self.strip {
+                if let Some( function ) = function {
+                    if TERMINAL_FRAMES.contains( function ) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for Backtrace {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        write!( fmt, "Backtrace" )
+    }
+}
+
+impl std::fmt::Display for Backtrace {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        self.write_to( fmt )
+    }
+}
+
+#[derive(Clone)]
+pub struct Allocation {
+    data: DataRef,
+    id: AllocationId
+}
+
+impl std::fmt::Debug for Allocation {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        write!( fmt, "Allocation" )
+    }
+}
+
 #[derive(Clone)]
 pub struct AllocationList {
     data: DataRef,
@@ -404,30 +520,72 @@ impl AllocationList {
     }
 
     fn group_by_backtrace( &mut self ) -> AllocationGroupList {
+        #[derive(Default)]
+        struct Group {
+            allocation_ids: Vec< AllocationId >,
+            size: u64
+        }
+
         self.apply_filter();
         let mut groups = HashMap::new();
         for &id in self.unfiltered_allocation_ids() {
             let allocation = self.data.get_allocation( id );
-            let group = groups.entry( allocation.backtrace ).or_insert_with( || AllocationGroup { allocation_ids: Vec::new() } );
+            let group = groups.entry( allocation.backtrace ).or_insert_with( || Group::default() );
+            group.size += allocation.size;
             group.allocation_ids.push( id );
         }
 
         AllocationGroupList {
             data: self.data.clone(),
-            groups: Arc::new( groups )
+            groups: Arc::new( groups.into_iter().map( |(_, group)| {
+                AllocationGroupInner {
+                    allocation_ids: Arc::new( group.allocation_ids ),
+                    size: group.size
+                }
+            }).collect() )
         }
+    }
+
+    fn get( &mut self, index: i64 ) -> Result< Allocation, Box< rhai::EvalAltResult > > {
+        self.apply_filter();
+        let list = self.unfiltered_allocation_ids();
+        let id = *list.get( index as usize ).ok_or_else( || error( "index out of range" ) )?;
+        Ok( Allocation {
+            data: self.data.clone(),
+            id
+        })
     }
 }
 
 #[derive(Clone)]
-struct AllocationGroup {
-    allocation_ids: Vec< AllocationId >
+struct AllocationGroupInner {
+    allocation_ids: Arc< Vec< AllocationId > >,
+    size: u64
+}
+
+struct AllocationGroupListIter {
+    group_list: AllocationGroupList,
+    index: usize
+}
+
+impl Iterator for AllocationGroupListIter {
+    type Item = AllocationList;
+    fn next( &mut self ) -> Option< Self::Item > {
+        let group = self.group_list.groups.get( self.index )?;
+        self.index += 1;
+
+        Some( AllocationList {
+            data: self.group_list.data.clone(),
+            allocation_ids: Some( group.allocation_ids.clone() ),
+            filter: None
+        })
+    }
 }
 
 #[derive(Clone)]
 struct AllocationGroupList {
     data: DataRef,
-    groups: Arc< HashMap< BacktraceId, AllocationGroup > >
+    groups: Arc< Vec< AllocationGroupInner > >
 }
 
 impl std::fmt::Debug for AllocationGroupList {
@@ -436,17 +594,43 @@ impl std::fmt::Debug for AllocationGroupList {
     }
 }
 
+impl IntoIterator for AllocationGroupList {
+    type Item = AllocationList;
+    type IntoIter = AllocationGroupListIter;
+
+    fn into_iter( self ) -> Self::IntoIter {
+        AllocationGroupListIter {
+            group_list: self,
+            index: 0
+        }
+    }
+}
+
 impl AllocationGroupList {
-    fn filter( &self, callback: impl Fn( &AllocationGroup ) -> bool + Send + Sync ) -> Self {
+    fn filter( &self, callback: impl Fn( &AllocationGroupInner ) -> bool + Send + Sync ) -> Self {
         let groups: Vec< _ > = self.groups.par_iter()
-            .filter( |(_, group)| callback( group ) )
-            .map( |(key, group)| (key.clone(), group.clone()) )
+            .filter( |group| callback( group ) )
+            .map( |group| group.clone() )
             .collect();
 
         Self {
             data: self.data.clone(),
             groups: Arc::new( groups.into_iter().collect() )
         }
+    }
+
+    fn sort_by_key< T >( &self, callback: impl Fn( &AllocationGroupInner ) -> T + Send + Sync ) -> Self where T: Ord {
+        let mut groups = (*self.groups).clone();
+        groups.par_sort_by_key( callback );
+
+        AllocationGroupList {
+            data: self.data.clone(),
+            groups: Arc::new( groups )
+        }
+    }
+
+    fn len( &mut self ) -> i64 {
+        self.groups.len() as i64
     }
 
     fn only_all_leaked( &mut self ) -> AllocationGroupList {
@@ -456,9 +640,25 @@ impl AllocationGroupList {
         }))
     }
 
+    fn sort_by_size_ascending( &mut self ) -> AllocationGroupList {
+        self.sort_by_key( |group| group.size )
+    }
+
+    fn sort_by_size_descending( &mut self ) -> AllocationGroupList {
+        self.sort_by_key( |group| !group.size )
+    }
+
+    fn sort_by_count_ascending( &mut self ) -> AllocationGroupList {
+        self.sort_by_key( |group| group.allocation_ids.len() )
+    }
+
+    fn sort_by_count_descending( &mut self ) -> AllocationGroupList {
+        self.sort_by_key( |group| !group.allocation_ids.len() )
+    }
+
     fn ungroup( &mut self ) -> AllocationList {
         let mut allocation_ids = Vec::new();
-        for (_, group) in &*self.groups {
+        for group in &*self.groups {
             allocation_ids.extend_from_slice( &group.allocation_ids );
         }
         allocation_ids.par_sort_by_key( |&id| {
@@ -470,6 +670,24 @@ impl AllocationGroupList {
             data: self.data.clone(),
             allocation_ids: Some( Arc::new( allocation_ids ) ),
             filter: None
+        }
+    }
+
+    fn get( &mut self, index: i64 ) -> Result< AllocationList, Box< rhai::EvalAltResult > > {
+        let group = self.groups.get( index as usize ).ok_or_else( || error( "index out of range" ) )?;
+        Ok( AllocationList {
+            data: self.data.clone(),
+            allocation_ids: Some( group.allocation_ids.clone() ),
+            filter: None
+        })
+    }
+
+    fn take( &mut self, count: i64 ) -> Self {
+        let length = std::cmp::min( self.groups.len(), count as usize );
+
+        AllocationGroupList {
+            data: self.data.clone(),
+            groups: Arc::new( self.groups[ ..length ].to_owned() )
         }
     }
 }
@@ -559,6 +777,16 @@ impl Graph {
         let mut cloned = self.clone();
         cloned.lists.push( list );
         cloned.labels.push( Some( label ) );
+        cloned.cached_datapoints = None;
+        cloned
+    }
+
+    fn add_group( &mut self, group: AllocationGroupList ) -> Self {
+        let mut cloned = self.clone();
+        for list in group {
+            cloned.lists.push( list );
+            cloned.labels.push( None );
+        }
         cloned.cached_datapoints = None;
         cloned
     }
@@ -1236,6 +1464,17 @@ fn to_string( value: rhai::plugin::Dynamic ) -> String {
         value.cast::< f64 >().to_string()
     } else if value.is::< Duration >() {
         value.cast::< Duration >().decompose().to_string()
+    } else if value.is::< Option< Duration > >() {
+        if let Some( duration ) = value.cast::< Option< Duration > >() {
+            format!( "Some({})", duration.decompose().to_string() )
+        } else {
+            "None".into()
+        }
+    } else if value.is::< AllocationList >() {
+        let mut value = value.cast::< AllocationList >();
+        format!( "{} allocation(s)", value.len() )
+    } else if value.is::< Backtrace >() {
+        value.cast::< Backtrace >().to_string()
     } else {
         value.type_name().into()
     }
@@ -1355,8 +1594,10 @@ impl Engine {
 
         // DSL functions.
         engine.register_type::< DataRef >();
+        engine.register_type::< Allocation >();
         engine.register_type::< AllocationList >();
         engine.register_type::< AllocationGroupList >();
+        engine.register_type::< Backtrace >();
         engine.register_type::< Graph >();
         engine.register_result_fn( "+", merge_allocations );
         engine.register_result_fn( "-", substract_allocations );
@@ -1364,6 +1605,7 @@ impl Engine {
         engine.register_fn( "graph", Graph::new );
         engine.register_fn( "add", Graph::add );
         engine.register_fn( "add", Graph::add_with_label );
+        engine.register_fn( "add", Graph::add_group );
         engine.register_fn( "trim_left", Graph::trim_left );
         engine.register_fn( "trim_right", Graph::trim_right );
         engine.register_fn( "trim", Graph::trim );
@@ -1376,6 +1618,12 @@ impl Engine {
         engine.register_result_fn( "with_gradient_color_scheme", Graph::with_gradient_color_scheme );
         engine.register_fn( "allocations", DataRef::allocations );
         engine.register_fn( "runtime", |data: &mut DataRef| Duration( data.0.last_timestamp - data.0.initial_timestamp ) );
+
+        engine.register_fn( "strip", |backtrace: &mut Backtrace| {
+            let mut cloned = backtrace.clone();
+            cloned.strip = true;
+            cloned
+        });
 
         fn set_max< T >( target: &mut Option< T >, value: T ) where T: PartialOrd {
             if let Some( target ) = target.as_mut() {
@@ -1398,6 +1646,8 @@ impl Engine {
         }
 
         engine.register_fn( "len", AllocationList::len );
+        engine.register_indexer_get_result( AllocationList::get );
+
         engine.register_result_fn( "only_passing_through_function", |list: &mut AllocationList, regex: String| {
             let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
             Ok( list.add_filter_once( |filter| filter.only_passing_through_function.is_some(), |filter|
@@ -1422,15 +1672,44 @@ impl Engine {
                 filter.only_not_passing_through_source = Some( regex )
             ))
         });
-        engine.register_result_fn( "only_matching_backtraces", |list: &mut AllocationList, ids: rhai::Array| {
-            let mut set = HashSet::new();
-            for id in ids {
-                if let Some( id ) = id.try_cast::< i64 >() {
-                    set.insert( BacktraceId::new( id as u32 ) );
-                } else {
-                    return Err( error( "expected an array of numbers" ) );
+
+        fn gather_backtrace_ids(
+            set: &mut HashSet< BacktraceId >,
+            arg: rhai::Dynamic
+        ) -> Result< (), Box< rhai::EvalAltResult > > {
+            if let Some( id ) = arg.clone().try_cast::< i64 >() {
+                set.insert( BacktraceId::new( id as u32 ) );
+            } else if let Some( obj ) = arg.clone().try_cast::< Backtrace >() {
+                set.insert( obj.id );
+            } else if let Some( mut obj ) = arg.clone().try_cast::< AllocationList >() {
+                let data = obj.data.clone();
+                for allocation_id in obj.allocation_ids() {
+                    let allocation = data.get_allocation( *allocation_id );
+                    set.insert( allocation.backtrace );
                 }
+            } else if let Some( obj ) = arg.clone().try_cast::< AllocationGroupList >() {
+                let data = obj.data.clone();
+                for group in obj.groups.iter() {
+                    for allocation_id in group.allocation_ids.iter() {
+                        let allocation = data.get_allocation( *allocation_id );
+                        set.insert( allocation.backtrace );
+                    }
+                }
+            } else if let Some( obj ) = arg.clone().try_cast::< rhai::Array >() {
+                for subobj in obj {
+                    gather_backtrace_ids( set, subobj )?;
+                }
+            } else {
+                let error = error( format!( "expected a raw backtrace ID, 'Backtrace' object, 'AllocationList' object, or an array of any of them, got {}", arg.type_name() ) );
+                return Err( error );
             }
+
+            Ok(())
+        }
+
+        engine.register_result_fn( "only_matching_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
+            let mut set = HashSet::new();
+            gather_backtrace_ids( &mut set, ids )?;
 
             if set.len() == 1 && list.allocation_ids.is_none() {
                 let id = set.into_iter().next().unwrap();
@@ -1448,6 +1727,15 @@ impl Engine {
                     filter.only_matching_backtraces = Some( set );
                 }
             }) )
+        });
+
+        engine.register_result_fn( "only_not_matching_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
+            let mut set = HashSet::new();
+            gather_backtrace_ids( &mut set, ids )?;
+
+            Ok( list.add_filter( |filter| {
+                filter.only_not_matching_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
+            }))
         });
 
         macro_rules! register_filter {
@@ -1545,7 +1833,33 @@ impl Engine {
         engine.register_fn( "group_by_backtrace", AllocationList::group_by_backtrace );
 
         engine.register_fn( "only_all_leaked", AllocationGroupList::only_all_leaked );
+        engine.register_fn( "len", AllocationGroupList::len );
+        engine.register_fn( "sort_by_size_ascending", AllocationGroupList::sort_by_size_ascending );
+        engine.register_fn( "sort_by_size_descending", AllocationGroupList::sort_by_size_descending );
+        engine.register_fn( "sort_by_size", AllocationGroupList::sort_by_size_descending );
+        engine.register_fn( "sort_by_count_ascending", AllocationGroupList::sort_by_count_ascending );
+        engine.register_fn( "sort_by_count_descending", AllocationGroupList::sort_by_count_descending );
+        engine.register_fn( "sort_by_count", AllocationGroupList::sort_by_count_descending );
         engine.register_fn( "ungroup", AllocationGroupList::ungroup );
+        engine.register_indexer_get_result( AllocationGroupList::get );
+        engine.register_fn( "take", AllocationGroupList::take );
+        engine.register_iterator::< AllocationGroupList >();
+
+        engine.register_fn( "backtrace", |allocation: &mut Allocation| {
+            Backtrace {
+                data: allocation.data.clone(),
+                id: allocation.data.get_allocation( allocation.id ).backtrace,
+                strip: false
+            }
+        });
+
+        engine.register_fn( "allocated_at", |allocation: &mut Allocation| {
+            Duration( allocation.data.get_allocation( allocation.id ).timestamp - allocation.data.initial_timestamp )
+        });
+
+        engine.register_fn( "deallocated_at", |allocation: &mut Allocation| {
+            Some( Duration( allocation.data.get_allocation( allocation.id ).deallocation.as_ref()?.timestamp - allocation.data.initial_timestamp ) )
+        });
 
         let graph_counter = Arc::new( AtomicUsize::new( 1 ) );
         let flamegraph_counter = Arc::new( AtomicUsize::new( 1 ) );
@@ -2088,6 +2402,7 @@ impl ToCode for BasicFilter {
             only_passing_through_source
             only_not_passing_through_source
             only_matching_backtraces
+            only_not_matching_backtraces
             only_backtrace_length_at_least
             only_backtrace_length_at_most
             only_larger_or_equal

@@ -27,6 +27,7 @@ pub struct BasicFilter {
     pub only_passing_through_source: Option< Regex >,
     pub only_not_passing_through_source: Option< Regex >,
     pub only_matching_backtraces: Option< HashSet< BacktraceId > >,
+    pub only_not_matching_backtraces: Option< HashSet< BacktraceId > >,
     pub only_backtrace_length_at_least: Option< usize >,
     pub only_backtrace_length_at_most: Option< usize >,
 
@@ -96,6 +97,7 @@ pub struct CompiledBasicFilter {
     is_impossible: bool,
 
     only_backtraces: Option< HashSet< BacktraceId > >,
+    only_not_matching_backtraces: Option< HashSet< BacktraceId > >,
 
     only_larger_or_equal: u64,
     only_smaller_or_equal: u64,
@@ -403,6 +405,7 @@ impl BasicFilter {
             is_impossible,
 
             only_backtraces,
+            only_not_matching_backtraces: self.only_not_matching_backtraces.clone(),
 
             only_larger_or_equal,
             only_smaller_or_equal,
@@ -518,6 +521,12 @@ impl CompiledBasicFilter {
 
         if let Some( ref only_backtraces ) = self.only_backtraces {
             if !only_backtraces.contains( &allocation.backtrace ) {
+                return false;
+            }
+        }
+
+        if let Some( ref set ) = self.only_not_matching_backtraces {
+            if set.contains( &allocation.backtrace ) {
                 return false;
             }
         }
