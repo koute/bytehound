@@ -11,11 +11,21 @@ use std::error::Error;
 use structopt::StructOpt;
 
 use cli_core::{
+    Anonymize,
     Loader,
     export_as_replay,
     export_as_heaptrack,
     postprocess
 };
+
+fn parse_anonymize( source: &str ) -> Anonymize {
+    match source {
+        "none" => Anonymize::None,
+        "partial" => Anonymize::Partial,
+        "full" => Anonymize::Full,
+        _ => unreachable!()
+    }
+}
 
 #[derive(StructOpt, Debug)]
 enum Opt {
@@ -65,6 +75,15 @@ enum Opt {
         /// A file or directory with extra debugging symbols; can be specified multiple times
         #[structopt(short = "d", long = "debug-symbols", parse(from_os_str))]
         debug_symbols: Vec< PathBuf >,
+
+        /// Whenever to anonymize the data
+        #[structopt(long, short = "a", parse(from_str = "parse_anonymize"), default_value="none",
+        raw(possible_values = r#"&[
+            "none",
+            "partial",
+            "full"
+        ]"#))]
+        anonymize: Anonymize,
 
         /// The file to which the postprocessed data will be written
         #[structopt(long, short = "o", parse(from_os_str))]
@@ -141,10 +160,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
         Opt::Server { debug_symbols, input, interface, port } => {
             server_core::main( input, debug_symbols, false, &interface, port )?;
         },
-        Opt::Postprocess { debug_symbols, output, input } => {
+        Opt::Postprocess { debug_symbols, output, input, anonymize } => {
             let ifp = File::open( input )?;
             let ofp = File::create( output )?;
-            postprocess( ifp, ofp, debug_symbols )?;
+            postprocess( ifp, ofp, debug_symbols, anonymize )?;
         },
         Opt::Strip { output, input, threshold } => {
             let ifp = File::open( &input )?;

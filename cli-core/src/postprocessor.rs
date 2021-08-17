@@ -1,6 +1,7 @@
 use std::io::{self, Read, Write};
 use std::ffi::OsStr;
 use std::u64;
+use std::borrow::Cow;
 
 use ahash::AHashSet as HashSet;
 use string_interner::Symbol;
@@ -14,7 +15,8 @@ use common::speedy::{
 
 use common::event::{
     Event,
-    AllocBody
+    AllocBody,
+    HeaderBody,
 };
 
 use common::lz4_stream::{
@@ -24,14 +26,89 @@ use common::lz4_stream::{
 use crate::loader::Loader;
 use crate::reader::parse_events;
 
-pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result< (), io::Error >
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Anonymize {
+    None,
+    Partial,
+    Full
+}
+
+fn anonymize_header( anonymize: Anonymize, header: &mut HeaderBody ) {
+    match anonymize {
+        Anonymize::None => {},
+        Anonymize::Partial => {
+            if let Some( index ) = header.executable.iter().rev().position( |&byte| byte == b'/' ) {
+                header.executable = header.executable[ header.executable.len() - index.. ].into();
+            }
+
+            header.cmdline = header.executable.clone();
+        },
+        Anonymize::Full => {
+            header.executable = b"program"[..].to_owned();
+            header.cmdline = header.executable.clone();
+        }
+    }
+}
+
+struct PathAnonymizer {
+    prefix: &'static str,
+    counter: usize
+}
+
+impl PathAnonymizer {
+    fn new( prefix: &'static str ) -> Self {
+        Self {
+            prefix,
+            counter: 0
+        }
+    }
+
+    fn anonymize< 'a >( &mut self, anonymize: Anonymize, string: &'a str ) -> Cow< 'a, str > {
+        match anonymize {
+            Anonymize::None => string.into(),
+            Anonymize::Partial => {
+                if let Some( index ) = string.as_bytes().iter().rev().position( |&byte| byte == b'/' ) {
+                    string[ string.len() - index.. ].into()
+                } else {
+                    string.into()
+                }
+            },
+            Anonymize::Full => {
+                let counter = self.counter;
+                self.counter += 1;
+
+                format!( "{}{}", self.prefix, counter ).into()
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct FunctionAnonymizer {
+    counter: usize
+}
+
+impl FunctionAnonymizer {
+    fn anonymize< 'a >( &mut self, anonymize: Anonymize, string: &'a str ) -> Cow< 'a, str > {
+        if anonymize != Anonymize::Full {
+            string.into()
+        } else {
+            let counter = self.counter;
+            self.counter += 1;
+
+            format!( "fn_{}", counter ).into()
+        }
+    }
+}
+
+pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I, anonymize: Anonymize ) -> Result< (), io::Error >
     where F: Read + Send + 'static,
           G: Write,
           D: AsRef< OsStr >,
           I: IntoIterator< Item = D >
 {
     let mut ofp = Lz4Writer::new( ofp );
-    let (header, event_stream) = parse_events( ifp )?;
+    let (mut header, event_stream) = parse_events( ifp )?;
 
     let mut debug_info_index = DebugInfoIndex::new();
     for path in debug_symbols {
@@ -39,7 +116,12 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
     }
 
     let mut loader = Loader::new( header.clone(), debug_info_index );
+    anonymize_header( anonymize, &mut header );
     Event::Header( header ).write_to_stream( &mut ofp )?;
+
+    let mut anonymizer_library = PathAnonymizer::new( "lib_" );
+    let mut anonymizer_source = PathAnonymizer::new( "src_" );
+    let mut anonymizer_function = FunctionAnonymizer::default();
 
     let mut frames = Vec::new();
     let mut frames_to_write = Vec::new();
@@ -86,11 +168,24 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
 
             Event::File { .. } => {
                 process = true;
+                if anonymize != Anonymize::None {
+                    write = false;
+                }
             },
-            Event::Header { .. } => {},
-            Event::MemoryDump { .. } => {},
+            Event::Header( ref mut body ) => {
+                anonymize_header( anonymize, body );
+            },
+            Event::MemoryDump { .. } => {
+                if anonymize != Anonymize::None {
+                    write = false;
+                }
+            },
             Event::Marker { .. } => {},
-            Event::Environ { .. } => {},
+            Event::Environ { .. } => {
+                if anonymize != Anonymize::None {
+                    write = false;
+                }
+            },
             Event::WallClock { .. } => {},
             Event::String { .. } => {},
             Event::DecodedFrame { .. } => {},
@@ -120,7 +215,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
             for frame_id in frames_to_write.drain( .. ) {
                 let frame = loader.get_frame( frame_id ).clone();
                 macro_rules! intern {
-                    ($value:expr) => {
+                    ($value:expr, $anonymizer:ident) => {
                         if let Some( id ) = $value {
                             let raw_id = id.to_usize() as u32;
                             if !emitted_strings.contains( &id ) {
@@ -128,7 +223,7 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
                                 let string = loader.interner().resolve( id ).unwrap();
                                 Event::String {
                                     id: raw_id,
-                                    string: string.into()
+                                    string: $anonymizer.anonymize( anonymize, string )
                                 }.write_to_stream( &mut ofp )?;
                             }
 
@@ -139,10 +234,18 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I ) -> Result<
                     }
                 }
 
-                let library = intern!( frame.library() );
-                let raw_function = intern!( frame.raw_function() );
-                let function = intern!( frame.function() );
-                let source = intern!( frame.source() );
+                let library = intern!( frame.library(), anonymizer_library );
+                let source = intern!( frame.source(), anonymizer_source );
+
+                let raw_function;
+                let function;
+                if anonymize == Anonymize::Full {
+                    raw_function = intern!( frame.raw_function(), anonymizer_function );
+                    function = 0xFFFFFFFF;
+                } else {
+                    raw_function = intern!( frame.raw_function(), anonymizer_function );
+                    function = intern!( frame.function(), anonymizer_function );
+                }
 
                 assert_eq!( frame_id, expected_frame_id );
                 expected_frame_id += 1;

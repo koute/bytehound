@@ -42,7 +42,7 @@ pub use crate::exporter_flamegraph_pl::export_as_flamegraph_pl;
 pub use crate::exporter_flamegraph::export_as_flamegraph;
 pub use crate::vecvec::VecVec;
 pub use crate::util::table_to_string;
-pub use crate::postprocessor::postprocess;
+pub use crate::postprocessor::{Anonymize, postprocess};
 pub use crate::squeeze::squeeze_data;
 pub use crate::reader::parse_events;
 pub use crate::repack::repack;
