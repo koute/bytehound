@@ -20,7 +20,7 @@ it possible to load your data file for analysis even if you don't have enough RA
 For example, here's how you'd strip away all of the allocations with a lifetime of less than 60 seconds:
 
 ```
-$ ./memory-profiler-cli strip --threshold 60 -o stripped.dat original.dat
+$ ./bytehound strip --threshold 60 -o stripped.dat original.dat
 ```
 
 After running this command the `stripped.dat` will only contain allocations which

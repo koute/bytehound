@@ -44,18 +44,18 @@
 1. Install GCC, Rust nightly and the Yarn package manager (for building the GUI)
 2. Build it:
 
-        $ cargo build --release -p memory-profiler
-        $ cargo build --release -p memory-profiler-cli
+        $ cargo build --release -p bytehound-preload
+        $ cargo build --release -p bytehound-cli
 
-3. Grab the binaries from `target/release/libmemory_profiler.so` and `target/release/memory-profiler-cli`
+3. Grab the binaries from `target/release/libbytehound.so` and `target/release/bytehound`
 
 ## Usage
 
 ### Basic usage
 
     $ export MEMORY_PROFILER_LOG=warn
-    $ LD_PRELOAD=./libmemory_profiler.so ./your_application
-    $ ./memory-profiler-cli server memory-profiling_*.dat
+    $ LD_PRELOAD=./libbytehound.so ./your_application
+    $ ./bytehound server memory-profiling_*.dat
 
 Then open your Web browser and point it at `http://localhost:8080` to access the GUI.
 

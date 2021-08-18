@@ -2,7 +2,7 @@
 
 ## Download prebuilt binaries
 
-You can download a precompiled binary release of the profiler from [here](https://github.com/koute/memory-profiler/releases).
+You can download a precompiled binary release of the profiler from [here](https://github.com/koute/bytehound/releases).
 
 ## Build from source
 
@@ -17,20 +17,20 @@ Make sure you have the following installed:
 Then you can build the profiler:
 
 ```
-$ cargo build --release -p memory-profiler
-$ cargo build --release -p memory-profiler-cli
+$ cargo build --release -p bytehound-preload
+$ cargo build --release -p bytehound-cli
 ```
 
-...and grab the binaries from from `target/release/libmemory_profiler.so` and `target/release/memory-profiler-cli`.
+...and grab the binaries from from `target/release/libbytehound.so` and `target/release/bytehound`.
 
 ## Gathering data
 
 You can gather the profiling data by attaching the profiler to your application using `LD_PRELOAD`.
-Just put the `libmemory_profiler.so` in the same directory as your program and then run the following:
+Just put the `libbytehound.so` in the same directory as your program and then run the following:
 
 ```
 $ export MEMORY_PROFILER_LOG=info
-$ LD_PRELOAD=./libmemory_profiler.so ./your_application
+$ LD_PRELOAD=./libbytehound.so ./your_application
 ```
 
 You can further configure the profiler [through environment variables](./configuration.md),
@@ -41,7 +41,7 @@ although often that is not be necessary.
 After you've gathered your data you can load it for analysis:
 
 ```
-$ ./memory-profiler-cli server memory-profiling_*.dat
+$ ./bytehound server memory-profiling_*.dat
 ```
 
 Then open your web browser and point it at `http://localhost:8080` to access the GUI.

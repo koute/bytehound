@@ -1,11 +1,12 @@
 [package]
-name = "memory-profiler"
+name = "bytehound-preload"
 version = "0.7.0"
 authors = ["Jan Bujak <j@exia.io>"]
 edition = "2018"
 
 [lib]
 crate-type = ["cdylib"]
+name = "bytehound"
 
 [dependencies]
 parking_lot = { version = "0.11" }

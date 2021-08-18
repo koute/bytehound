@@ -66,7 +66,7 @@ impl log::Log for SyscallLogger {
                 return;
             }
 
-            stack_format_bytes( format_args!( "memory-profiler: {:04x} {:04x} {} {}\n", self.pid, syscall::gettid(), level_to_str( record.level() ), record.args() ), |buffer| {
+            stack_format_bytes( format_args!( "bytehound: {:04x} {:04x} {} {}\n", self.pid, syscall::gettid(), level_to_str( record.level() ), record.args() ), |buffer| {
                 raw_eprint( buffer );
             });
         }
@@ -94,7 +94,7 @@ impl RotationState {
         };
 
         if let Err( _ ) = rename( path, old_path ) {
-            raw_eprint( b"memory-profiler: Failed to rotate the log file!\n" );
+            raw_eprint( b"bytehound: Failed to rotate the log file!\n" );
         }
 
         let fp = {

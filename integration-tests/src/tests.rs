@@ -51,7 +51,7 @@ fn build_root() -> PathBuf {
 
 fn preload_path() -> PathBuf {
     let path = if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_PRELOAD_PATH" ) {
-        build_root().join( path ).join( "libmemory_profiler.so" )
+        build_root().join( path ).join( "libbytehound.so" )
     } else {
         let target = match target() {
             Some( target ) => target,
@@ -59,22 +59,22 @@ fn preload_path() -> PathBuf {
         };
 
         let mut potential_paths = vec![
-            build_root().join( &target ).join( "debug" ).join( "libmemory_profiler.so" ),
-            build_root().join( &target ).join( "release" ).join( "libmemory_profiler.so" )
+            build_root().join( &target ).join( "debug" ).join( "libbytehound.so" ),
+            build_root().join( &target ).join( "release" ).join( "libbytehound.so" )
         ];
 
         if target == env!( "TARGET" ) {
-            potential_paths.push( build_root().join( "debug" ).join( "libmemory_profiler.so" ) );
-            potential_paths.push( build_root().join( "release" ).join( "libmemory_profiler.so" ) );
+            potential_paths.push( build_root().join( "debug" ).join( "libbytehound.so" ) );
+            potential_paths.push( build_root().join( "release" ).join( "libbytehound.so" ) );
         }
 
         potential_paths.retain( |path| path.exists() );
         if potential_paths.is_empty() {
-            panic!( "No libmemory_profiler.so found!" );
+            panic!( "No libbytehound.so found!" );
         }
 
         if potential_paths.len() > 1 {
-            panic!( "Multiple libmemory_profiler.so found; specify the one which you want to use for tests with MEMORY_PROFILER_TEST_PRELOAD_PATH!" );
+            panic!( "Multiple libbytehound.so found; specify the one which you want to use for tests with MEMORY_PROFILER_TEST_PRELOAD_PATH!" );
         }
 
         potential_paths.pop().unwrap()
@@ -86,9 +86,9 @@ fn preload_path() -> PathBuf {
 
 fn cli_path() -> PathBuf {
     if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_CLI_PATH" ) {
-        build_root().join( path ).join( "memory-profiler-cli" )
+        build_root().join( path ).join( "bytehound" )
     } else {
-        build_root().join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "memory-profiler-cli" )
+        build_root().join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "bytehound" )
     }
 }
 

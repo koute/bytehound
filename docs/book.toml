@@ -7,7 +7,7 @@ title = "Memory profiling for fun and profit"
 
 [output.html]
 additional-css = ["custom.css"]
-site-url = "/memory-profiler/"
+site-url = "/bytehound/"
 
 [preprocessor.run-inline-snippets]
 command = "ruby plugins/run-inline-snippets.rb"

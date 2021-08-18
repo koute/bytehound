@@ -10,14 +10,14 @@ echo "Packaging for deployment..."
 rm -Rf $CARGO_TARGET_DIR/travis-deployment $CARGO_TARGET_DIR/travis-deployment-tmp
 mkdir -p $CARGO_TARGET_DIR/travis-deployment $CARGO_TARGET_DIR/travis-deployment-tmp
 
-cp $CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/libmemory_profiler.so $CARGO_TARGET_DIR/travis-deployment-tmp/
-cp $CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/memory-profiler-cli $CARGO_TARGET_DIR/travis-deployment-tmp/
-cp $CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/memory-profiler-gather $CARGO_TARGET_DIR/travis-deployment-tmp/
+cp $CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/libbytehound.so $CARGO_TARGET_DIR/travis-deployment-tmp/
+cp $CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/bytehound $CARGO_TARGET_DIR/travis-deployment-tmp/
+cp $CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/bytehound-gather $CARGO_TARGET_DIR/travis-deployment-tmp/
 
 cd $CARGO_TARGET_DIR/travis-deployment-tmp
-tar -zcf ../travis-deployment/memory-profiler-x86_64-unknown-linux-gnu.tgz \
-    libmemory_profiler.so \
-    memory-profiler-cli \
-    memory-profiler-gather
+tar -zcf ../travis-deployment/bytehound-x86_64-unknown-linux-gnu.tgz \
+    libbytehound.so \
+    bytehound \
+    bytehound-gather
 
 echo "Deployment package built!"

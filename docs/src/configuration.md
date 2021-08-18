@@ -98,7 +98,7 @@ which can be used to toggle (enable or disable) profiling.
 *Default: `0`*
 
 When set to `1` the profiled process will start an embedded server which can
-be used to stream the profiling data through TCP using `memory-profiler-cli gather` and `memory-profiler-gather`.
+be used to stream the profiling data through TCP using `bytehound gather` and `bytehound-gather`.
 
 This server will only be started when profiling is first enabled.
 
@@ -120,8 +120,8 @@ Requires `MEMORY_PROFILER_ENABLE_SERVER` to be set to `1`.
 *Default: `0`*
 
 When set to `1` the profiled process will send UDP broadcasts announcing that
-it's being profiled. This is used by `memory-profiler-cli gather` and `memory-profiler-gather`
-to automatically discover `memory-profiler` instances to which to connect.
+it's being profiled. This is used by `bytehound gather` and `bytehound-gather`
+to automatically discover `bytehound` instances to which to connect.
 
 Requires `MEMORY_PROFILER_ENABLE_SERVER` to be set to `1`.
 

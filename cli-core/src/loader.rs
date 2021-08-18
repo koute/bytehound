@@ -774,7 +774,7 @@ impl Loader {
 
                 self.frame_skip_ranges.clear();
                 for region in parse_maps( &contents ) {
-                    if region.name.contains( "libntracker_preload" ) || region.name.contains( "libmemory_profiler" ) {
+                    if region.name.contains( "libmemory_profiler" ) || region.name.contains( "libbytehound" ) {
                         if self.frame_skip_ranges.last().map( |last_range| last_range.end == region.start ).unwrap_or( false ) {
                             let mut last_range = self.frame_skip_ranges.last_mut().unwrap();
                             last_range.end = region.end;

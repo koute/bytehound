@@ -17,14 +17,14 @@ if ARGV[0] == "supports"
 end
 
 $simulation_data_path = "../simulation/memory-profiling-simulation.dat"
-$cli_path = "../target/debug/memory-profiler-cli"
+$cli_path = "../target/debug/bytehound"
 
 unless File.exist? $simulation_data_path
     system "../simulation/generate-simulation-data.sh 1>&2"
     raise "failed to generate simulation data" unless $?.exitstatus == 0
 end
 
-system "cargo build -p memory-profiler-cli 1>&2"
+system "cargo build -p bytehound-cli 1>&2"
 raise "failed to build the CLI" unless $?.exitstatus == 0
 
 raise unless File.exist? $cli_path
