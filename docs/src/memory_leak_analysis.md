@@ -98,7 +98,7 @@ analyze_group(groups[2]);
 ```
 
 Now this is interesting. If we only look at the supposedly leaked part it
-sure does look like it's an unbounded memory leak which grows lineary with time,
+sure does look like it's an unbounded memory leak which grows linearly with time,
 but if we graph *every* allocation from this backtrace we can see that its memory
 usage is actually bounded! The longer we would profile this program the more "flat"
 the leaked part would get.
@@ -224,7 +224,7 @@ analyze_group(groups[1]);
 
 This is `Vec` that, from the look of it, is just growing in size.
 
-It probably *contains* whenever is leaking (and if you read the backtrace
+It probably *contains* whatever is leaking (and if you read the backtrace
 it actualy *does*), but it's not what we're looking for.
 
 In fact, if we look at the original graph most of what we have remaining are
