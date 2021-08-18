@@ -640,6 +640,10 @@ impl AllocationGroupList {
         }))
     }
 
+    fn only_count_at_least( &mut self, count: i64 ) -> AllocationGroupList {
+        self.filter( |group| group.allocation_ids.len() as i64 >= count )
+    }
+
     fn sort_by_size_ascending( &mut self ) -> AllocationGroupList {
         self.sort_by_key( |group| group.size )
     }
@@ -1833,6 +1837,7 @@ impl Engine {
         engine.register_fn( "group_by_backtrace", AllocationList::group_by_backtrace );
 
         engine.register_fn( "only_all_leaked", AllocationGroupList::only_all_leaked );
+        engine.register_fn( "only_count_at_least", AllocationGroupList::only_count_at_least );
         engine.register_fn( "len", AllocationGroupList::len );
         engine.register_fn( "sort_by_size_ascending", AllocationGroupList::sort_by_size_ascending );
         engine.register_fn( "sort_by_size_descending", AllocationGroupList::sort_by_size_descending );

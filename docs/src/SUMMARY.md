@@ -91,6 +91,7 @@
       - [`[]` (operator)](./api_reference/AllocationGroupList/op_square_brackets.md)
       - [`len`](./api_reference/AllocationGroupList/len.md)
       - [`only_all_leaked`](./api_reference/AllocationGroupList/only_all_leaked.md)
+      - [`only_count_at_least`](./api_reference/AllocationGroupList/only_count_at_least.md)
       - [`sort_by_count_ascending`](./api_reference/AllocationGroupList/sort_by_count_ascending.md)
       - [`sort_by_count_descending`](./api_reference/AllocationGroupList/sort_by_count_descending.md)
       - [`sort_by_count`](./api_reference/AllocationGroupList/sort_by_count.md)
