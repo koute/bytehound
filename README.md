@@ -1,4 +1,4 @@
-# A memory profiler for Linux
+# Bytehound - a memory profiler for Linux
 
 ## Features
 
@@ -18,6 +18,9 @@
    * Can dynamically stream the profiling data to another machine instead
      of saving it locally, which is useful for profiling on memory-constrained systems
    * Supports AMD64, ARM, AArch64 and MIPS64 architectures (where MIPS64 requires a tiny out-of-tree kernel patch for `perf_event_open`)
+   * Supports profiling of applications which use jemalloc as their allocator (only works on AMD64 with the `jemallocator` crate)
+   * Supports an embedded DSL based on [Rhai](https://rhai.rs) to allow for programmatic
+     and/or automated data analysis
 
 [Heaptrack GUI]: https://github.com/KDE/heaptrack
 
@@ -58,6 +61,10 @@
     $ ./bytehound server memory-profiling_*.dat
 
 Then open your Web browser and point it at `http://localhost:8080` to access the GUI.
+
+## Documentation
+
+You can find the full documentation for the profiler in our [Memory profiling for fun and profit](https://koute.github.io/bytehound/) book.
 
 ## Enabling full debug logs
 
