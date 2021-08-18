@@ -483,6 +483,48 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c59e7af012c713f529e7a3ee57ce9b31ddd858d4b512923602f74608b009631"
 
 [[package]]
+name = "bytehound-cli"
+version = "0.7.0"
+dependencies = [
+ "cli-core",
+ "env_logger 0.6.2",
+ "log",
+ "server-core",
+ "structopt",
+]
+
+[[package]]
+name = "bytehound-gather"
+version = "0.7.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "cli-core",
+ "log",
+]
+
+[[package]]
+name = "bytehound-preload"
+version = "0.7.0"
+dependencies = [
+ "common",
+ "glob 0.2.11",
+ "goblin",
+ "jemalloc-sys",
+ "jemallocator",
+ "lazy_static",
+ "libc",
+ "log",
+ "lru",
+ "memmap",
+ "nwind",
+ "parking_lot 0.11.1",
+ "perf_event_open",
+ "sc",
+ "smallvec 1.6.1",
+]
+
+[[package]]
 name = "bytemuck"
 version = "1.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1382,48 +1424,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59accc507f1338036a0477ef61afdae33cde60840f4dfe481319ce3ad116ddf9"
 dependencies = [
  "autocfg 1.0.1",
-]
-
-[[package]]
-name = "memory-profiler"
-version = "0.7.0"
-dependencies = [
- "common",
- "glob 0.2.11",
- "goblin",
- "jemalloc-sys",
- "jemallocator",
- "lazy_static",
- "libc",
- "log",
- "lru",
- "memmap",
- "nwind",
- "parking_lot 0.11.1",
- "perf_event_open",
- "sc",
- "smallvec 1.6.1",
-]
-
-[[package]]
-name = "memory-profiler-cli"
-version = "0.7.0"
-dependencies = [
- "cli-core",
- "env_logger 0.6.2",
- "log",
- "server-core",
- "structopt",
-]
-
-[[package]]
-name = "memory-profiler-gather"
-version = "0.7.0"
-dependencies = [
- "chrono",
- "clap",
- "cli-core",
- "log",
 ]
 
 [[package]]
