@@ -1,0 +1,10 @@
+:root {
+    --sidebar-width: 400px;
+}
+
+p img {
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    opacity: 0.8;
+    padding: 1rem;
+}

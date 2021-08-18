@@ -1,0 +1,13 @@
+[book]
+authors = ["Jan Bujak"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Memory profiling for fun and profit"
+
+[output.html]
+additional-css = ["custom.css"]
+site-url = "/memory-profiler/"
+
+[preprocessor.run-inline-snippets]
+command = "ruby plugins/run-inline-snippets.rb"
