@@ -216,26 +216,39 @@ analyze_group(groups[0]);
 
 We have a winner! This definitely looks like a leak.
 
-#### Group #1 and #2
+#### Group #1
 
 ```rhai,%run
 analyze_group(groups[1]);
 ```
 
-```rhai,%run
-analyze_group(groups[2]);
-```
+This is `Vec` that, from the look of it, is just growing in size.
 
-These are just `Vec`s that, from the look of it, are just growing in size.
+It probably *contains* whenever is leaking (and if you read the backtrace
+it actualy *does*), but it's not what we're looking for.
 
-They probably *contain* whenever is leaking (and if you read the backtraces
-they actualy *do*), but they're not what we're looking for.
-
-#### Group #3
+In fact, if we look at the original graph most of what we have remaining are
+probably cases like this. Let's double-check by filtering out the leak we've already
+found and graph everything again:
 
 ```rhai,%run
-analyze_group(groups[3]);
+let group = groups
+    .ungroup()
+    .only_not_matching_backtraces(groups[0])
+    .group_by_backtrace();
+
+graph().add(group).save();
 ```
 
-This is definitely not a leak, since the vast majority of allocations were
-deallocated way before the program ended.
+This does indeed look like all of the long lived allocations here might have been just `Vec`s.
+
+Let's verify that hypothesis:
+
+```rhai,%run
+graph()
+    .add("Vecs", group.ungroup().only_passing_through_function("raw_vec::finish_grow"))
+    .add("Remaining", group.ungroup())
+    .save();
+```
+
+Indeed we were right!
