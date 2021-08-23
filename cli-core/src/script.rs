@@ -696,6 +696,14 @@ impl AllocationGroupList {
     }
 }
 
+#[derive(Copy, Clone)]
+enum GraphKind {
+    MemoryUsage,
+    LiveAllocations,
+    NewAllocations,
+    Deallocations
+}
+
 #[derive(Clone)]
 struct Graph {
     without_legend: bool,
@@ -709,11 +717,12 @@ struct Graph {
     lists: Vec< AllocationList >,
     labels: Vec< Option< String > >,
     gradient: Option< Arc< colorgrad::Gradient > >,
+    kind: GraphKind,
 
     cached_datapoints: Option< Arc< (Vec< u64 >, Vec< Vec< (u64, u64) > >) > >
 }
 
-fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >] ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
+fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >], kind: GraphKind ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
     let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |op| get_timestamp( &data, *op ) ).min().unwrap_or( common::Timestamp::min() );
     let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |op| get_timestamp( &data, *op ) ).max().unwrap_or( common::Timestamp::min() );
 
@@ -727,7 +736,14 @@ fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >] ) 
 
         let datapoints: Vec< _ > = build_timeline( &data, timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
             xs.insert( point.timestamp );
-            (point.timestamp, point.memory_usage)
+            let x = point.timestamp;
+            let y = match kind {
+                GraphKind::MemoryUsage => point.memory_usage,
+                GraphKind::LiveAllocations => point.allocations,
+                GraphKind::NewAllocations => point.allocations_per_time,
+                GraphKind::Deallocations => point.deallocations_per_time
+            };
+            (x, y)
         }).collect();
 
         datapoints_for_ops.push( datapoints );
@@ -772,6 +788,7 @@ impl Graph {
             lists: Vec::new(),
             labels: Vec::new(),
             gradient: None,
+            kind: GraphKind::MemoryUsage,
 
             cached_datapoints: None
         }
@@ -858,6 +875,34 @@ impl Graph {
         cloned
     }
 
+    fn show_memory_usage( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.kind = GraphKind::MemoryUsage;
+        cloned.cached_datapoints = None;
+        cloned
+    }
+
+    fn show_live_allocations( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.kind = GraphKind::LiveAllocations;
+        cloned.cached_datapoints = None;
+        cloned
+    }
+
+    fn show_new_allocations( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.kind = GraphKind::NewAllocations;
+        cloned.cached_datapoints = None;
+        cloned
+    }
+
+    fn show_deallocations( &mut self ) -> Self {
+        let mut cloned = self.clone();
+        cloned.kind = GraphKind::Deallocations;
+        cloned.cached_datapoints = None;
+        cloned
+    }
+
     fn generate_ops( &mut self ) -> Result< Vec< Vec< OperationId > >, String > {
         let lists = &mut self.lists;
         if lists.is_empty() {
@@ -939,6 +984,7 @@ impl Graph {
         thread_local! {
             static SCALE_X: Cell< (u64, u64) > = Cell::new( (0, 0) );
             static SCALE_Y: Cell< (u64, u64) > = Cell::new( (0, 0) );
+            static KIND: Cell< GraphKind > = Cell::new( GraphKind::MemoryUsage );
         }
 
         macro_rules! impl_ranged {
@@ -984,20 +1030,41 @@ impl Graph {
                     if max < 1024 {
                         format!( "{}", value )
                     } else {
-                        let (unit, multiplier) = {
-                            if max < 1024 * 1024 {
-                                ("KB", 1024)
-                            } else {
-                                ("MB", 1024 * 1024)
-                            }
-                        };
+                        match KIND.with( |cell| cell.get() ) {
+                            GraphKind::MemoryUsage => {
+                                let (unit, multiplier) = {
+                                    if max < 1024 * 1024 {
+                                        ("KB", 1024)
+                                    } else {
+                                        ("MB", 1024 * 1024)
+                                    }
+                                };
 
-                        if max - min <= (10 * multiplier) {
-                            format!( "{:.02} {}", *value as f64 / multiplier as f64, unit )
-                        } else if max - min <= (100 * multiplier) {
-                            format!( "{:.01} {}", *value as f64 / multiplier as f64, unit )
-                        } else {
-                            format!( "{} {}", value / multiplier, unit )
+                                if max - min <= (10 * multiplier) {
+                                    format!( "{:.02} {}", *value as f64 / multiplier as f64, unit )
+                                } else if max - min <= (100 * multiplier) {
+                                    format!( "{:.01} {}", *value as f64 / multiplier as f64, unit )
+                                } else {
+                                    format!( "{} {}", value / multiplier, unit )
+                                }
+                            },
+                            GraphKind::LiveAllocations | GraphKind::NewAllocations | GraphKind::Deallocations => {
+                                let (unit, multiplier) = {
+                                    if max < 1000 * 1000 {
+                                        ("K", 1000)
+                                    } else {
+                                        ("M", 1000 * 1000)
+                                    }
+                                };
+
+                                if max - min <= (10 * multiplier) {
+                                    format!( "{:.02} {}", *value as f64 / multiplier as f64, unit )
+                                } else if max - min <= (100 * multiplier) {
+                                    format!( "{:.01} {}", *value as f64 / multiplier as f64, unit )
+                                } else {
+                                    format!( "{} {}", value / multiplier, unit )
+                                }
+                            }
                         }
                     }
                 })
@@ -1066,6 +1133,7 @@ impl Graph {
 
         SCALE_X.with( |cell| cell.set( (x_min, x_max + 1) ) );
         SCALE_Y.with( |cell| cell.set( (0, (max_usage + 1) as u64) ) );
+        KIND.with( |cell| cell.set( self.kind ) );
 
         let mut output = String::new();
         use plotters::prelude::*;
@@ -1136,7 +1204,13 @@ impl Graph {
         let mut mesh = chart.configure_mesh();
         let mut mesh = &mut mesh;
         if !self.without_axes {
-            mesh = mesh.x_desc( "Time" ).y_desc( "Memory usage" );
+            let label = match self.kind {
+                GraphKind::MemoryUsage => "Memory usage",
+                GraphKind::LiveAllocations => "Live allocations",
+                GraphKind::NewAllocations => "New allocations",
+                GraphKind::Deallocations => "Deallocations"
+            };
+            mesh = mesh.x_desc( "Time" ).y_desc( label );
         }
 
         if self.without_grid {
@@ -1173,7 +1247,7 @@ impl Graph {
         (|| {
             if self.cached_datapoints.is_none() {
                 let ops_for_list = self.generate_ops()?;
-                let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &ops_for_list );
+                let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &ops_for_list, self.kind );
                 self.cached_datapoints = Some( Arc::new( (xs, datapoints_for_ops) ) );
             }
 
@@ -1200,7 +1274,7 @@ impl Graph {
 
         let ops_for_list = self.generate_ops()?;
         for (index, (ops, label)) in ops_for_list.into_iter().zip( self.labels.iter() ).enumerate() {
-            let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &[ops] );
+            let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &[ops], self.kind );
             let data = self.save_to_string_impl( &xs, &datapoints_for_ops, &[label.clone()] )?;
 
             let file_path =
@@ -1619,6 +1693,11 @@ impl Engine {
         engine.register_fn( "without_legend", Graph::without_legend );
         engine.register_fn( "without_axes", Graph::without_axes );
         engine.register_fn( "without_grid", Graph::without_grid );
+        engine.register_fn( "show_memory_usage", Graph::show_memory_usage );
+        engine.register_fn( "show_live_allocations", Graph::show_live_allocations );
+        engine.register_fn( "show_new_allocations", Graph::show_new_allocations );
+        engine.register_fn( "show_deallocations", Graph::show_deallocations );
+
         engine.register_result_fn( "with_gradient_color_scheme", Graph::with_gradient_color_scheme );
         engine.register_fn( "allocations", DataRef::allocations );
         engine.register_fn( "runtime", |data: &mut DataRef| Duration( data.0.last_timestamp - data.0.initial_timestamp ) );
