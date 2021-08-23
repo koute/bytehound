@@ -138,6 +138,13 @@ enum Opt {
         #[structopt(long, short = "d", parse(from_os_str))]
         data: Option< PathBuf >
     },
+    /// Extracts all of the files embedded in the data
+    #[structopt(name = "extract")]
+    Extract {
+        #[structopt(long, short = "o", parse(from_os_str))]
+        output: PathBuf,
+        input: PathBuf,
+    }
 }
 
 fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
@@ -189,7 +196,10 @@ fn run( opt: Opt ) -> Result< (), Box< dyn Error > > {
         },
         Opt::ScriptSlave { data } => {
             cli_core::script::run_script_slave( data.as_ref().map( |path| path.as_path() ) )?;
-        }
+        },
+        Opt::Extract { input, output } => {
+            cli_core::cmd_extract::extract( input, output )?;
+        },
     }
 
     Ok(())

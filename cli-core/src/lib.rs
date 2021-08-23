@@ -9,6 +9,7 @@ extern crate quickcheck;
 
 pub mod cmd_gather;
 pub mod cmd_analyze_size;
+pub mod cmd_extract;
 
 mod filter;
 mod util;
