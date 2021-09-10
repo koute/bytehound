@@ -388,6 +388,18 @@ const FIELDS = {
             no: "Only non-mmaped (ptmalloc)"
         }
     },
+    jemalloc: {
+        ...RADIO_FIELD,
+        variants: {
+            "": "Show all",
+            yes: "Only jemalloc",
+            no: "Only non-jemalloc"
+        },
+        badge: {
+            yes: "Only jemalloc",
+            no: "Only non-jemalloc"
+        }
+    },
     custom_filter: {
         validate: (value) => {
             if( value === "" ) {
@@ -568,6 +580,8 @@ class FilterEditor extends React.Component {
                     {this.field("mmaped")}
                     <div className="px-2" />
                     {this.field("arena")}
+                    <div className="px-2" />
+                    {this.field("jemalloc")}
                 </div>
                 <div title="Custom">
                     <div className="editor-pane">
@@ -1067,34 +1081,26 @@ export default class PageDataAllocations extends React.Component {
                 maxWidth: 70
             },
             {
-                Header: "Mmaped",
+                Header: "Allocator",
                 Cell: cell => {
-                    if( cell.value ) {
-                        return "Yes";
+                    if( cell.original.is_jemalloc ) {
+                        return "jemalloc";
                     } else {
-                        return "No";
+                        if( cell.original.is_mmaped ) {
+                            return <div>system<br />(mmapped)</div>;
+                        } else {
+                            if( cell.original.in_main_arena ) {
+                                return "system";
+                            } else {
+                                return <div>system<br />(other arena)</div>;
+                            }
+                        }
                     }
                 },
-                accessor: "is_mmaped",
-                maxWidth: 70,
+                maxWidth: 90,
                 sortable: false,
                 view: "allocations"
             },
-            {
-                Header: "Arena",
-                Cell: cell => {
-                    if( cell.value ) {
-                        return "Main";
-                    } else {
-                        return "Other";
-                    }
-                },
-                accessor: "in_main_arena",
-                maxWidth: 70,
-                sortable: false,
-                view: "allocations"
-            },
-
             {
                 id: "all.min_timestamp",
                 Header: <div>(global)<br />First allocation</div>,

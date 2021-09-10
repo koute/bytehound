@@ -138,6 +138,7 @@ pub struct Allocation< 'a > {
     pub deallocation: Option< Deallocation >,
     pub backtrace: Vec< Frame< 'a > >,
     pub is_mmaped: bool,
+    pub is_jemalloc: bool,
     pub in_main_arena: bool,
     pub extra_space: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -277,6 +278,14 @@ pub enum LifetimeFilter {
 
 #[derive(Copy, Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
 pub enum MmapedFilter {
+    #[serde(rename = "yes")]
+    Yes,
+    #[serde(rename = "no")]
+    No
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
+pub enum JemallocFilter {
     #[serde(rename = "yes")]
     Yes,
     #[serde(rename = "no")]
@@ -623,6 +632,7 @@ pub struct AllocFilter {
     pub backtrace_depth_max: Option< u32 >,
     pub backtraces: Option< u32 >, // TODO: Support multiple.
     pub mmaped: Option< MmapedFilter >,
+    pub jemalloc: Option< JemallocFilter >,
     pub arena: Option< ArenaFilter >,
     pub function_regex: Option< String >,
     pub source_regex: Option< String >,

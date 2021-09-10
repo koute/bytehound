@@ -695,6 +695,7 @@ fn get_allocations< 'a >(
                     backtrace,
                     in_main_arena: !allocation.in_non_main_arena(),
                     is_mmaped: allocation.is_mmaped(),
+                    is_jemalloc: allocation.is_jemalloc(),
                     extra_space: allocation.extra_usable_space,
                     chain_lifetime: chain.lifetime( data ).map( |lifetime| lifetime.into() ),
                     position_in_chain: allocation.position_in_chain,

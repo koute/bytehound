@@ -76,6 +76,8 @@ pub struct BasicFilter {
     pub only_ptmalloc_not_mmaped: bool,
     pub only_ptmalloc_from_main_arena: bool,
     pub only_ptmalloc_not_from_main_arena: bool,
+    pub only_jemalloc: bool,
+    pub only_not_jemalloc: bool,
     pub only_with_marker: Option< u32 >
 }
 
@@ -136,6 +138,7 @@ pub struct CompiledBasicFilter {
 
     only_ptmalloc_mmaped: Option< bool >,
     only_ptmalloc_from_main_arena: Option< bool >,
+    only_jemalloc: Option< bool >,
     only_with_marker: Option< u32 >
 }
 
@@ -370,6 +373,10 @@ impl BasicFilter {
             is_impossible = true;
         }
 
+        if self.only_jemalloc && self.only_not_jemalloc {
+            is_impossible = true;
+        }
+
         if self.only_leaked {
             only_leaked_or_deallocated_after = data.last_timestamp;
         }
@@ -459,6 +466,14 @@ impl BasicFilter {
                 if self.only_ptmalloc_from_main_arena {
                     Some( true )
                 } else if self.only_ptmalloc_not_from_main_arena {
+                    Some( false )
+                } else {
+                    None
+                },
+            only_jemalloc:
+                if self.only_jemalloc {
+                    Some( true )
+                } else if self.only_not_jemalloc {
                     Some( false )
                 } else {
                     None
@@ -644,6 +659,12 @@ impl CompiledBasicFilter {
             }
 
             if !allocation.in_non_main_arena() != value {
+                return false;
+            }
+        }
+
+        if let Some( value ) = self.only_jemalloc {
+            if allocation.is_jemalloc() != value {
                 return false;
             }
         }

@@ -1908,6 +1908,8 @@ impl Engine {
         register_filter!( only_ptmalloc_not_mmaped, bool );
         register_filter!( only_ptmalloc_from_main_arena, bool );
         register_filter!( only_ptmalloc_not_from_main_arena, bool );
+        register_filter!( only_jemalloc, bool );
+        register_filter!( only_not_jemalloc, bool );
 
         engine.register_fn( "only_with_marker", |list: &mut AllocationList, value: i64| {
             list.add_filter_once( |filter| filter.only_with_marker.is_some(), |filter|
@@ -2538,6 +2540,8 @@ impl ToCode for BasicFilter {
             only_ptmalloc_not_mmaped
             only_ptmalloc_from_main_arena
             only_ptmalloc_not_from_main_arena
+            only_jemalloc
+            only_not_jemalloc
         }
     }
 }

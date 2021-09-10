@@ -135,6 +135,12 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
         Some( protocol::MmapedFilter::No ) => output.only_ptmalloc_not_mmaped = true
     }
 
+    match filter.jemalloc {
+        None => {},
+        Some( protocol::JemallocFilter::Yes ) => output.only_jemalloc = true,
+        Some( protocol::JemallocFilter::No ) => output.only_not_jemalloc = true
+    }
+
     match filter.arena {
         None => {},
         Some( protocol::ArenaFilter::Main ) => output.only_ptmalloc_from_main_arena = true,
