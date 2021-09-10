@@ -161,7 +161,10 @@ pub struct AllocationGroupData {
     pub leaked_count: u64,
     pub allocated_count: u64,
     pub graph_preview_url: Option< String >,
-    pub graph_url: Option< String >
+    pub graph_url: Option< String >,
+    pub max_total_usage_first_seen_at: Option< Timeval >,
+    pub max_total_usage_first_seen_at_relative: Option< Timeval >,
+    pub max_total_usage_first_seen_at_relative_p: Option< f32 >,
 }
 
 #[derive(Serialize)]
@@ -324,7 +327,9 @@ pub enum AllocGroupsSortBy {
     #[serde(rename = "all.leaked_count")]
     GlobalLeakedCount,
     #[serde(rename = "all.size")]
-    GlobalSize
+    GlobalSize,
+    #[serde(rename = "all.max_total_usage_first_seen_at")]
+    GlobalMaxTotalUsageFirstSeenAt,
 }
 
 impl Default for AllocSortBy {
@@ -626,6 +631,8 @@ pub struct AllocFilter {
     pub marker: Option< u32 >,
     pub group_interval_min: Option< TimestampFilter< Interval > >,
     pub group_interval_max: Option< TimestampFilter< Interval > >,
+    pub group_max_total_usage_first_seen_min: Option< TimestampFilter< OffsetMin > >,
+    pub group_max_total_usage_first_seen_max: Option< TimestampFilter< OffsetMax > >,
     pub group_leaked_allocations_min: Option< NumberOrPercentage >,
     pub group_leaked_allocations_max: Option< NumberOrPercentage >,
     pub group_allocations_min: Option< u32 >,

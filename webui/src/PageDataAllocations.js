@@ -306,6 +306,16 @@ const FIELDS = {
         label: "Max group interval",
         badge: value => "Group interval at most " + fmt_or_percent( fmt_duration_for_display )( value )
     },
+    group_max_total_usage_first_seen_min: {
+        ...DURATION_OR_PERCENTAGE_FIELD,
+        label: "Max group total usage first seen after",
+        badge: value => "Max group total usage seen after " + fmt_or_percent( fmt_duration_for_display )( value )
+    },
+    group_max_total_usage_first_seen_max: {
+        ...DURATION_OR_PERCENTAGE_FIELD,
+        label: "Max group total usage first seen before",
+        badge: value => "Max group total usage seen before " + fmt_or_percent( fmt_duration_for_display )( value )
+    },
     group_allocations_min: {
         ...POSITIVE_INTEGER_FIELD,
         label: "Min allocations",
@@ -540,6 +550,11 @@ class FilterEditor extends React.Component {
                         {this.field("group_interval_min")}
                         <div className="px-2" />
                         {this.field("group_interval_max")}
+                    </div>
+                    <div className="d-flex flex-row">
+                        {this.field("group_max_total_usage_first_seen_min")}
+                        <div className="px-2" />
+                        {this.field("group_max_total_usage_first_seen_max")}
                     </div>
                 </div>
                 <div title="By realloc." className="d-flex flex-column">
@@ -1094,6 +1109,15 @@ export default class PageDataAllocations extends React.Component {
                 Header: <div>(global)<br />Last allocation</div>,
                 Cell: cell => {
                     return timestamp_cell( cell.original.all.max_timestamp, cell.original.all.max_timestamp_relative, cell.original.all.max_timestamp_relative_p );
+                },
+                maxWidth: 160,
+                view: "grouped"
+            },
+            {
+                id: "all.max_total_usage_first_seen_at",
+                Header: <div>(global)<br />Max total usage at</div>,
+                Cell: cell => {
+                    return timestamp_cell( cell.original.all.max_total_usage_first_seen_at, cell.original.all.max_total_usage_first_seen_at_relative, cell.original.all.max_total_usage_first_seen_at_relative_p );
                 },
                 maxWidth: 160,
                 view: "grouped"

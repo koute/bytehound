@@ -1054,6 +1054,33 @@ impl Loader {
         self.operations.par_sort_by_key( |(timestamp, _)| *timestamp );
         let operations: Vec< _ > = self.operations.into_iter().map( |(_, op)| op ).collect();
 
+        let mut current_total_usage_by_backtrace = Vec::new();
+        current_total_usage_by_backtrace.resize( self.backtraces.len(), 0 );
+
+        let mut current_total_max_size_by_backtrace = Vec::new();
+        current_total_max_size_by_backtrace.resize( self.backtraces.len(), (0, initial_timestamp) );
+
+        for &op in &operations {
+            let allocation = &self.allocations[ op.id().raw() as usize ];
+            let backtrace = allocation.backtrace;
+            let mut current = current_total_usage_by_backtrace[ backtrace.raw() as usize ];
+            if op.is_deallocation() {
+                current -= allocation.usable_size() as isize;
+            } else if op.is_allocation() {
+                current += allocation.usable_size() as isize;
+            } else if op.is_reallocation() {
+                let old_allocation = &self.allocations[ allocation.reallocated_from.unwrap().raw() as usize ];
+                current += allocation.usable_size() as isize;
+                current -= old_allocation.usable_size() as isize;
+            }
+
+            if current > current_total_max_size_by_backtrace[ backtrace.raw() as usize ].0 {
+                current_total_max_size_by_backtrace[ backtrace.raw() as usize ] = (current, allocation.timestamp);
+            }
+
+            current_total_usage_by_backtrace[ backtrace.raw() as usize ] = current;
+        }
+
         self.allocations.shrink_to_fit();
         self.frames.shrink_to_fit();
         self.backtraces.shrink_to_fit();
@@ -1061,6 +1088,10 @@ impl Loader {
         self.mallopts.shrink_to_fit();
         self.mmap_operations.shrink_to_fit();
         self.group_stats.shrink_to_fit();
+
+        for (index, (_, timestamp)) in current_total_max_size_by_backtrace.into_iter().enumerate() {
+            self.group_stats[ index ].max_total_usage_first_seen_at = timestamp;
+        }
 
         let mut allocations_by_backtrace = DenseVecVec::new();
         let mut index: Vec< _ > = self.allocations_by_backtrace.into_iter().collect();

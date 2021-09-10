@@ -247,7 +247,8 @@ pub struct GroupStatistics {
     pub free_count: u64,
     pub free_size: u64,
     pub min_size: u64,
-    pub max_size: u64
+    pub max_size: u64,
+    pub max_total_usage_first_seen_at: Timestamp
 }
 
 impl Default for GroupStatistics {
@@ -260,7 +261,8 @@ impl Default for GroupStatistics {
             free_count: 0,
             free_size: 0,
             min_size: -1_i64 as u64,
-            max_size: 0
+            max_size: 0,
+            max_total_usage_first_seen_at: Timestamp::min()
         }
     }
 }

@@ -801,6 +801,9 @@ fn get_allocation_group_data< 'a, I >( data: &Data, iter: I ) -> protocol::Alloc
         interval: (group.max_timestamp - group.min_timestamp).into(),
         graph_url: None,
         graph_preview_url: None,
+        max_total_usage_first_seen_at: None,
+        max_total_usage_first_seen_at_relative: None,
+        max_total_usage_first_seen_at_relative_p: None,
     }
 }
 
@@ -830,6 +833,9 @@ fn get_global_group_data( data: &Data, backtrace_id: BacktraceId ) -> protocol::
         interval: (max_timestamp - min_timestamp).into(),
         graph_url: None,
         graph_preview_url: None,
+        max_total_usage_first_seen_at: Some( stats.max_total_usage_first_seen_at.into() ),
+        max_total_usage_first_seen_at_relative: Some( (stats.max_total_usage_first_seen_at - data.initial_timestamp()).into() ),
+        max_total_usage_first_seen_at_relative_p: Some( timestamp_to_fraction( data, stats.max_total_usage_first_seen_at ) ),
     }
 }
 
@@ -1019,6 +1025,9 @@ fn handler_allocation_groups( req: HttpRequest ) -> Result< HttpResponse > {
             },
             protocol::AllocGroupsSortBy::GlobalSize => {
                 sort_by( data, &mut groups, key.order, true, |group_data| group_data.size );
+            },
+            protocol::AllocGroupsSortBy::GlobalMaxTotalUsageFirstSeenAt => {
+                sort_by( data, &mut groups, key.order, true, |group_data| group_data.max_total_usage_first_seen_at.clone() );
             }
         }
 

@@ -1878,6 +1878,8 @@ impl Engine {
         register_filter!( set_min, only_group_allocations_at_most, i64 => usize );
         register_filter!( set_max, only_group_interval_at_least, Duration );
         register_filter!( set_min, only_group_interval_at_most, Duration );
+        register_filter!( set_max, only_group_max_total_usage_first_seen_at_least, Duration );
+        register_filter!( set_min, only_group_max_total_usage_first_seen_at_most, Duration );
 
         engine.register_fn( "only_group_leaked_allocations_at_least", |list: &mut AllocationList, value: f64| {
             list.add_filter_once( |filter| filter.only_group_leaked_allocations_at_least.is_some(), |filter|
@@ -2521,6 +2523,8 @@ impl ToCode for BasicFilter {
             only_group_allocations_at_most
             only_group_interval_at_least
             only_group_interval_at_most
+            only_group_max_total_usage_first_seen_at_least
+            only_group_max_total_usage_first_seen_at_most
             only_group_leaked_allocations_at_least
             only_group_leaked_allocations_at_most
 

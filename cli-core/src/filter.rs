@@ -65,6 +65,8 @@ pub struct BasicFilter {
     pub only_group_allocations_at_most: Option< usize >,
     pub only_group_interval_at_least: Option< Duration >,
     pub only_group_interval_at_most: Option< Duration >,
+    pub only_group_max_total_usage_first_seen_at_least: Option< Duration >,
+    pub only_group_max_total_usage_first_seen_at_most: Option< Duration >,
     pub only_group_leaked_allocations_at_least: Option< NumberOrFractionOfTotal >,
     pub only_group_leaked_allocations_at_most: Option< NumberOrFractionOfTotal >,
 
@@ -127,6 +129,8 @@ pub struct CompiledBasicFilter {
     only_group_allocations_at_most: usize,
     only_group_interval_at_least: Duration,
     only_group_interval_at_most: Duration,
+    only_group_max_total_usage_first_seen_at_least: Timestamp,
+    only_group_max_total_usage_first_seen_at_most: Timestamp,
     only_group_leaked_allocations_at_least: NumberOrFractionOfTotal,
     only_group_leaked_allocations_at_most: NumberOrFractionOfTotal,
 
@@ -398,6 +402,8 @@ impl BasicFilter {
             self.only_group_allocations_at_most.is_some() ||
             self.only_group_interval_at_least.is_some() ||
             self.only_group_interval_at_most.is_some() ||
+            self.only_group_max_total_usage_first_seen_at_least.is_some() ||
+            self.only_group_max_total_usage_first_seen_at_most.is_some() ||
             self.only_group_leaked_allocations_at_least.is_some() ||
             self.only_group_leaked_allocations_at_most.is_some();
 
@@ -434,6 +440,8 @@ impl BasicFilter {
             only_group_allocations_at_most: self.only_group_allocations_at_most.unwrap_or( !0 ),
             only_group_interval_at_least: self.only_group_interval_at_least.unwrap_or( Duration::from_secs( 0 ) ),
             only_group_interval_at_most: self.only_group_interval_at_most.unwrap_or( Duration::from_secs( 5000 * 365 * 24 * 3600 ) ),
+            only_group_max_total_usage_first_seen_at_least: self.only_group_max_total_usage_first_seen_at_least.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp ),
+            only_group_max_total_usage_first_seen_at_most: self.only_group_max_total_usage_first_seen_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp ),
             only_group_leaked_allocations_at_least: self.only_group_leaked_allocations_at_least.unwrap_or( NumberOrFractionOfTotal::Number( 0 ) ),
             only_group_leaked_allocations_at_most: self.only_group_leaked_allocations_at_most.unwrap_or( NumberOrFractionOfTotal::Number( !0 ) ),
 
@@ -608,6 +616,14 @@ impl CompiledBasicFilter {
             }
 
             if leaked > self.only_group_leaked_allocations_at_most.get( total_allocations ) {
+                return false;
+            }
+
+            if stats.max_total_usage_first_seen_at < self.only_group_max_total_usage_first_seen_at_least {
+                return false;
+            }
+
+            if stats.max_total_usage_first_seen_at > self.only_group_max_total_usage_first_seen_at_most {
                 return false;
             }
         }

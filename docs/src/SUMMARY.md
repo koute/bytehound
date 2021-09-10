@@ -61,6 +61,8 @@
       - [`only_group_interval_at_most`](./api_reference/AllocationList/only_group_interval_at_most.md)
       - [`only_group_leaked_allocations_at_least`](./api_reference/AllocationList/only_group_leaked_allocations_at_least.md)
       - [`only_group_leaked_allocations_at_most`](./api_reference/AllocationList/only_group_leaked_allocations_at_most.md)
+      - [`only_group_max_total_usage_first_seen_at_least`](./api_reference/AllocationList/only_group_max_total_usage_first_seen_at_least.md)
+      - [`only_group_max_total_usage_first_seen_at_most`](./api_reference/AllocationList/only_group_max_total_usage_first_seen_at_most.md)
       - [`only_larger_or_equal`](./api_reference/AllocationList/only_larger_or_equal.md)
       - [`only_larger`](./api_reference/AllocationList/only_larger.md)
       - [`only_last_size_larger_or_equal`](./api_reference/AllocationList/only_last_size_larger_or_equal.md)

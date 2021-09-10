@@ -169,6 +169,8 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
 
     output.only_group_interval_at_least = filter.group_interval_min.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
     output.only_group_interval_at_most = filter.group_interval_max.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.only_group_max_total_usage_first_seen_at_least = filter.group_max_total_usage_first_seen_min.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.only_group_max_total_usage_first_seen_at_most = filter.group_max_total_usage_first_seen_max.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
     output.only_group_allocations_at_least = filter.group_allocations_min.map( |value| value as usize );
     output.only_group_allocations_at_most = filter.group_allocations_max.map( |value| value as usize );
     output.only_group_leaked_allocations_at_least = filter.group_leaked_allocations_min.map( |value| value.into() );
