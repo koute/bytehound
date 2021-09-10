@@ -58,9 +58,6 @@ lazy_static! {
     };
 }
 
-#[cfg(feature = "jemalloc")]
-pub use crate::api::malloc_usable_size;
-
 pub use crate::api::{
     memory_profiler_raw_mmap,
     memory_profiler_raw_munmap,
@@ -78,6 +75,7 @@ pub use crate::api::{
     reallocarray,
     free,
     posix_memalign,
+    malloc_usable_size,
     mmap,
     munmap,
     mallopt,

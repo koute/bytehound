@@ -48,8 +48,6 @@ extern "C" {
     fn free_real( ptr: *mut c_void );
     #[link_name = "_rjem_mp_memalign"]
     fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_malloc_usable_size"]
-    fn malloc_usable_size_real( ptr: *mut c_void ) -> size_t;
 }
 
 extern "C" {
@@ -115,10 +113,21 @@ pub unsafe extern "C" fn _Exit( status: c_int ) {
     _exit( status );
 }
 
-#[cfg(feature = "jemalloc")]
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn malloc_usable_size( ptr: *mut c_void ) -> size_t {
-    malloc_usable_size_real( ptr )
+    #[cfg(feature = "jemalloc")]
+    {
+        _rjem_malloc_usable_size( ptr )
+    }
+
+    #[cfg(not(feature = "jemalloc"))]
+    {
+        let usable_size = get_allocation_metadata( ptr ).usable_size;
+        match usable_size.checked_sub( mem::size_of::< InternalAllocationId >() ) {
+            Some( size ) => size,
+            None => panic!( "malloc_usable_size: underflow (pointer=0x{:016X}, usable_size={})", ptr as usize , usable_size )
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -140,11 +149,6 @@ fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
 
     #[cfg(not(feature = "jemalloc"))]
     {
-        // `libc` on mips64 doesn't export this
-        extern "C" {
-            fn malloc_usable_size( ptr: *mut libc::c_void ) -> libc::size_t;
-        }
-
         let raw_chunk_size = unsafe { *(ptr as *mut usize).offset( -1 ) };
         let flags = raw_chunk_size & 0b111;
         let chunk_size = raw_chunk_size & !0b111;
@@ -158,7 +162,6 @@ fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
 
         let is_mmapped = flags & 2 != 0;
         let usable_size = chunk_size - mem::size_of::< usize >() * if is_mmapped { 2 } else { 1 };
-        debug_assert_eq!( usable_size, unsafe { malloc_usable_size( ptr ) } );
 
         Metadata {
             flags: flags as u32,
