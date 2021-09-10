@@ -66,7 +66,7 @@ extern "C" {
     #[link_name = "_rjem_mp_nallocx"]
     fn jem_nallocx_real( size: size_t, _flags: c_int ) -> size_t;
     #[link_name = "_rjem_mp_malloc_usable_size"]
-    fn jem_malloc_usable_size_real( pointer: *const c_void ) -> size_t;
+    fn jem_malloc_usable_size_real( pointer: *mut c_void ) -> size_t;
     #[link_name = "_rjem_mp_mallctlnametomib"]
     fn jem_mallctlnametomib_real( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int;
     #[link_name = "_rjem_mp_mallctlbymib"]
@@ -113,6 +113,12 @@ pub unsafe extern "C" fn _exit( status: c_int ) {
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _Exit( status: c_int ) {
     _exit( status );
+}
+
+#[cfg(feature = "jemalloc")]
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn malloc_usable_size( ptr: *mut c_void ) -> size_t {
+    malloc_usable_size_real( ptr )
 }
 
 #[derive(Debug)]
@@ -707,7 +713,7 @@ pub unsafe extern "C" fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn _rjem_malloc_usable_size( pointer: *const c_void ) -> size_t {
+pub unsafe extern "C" fn _rjem_malloc_usable_size( pointer: *mut c_void ) -> size_t {
     let usable_size = jem_malloc_usable_size_real( pointer );
     match usable_size.checked_sub( mem::size_of::< InternalAllocationId >() ) {
         Some( size ) => size,
