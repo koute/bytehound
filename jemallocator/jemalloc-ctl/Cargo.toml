@@ -1,0 +1,41 @@
+[package]
+name = "tikv-jemalloc-ctl"
+version = "0.4.2"
+authors = [
+    "Steven Fackler <sfackler@gmail.com>",
+    "Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>",
+    "The TiKV Project Developers",
+]
+license = "MIT/Apache-2.0"
+readme = "README.md"
+categories = ["memory-management", "api-bindings", "development-tools" ]
+keywords = ["allocator", "jemalloc"]
+repository = "https://github.com/tikv/jemallocator"
+homepage = "https://github.com/tikv/jemallocator"
+documentation = "https://docs.rs/tikv-jemalloc-ctl"
+description = """
+A safe wrapper over jemalloc's control and introspection APIs
+"""
+edition = "2018"
+
+[badges]
+travis-ci = { repository = "tikv/jemallocator" }
+codecov = { repository = "tikv/jemallocator" }
+is-it-maintained-issue-resolution = { repository = "tikv/jemallocator" }
+is-it-maintained-open-issues = { repository = "tikv/jemallocator" }
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+tikv-jemalloc-sys = { path = "../jemalloc-sys", version = "0.4.0" }
+libc = { version = "0.2", default-features = false }
+paste = "1"
+
+[dev-dependencies]
+tikv-jemallocator = { path = "..", version = "0.4.0" }
+
+[features]
+default = []
+use_std = [ "libc/use_std" ]
+
+[package.metadata.docs.rs]
+rustdoc-args = [ "--cfg", "jemallocator_docs" ]

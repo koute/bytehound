@@ -8,12 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate cc;
-extern crate fs_extra;
-
 use std::env;
 use std::fs;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -54,6 +50,8 @@ macro_rules! warning {
     }
 }
 
+// TODO: split main functions and remove following allow.
+#[allow(clippy::cognitive_complexity)]
 fn main() {
     let target = env::var("TARGET").expect("TARGET was not set");
     let host = env::var("HOST").expect("HOST was not set");
@@ -61,9 +59,9 @@ fn main() {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR was not set"));
     let src_dir = env::current_dir().expect("failed to get current directory");
 
-    info!("TARGET={}", target.clone());
-    info!("HOST={}", host.clone());
-    info!("NUM_JOBS={}", num_jobs.clone());
+    info!("TARGET={}", target);
+    info!("HOST={}", host);
+    info!("NUM_JOBS={}", num_jobs);
     info!("OUT_DIR={:?}", out_dir);
     let build_dir = out_dir.join("build");
     info!("BUILD_DIR={:?}", build_dir);
@@ -75,6 +73,22 @@ fn main() {
 
     if UNTESTED_TARGETS.iter().any(|i| target.contains(i)) {
         warning!("jemalloc support for `{}` is untested", target);
+    }
+
+    let mut use_prefix =
+        env::var("CARGO_FEATURE_UNPREFIXED_MALLOC_ON_SUPPORTED_PLATFORMS").is_err();
+
+    if !use_prefix && NO_UNPREFIXED_MALLOC.iter().any(|i| target.contains(i)) {
+        warning!(
+            "Unprefixed `malloc` requested on unsupported platform `{}` => using prefixed `malloc`",
+            target
+        );
+        use_prefix = true;
+    }
+
+    // this has to occur before the early return when JEMALLOC_OVERRIDE is set
+    if use_prefix {
+        println!("cargo:rustc-cfg=prefixed");
     }
 
     if let Some(jemalloc) = env::var_os("JEMALLOC_OVERRIDE") {
@@ -99,8 +113,6 @@ fn main() {
         println!("cargo:rustc-link-lib={}={}", kind, &stem[3..]);
         return;
     }
-
-    fs::create_dir_all(&build_dir).unwrap();
     // Disable -Wextra warnings - jemalloc doesn't compile free of warnings with
     // it enabled: https://github.com/jemalloc/jemalloc/issues/1196
     let compiler = cc::Build::new().extra_warnings(false).get_compiler();
@@ -114,95 +126,31 @@ fn main() {
     info!("CFLAGS={:?}", cflags);
 
     assert!(out_dir.exists(), "OUT_DIR does not exist");
-    let (jemalloc_repo_dir, run_autoconf) = if env::var("JEMALLOC_SYS_GIT_DEV_BRANCH").is_ok() {
-        let jemalloc_repo = out_dir.join("jemalloc_repo");
-        if jemalloc_repo.exists() {
-            fs::remove_dir_all(jemalloc_repo.clone()).unwrap();
-        }
-        let mut cmd = Command::new("git");
-        cmd.arg("clone")
-            .arg("--depth=1")
-            .arg("--branch=dev")
-            .arg("--")
-            .arg("https://github.com/jemalloc/jemalloc")
-            .arg(format!("{}", jemalloc_repo.display()));
-        run(&mut cmd);
-        (jemalloc_repo, true)
-    } else {
-        (PathBuf::from("jemalloc"), false)
-    };
+    let jemalloc_repo_dir = PathBuf::from("jemalloc");
     info!("JEMALLOC_REPO_DIR={:?}", jemalloc_repo_dir);
 
-    let jemalloc_src_dir = out_dir.join("jemalloc");
-    info!("JEMALLOC_SRC_DIR={:?}", jemalloc_src_dir);
-
-    if jemalloc_src_dir.exists() {
-        fs::remove_dir_all(jemalloc_src_dir.clone()).unwrap();
+    if build_dir.exists() {
+        fs::remove_dir_all(build_dir.clone()).unwrap();
     }
-
     // Copy jemalloc submodule to the OUT_DIR
     let mut copy_options = fs_extra::dir::CopyOptions::new();
     copy_options.overwrite = true;
     copy_options.copy_inside = true;
-    fs_extra::dir::copy(&jemalloc_repo_dir, &jemalloc_src_dir, &copy_options)
+    fs_extra::dir::copy(&jemalloc_repo_dir, &build_dir, &copy_options)
         .expect("failed to copy jemalloc source code to OUT_DIR");
-    assert!(jemalloc_src_dir.exists());
+    assert!(build_dir.exists());
 
     // Configuration files
-    let config_files = ["configure" /*"VERSION"*/];
+    let config_files = ["configure", "VERSION"];
 
-    // Verify that the configuration files are up-to-date
-    let verify_configure = env::var("JEMALLOC_SYS_VERIFY_CONFIGURE").is_ok();
-    if verify_configure || run_autoconf {
-        info!("Verifying that configuration files in `configure/` are up-to-date... ");
-
-        // The configuration file from the configure/directory should be used.
-        // The jemalloc git submodule shouldn't contain any configuration files.
-        assert!(
-            !jemalloc_src_dir.join("configure").exists(),
-            "the jemalloc submodule contains configuration files"
-        );
-
-        // Run autoconf:
-        let mut cmd = Command::new("autoconf");
-        cmd.current_dir(jemalloc_src_dir.clone());
-        run(&mut cmd);
-
-        for f in &config_files {
-            use std::io::Read;
-            fn read_content(file_path: &Path) -> String {
-                assert!(
-                    file_path.exists(),
-                    "config file path `{}` does not exist",
-                    file_path.display()
-                );
-                let mut file = File::open(file_path).expect("file not found");
-                let mut content = String::new();
-                file.read_to_string(&mut content)
-                    .expect("failed to read file");
-                content
-            }
-
-            if verify_configure {
-                let current = read_content(&jemalloc_src_dir.join(f));
-                let reference = read_content(&Path::new("configure").join(f));
-                assert_eq!(
-                    current, reference,
-                    "the current and reference configuration files \"{}\" differ",
-                    f
-                );
-            }
-        }
-    } else {
-        // Copy the configuration files to jemalloc's source directory
-        for f in &config_files {
-            fs::copy(Path::new("configure").join(f), jemalloc_src_dir.join(f))
-                .expect("failed to copy config file to OUT_DIR");
-        }
+    // Copy the configuration files to jemalloc's source directory
+    for f in &config_files {
+        fs::copy(Path::new("configure").join(f), build_dir.join(f))
+            .expect("failed to copy config file to OUT_DIR");
     }
 
     // Run configure:
-    let configure = jemalloc_src_dir.join("configure");
+    let configure = build_dir.join("configure");
     let mut cmd = Command::new("sh");
     cmd.arg(
         configure
@@ -215,7 +163,7 @@ fn main() {
     .env("CC", compiler.path())
     .env("CFLAGS", cflags.clone())
     .env("LDFLAGS", cflags.clone())
-    .env("CPPFLAGS", cflags.clone())
+    .env("CPPFLAGS", cflags)
     .arg("--disable-cxx");
 
     if target.contains("ios") {
@@ -280,20 +228,8 @@ fn main() {
         cmd.arg(format!("--with-lg-vaddr={}", lg_vaddr));
     }
 
-    let mut use_prefix =
-        env::var("CARGO_FEATURE_UNPREFIXED_MALLOC_ON_SUPPORTED_PLATFORMS").is_err();
-
-    if !use_prefix && NO_UNPREFIXED_MALLOC.iter().any(|i| target.contains(i)) {
-        warning!(
-            "Unprefixed `malloc` requested on unsupported platform `{}` => using prefixed `malloc`",
-            target
-        );
-        use_prefix = true;
-    }
-
     if use_prefix {
         cmd.arg("--with-jemalloc-prefix=_rjem_mp_");
-        println!("cargo:rustc-cfg=prefixed");
         info!("--with-jemalloc-prefix=_rjem_mp_");
     }
 
@@ -323,13 +259,12 @@ fn main() {
     cmd.arg(format!("--build={}", gnu_target(&host)));
     cmd.arg(format!("--prefix={}", out_dir.display()));
 
-    run(&mut cmd);
+    run_and_log(&mut cmd, &build_dir.join("config.log"));
 
     // Make:
     let make = make_cmd(&host);
     run(Command::new(make)
         .current_dir(&build_dir)
-        .arg("srcroot=../jemalloc/")
         .arg("-j")
         .arg(num_jobs.clone()));
 
@@ -338,26 +273,21 @@ fn main() {
         // Make tests:
         run(Command::new(make)
             .current_dir(&build_dir)
-            .arg("srcroot=../jemalloc/")
             .arg("-j")
             .arg(num_jobs.clone())
             .arg("tests"));
 
         // Run tests:
-        run(Command::new(make)
-            .current_dir(&build_dir)
-            .arg("srcroot=../jemalloc/")
-            .arg("check"));
+        run(Command::new(make).current_dir(&build_dir).arg("check"));
     }
 
     // Make install:
     run(Command::new(make)
         .current_dir(&build_dir)
-        .arg("srcroot=../jemalloc/")
         .arg("install_lib_static")
         .arg("install_include")
         .arg("-j")
-        .arg(num_jobs.clone()));
+        .arg(num_jobs));
 
     println!("cargo:root={}", out_dir.display());
 
@@ -382,13 +312,24 @@ fn main() {
     println!("cargo:rerun-if-changed=jemalloc");
 }
 
+fn run_and_log(cmd: &mut Command, log_file: &Path) {
+    execute(cmd, || {
+        run(Command::new("tail").arg("-n").arg("100").arg(log_file));
+    })
+}
+
 fn run(cmd: &mut Command) {
+    execute(cmd, || ());
+}
+
+fn execute(cmd: &mut Command, on_fail: impl FnOnce()) {
     println!("running: {:?}", cmd);
     let status = match cmd.status() {
         Ok(status) => status,
         Err(e) => panic!("failed to execute command: {}", e),
     };
     if !status.success() {
+        on_fail();
         panic!(
             "command did not execute successfully: {:?}\n\
              expected success, got: {}",
@@ -403,6 +344,7 @@ fn gnu_target(target: &str) -> String {
         "x86_64-pc-windows-msvc" => "x86_64-pc-win32".to_string(),
         "i686-pc-windows-gnu" => "i686-w64-mingw32".to_string(),
         "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
+        "armv7-linux-androideabi" => "arm-linux-androideabi".to_string(),
         s => s.to_string(),
     }
 }

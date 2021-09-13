@@ -17,8 +17,8 @@ memmap = "0.7"
 log = "0.4"
 glob = "0.2"
 lru = { version = "0.6", default-features = false }
-jemallocator = { path = "../jemallocator", default-features = false }
-jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
+tikv-jemallocator = { path = "../jemallocator", default-features = false }
+tikv-jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
 goblin = "0.0.24"
 smallvec = { version = "1", features = ["union"] }
 

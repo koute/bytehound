@@ -40,7 +40,7 @@ use crate::event::InternalEvent;
 use crate::utils::read_file;
 
 #[global_allocator]
-static mut ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static mut ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub(crate) const PAGE_SIZE: usize = 4096;
 

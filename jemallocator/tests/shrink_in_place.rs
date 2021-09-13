@@ -1,8 +1,6 @@
 #![cfg_attr(feature = "alloc_trait", feature(allocator_api))]
 
-extern crate jemallocator;
-
-use jemallocator::Jemalloc;
+use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;

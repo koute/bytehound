@@ -3,13 +3,8 @@
 #![feature(test, allocator_api)]
 #![cfg(feature = "alloc_trait")]
 
-extern crate jemalloc_sys;
-extern crate jemallocator;
-extern crate libc;
-extern crate paste;
 extern crate test;
 
-use jemalloc_sys::MALLOCX_ALIGN;
 use jemallocator::Jemalloc;
 use libc::c_int;
 use std::{
@@ -17,6 +12,7 @@ use std::{
     ptr,
 };
 use test::Bencher;
+use tikv_jemalloc_sys::MALLOCX_ALIGN;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;
@@ -51,7 +47,7 @@ fn layout_to_flags(layout: &Layout) -> c_int {
 
 macro_rules! rt {
     ($size:expr, $align:expr) => {
-        paste::item! {
+        paste::paste! {
             #[bench]
             fn [<rt_mallocx_size_ $size _align_ $align>](b: &mut Bencher) {
                 b.iter(|| unsafe {
@@ -233,7 +229,6 @@ mod pow2 {
         1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
         4194304
     ]);
-
 }
 
 mod even {

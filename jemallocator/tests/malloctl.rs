@@ -1,10 +1,6 @@
-extern crate jemalloc_ctl;
-extern crate jemallocator;
-extern crate libc;
-
-use jemalloc_ctl::{Access, AsName};
-use jemallocator::Jemalloc;
 use std::alloc::{GlobalAlloc, Layout};
+use tikv_jemalloc_ctl::{Access, AsName};
+use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;

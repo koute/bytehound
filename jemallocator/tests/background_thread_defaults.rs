@@ -1,17 +1,13 @@
 //! Test background threads run-time default settings.
 
-extern crate jemalloc_ctl;
-extern crate jemallocator;
-extern crate libc;
-
-use jemallocator::Jemalloc;
+use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;
 
 // Returns true if background threads are enabled.
 fn background_threads() -> bool {
-    jemalloc_ctl::opt::background_thread::read().unwrap()
+    tikv_jemalloc_ctl::opt::background_thread::read().unwrap()
 }
 
 #[test]

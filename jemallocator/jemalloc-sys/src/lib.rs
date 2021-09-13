@@ -45,9 +45,7 @@
     feature = "cargo-clippy",
     allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)
 )]
-#![deny(missing_docs)]
-
-extern crate libc;
+#![deny(missing_docs, broken_intra_doc_links)]
 
 use libc::{c_char, c_int, c_uint, c_void, size_t};
 type c_bool = c_int;
@@ -366,14 +364,13 @@ extern "C" {
     ///
     /// This makes the space available for future allocations.
     ///
-    /// If `ptr` is null, no action occurs.
-    ///
     /// # Safety
     ///
     /// The behavior is _undefined_ if:
     ///
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
+    /// * `ptr` is null, or
     /// * the memory region referenced by `ptr` has been deallocated.
     #[cfg_attr(prefixed, link_name = "_rjem_mp_dallocx")]
     pub fn dallocx(ptr: *mut c_void, flags: c_int);
@@ -382,8 +379,6 @@ extern "C" {
     /// `size` hint.
     ///
     /// This makes the space available for future allocations.
-    ///
-    /// If `ptr` is null, no action occurs.
     ///
     /// # Safety
     ///
@@ -395,6 +390,7 @@ extern "C" {
     /// [`xallocx`],
     /// * `ptr` does not match a pointer earlier returned by the memory
     ///   allocation functions of this crate, or
+    /// * `ptr` is null, or
     /// * the memory region referenced by `ptr` has been deallocated.
     #[cfg_attr(prefixed, link_name = "_rjem_mp_sdallocx")]
     pub fn sdallocx(ptr: *mut c_void, size: size_t, flags: c_int);

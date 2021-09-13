@@ -1,13 +1,10 @@
-extern crate jemalloc_sys;
-extern crate libc;
-
 union U {
     x: &'static u8,
     y: &'static libc::c_char,
 }
 
 #[allow(non_upper_case_globals)]
-#[cfg_attr(prefixed, export_name = "_rjem_malloc_conf")]
+#[cfg_attr(prefixed, export_name = "_rjem_mp_malloc_conf")]
 #[cfg_attr(not(prefixed), no_mangle)]
 pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     U {
@@ -19,11 +16,11 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
 #[test]
 fn malloc_conf_set() {
     unsafe {
-        assert_eq!(jemalloc_sys::malloc_conf, malloc_conf);
+        assert_eq!(tikv_jemalloc_sys::malloc_conf, malloc_conf);
 
         let mut ptr: *const libc::c_char = std::ptr::null();
         let mut ptr_len: libc::size_t = std::mem::size_of::<*const libc::c_char>() as libc::size_t;
-        let r = jemalloc_sys::mallctl(
+        let r = tikv_jemalloc_sys::mallctl(
             &b"opt.stats_print_opts\0"[0] as *const _ as *const libc::c_char,
             &mut ptr as *mut *const _ as *mut libc::c_void,
             &mut ptr_len as *mut _,

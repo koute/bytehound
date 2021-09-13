@@ -16,11 +16,8 @@
 //! and is suitable both as a memory allocator and as a global allocator.
 
 #![cfg_attr(feature = "alloc_trait", feature(allocator_api))]
-#![deny(missing_docs)]
+#![deny(missing_docs, broken_intra_doc_links)]
 #![no_std]
-
-extern crate jemalloc_sys;
-extern crate libc;
 
 #[cfg(feature = "alloc_trait")]
 use core::alloc::{Alloc, AllocErr, CannotReallocInPlace, Excess};
@@ -30,16 +27,26 @@ use core::ptr::NonNull;
 
 use libc::{c_int, c_void};
 
-// The minimum alignment guaranteed by the architecture. This value is used to
-// add fast paths for low alignment values. In practice, the alignment is a
-// constant at the call site and the branch will be optimized out.
+// This constant equals _Alignof(max_align_t) and is platform-specific. It
+// contains the _maximum_ alignment that the memory allocations returned by the
+// C standard library memory allocation APIs (e.g. `malloc`) are guaranteed to
+// have.
+//
+// The memory allocation APIs are required to return memory that can fit any
+// object whose fundamental aligment is <= _Alignof(max_align_t).
+//
+// In C, there are no ZSTs, and the size of all types is a multiple of their
+// alignment (size >= align). So for allocations with size <=
+// _Alignof(max_align_t), the malloc-APIs return memory whose alignment is
+// either the requested size if its a power-of-two, or the next smaller
+// power-of-two.
 #[cfg(all(any(
     target_arch = "arm",
     target_arch = "mips",
     target_arch = "mipsel",
     target_arch = "powerpc"
 )))]
-const MIN_ALIGN: usize = 8;
+const ALIGNOF_MAX_ALIGN_T: usize = 8;
 #[cfg(all(any(
     target_arch = "x86",
     target_arch = "x86_64",
@@ -50,19 +57,30 @@ const MIN_ALIGN: usize = 8;
     target_arch = "s390x",
     target_arch = "sparc64"
 )))]
-const MIN_ALIGN: usize = 16;
+const ALIGNOF_MAX_ALIGN_T: usize = 16;
 
+/// If `align` is less than `_Alignof(max_align_t)`, and if the requested
+/// allocation `size` is larger than the alignment, we are guaranteed to get a
+/// suitably aligned allocation by default, without passing extra flags, and
+/// this function returns `0`.
+///
+/// Otherwise, it returns the alignment flag to pass to the jemalloc APIs.
 fn layout_to_flags(align: usize, size: usize) -> c_int {
-    // If our alignment is less than the minimum alignment, then we may not
-    // have to pass special flags asking for a higher alignment. If the
-    // alignment is greater than the size, however, then this hits a sort of odd
-    // case where we still need to ask for a custom alignment. See #25 for more
-    // info.
-    if align <= MIN_ALIGN && align <= size {
+    if align <= ALIGNOF_MAX_ALIGN_T && align <= size {
         0
     } else {
         ffi::MALLOCX_ALIGN(align)
     }
+}
+
+// Assumes a condition that always must hold.
+macro_rules! assume {
+    ($e:expr) => {
+        debug_assert!($e);
+        if !($e) {
+            core::hint::unreachable_unchecked();
+        }
+    };
 }
 
 /// Handle to the jemalloc allocator
@@ -77,32 +95,46 @@ pub struct Jemalloc;
 unsafe impl GlobalAlloc for Jemalloc {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        assume!(layout.size() != 0);
         let flags = layout_to_flags(layout.align(), layout.size());
-        let ptr = ffi::mallocx(layout.size(), flags);
-        ptr as *mut u8
-    }
-
-    #[inline]
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = if layout.align() <= MIN_ALIGN && layout.align() <= layout.size() {
-            ffi::calloc(1, layout.size())
+        let ptr = if flags == 0 {
+            ffi::malloc(layout.size())
         } else {
-            let flags = layout_to_flags(layout.align(), layout.size()) | ffi::MALLOCX_ZERO;
             ffi::mallocx(layout.size(), flags)
         };
         ptr as *mut u8
     }
 
     #[inline]
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        assume!(layout.size() != 0);
+        let flags = layout_to_flags(layout.align(), layout.size());
+        let ptr = if flags == 0 {
+            ffi::calloc(1, layout.size())
+        } else {
+            ffi::mallocx(layout.size(), flags | ffi::MALLOCX_ZERO)
+        };
+        ptr as *mut u8
+    }
+
+    #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        assume!(!ptr.is_null());
+        assume!(layout.size() != 0);
         let flags = layout_to_flags(layout.align(), layout.size());
         ffi::sdallocx(ptr as *mut c_void, layout.size(), flags)
     }
 
     #[inline]
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        assume!(layout.size() != 0);
+        assume!(new_size != 0);
         let flags = layout_to_flags(layout.align(), new_size);
-        let ptr = ffi::rallocx(ptr as *mut c_void, new_size, flags);
+        let ptr = if flags == 0 {
+            ffi::realloc(ptr as *mut c_void, new_size)
+        } else {
+            ffi::rallocx(ptr as *mut c_void, new_size, flags)
+        };
         ptr as *mut u8
     }
 }
@@ -243,7 +275,7 @@ unsafe impl Alloc for Jemalloc {
 /// and the size reported by this function should not be depended on,
 /// since such behavior is entirely implementation-dependent.
 ///
-/// # Unsafety
+/// # Safety
 ///
 /// `ptr` must have been allocated by `Jemalloc` and must not have been freed yet.
 pub unsafe fn usable_size<T>(ptr: *const T) -> usize {
@@ -252,5 +284,5 @@ pub unsafe fn usable_size<T>(ptr: *const T) -> usize {
 
 /// Raw bindings to jemalloc
 mod ffi {
-    pub use jemalloc_sys::*;
+    pub use tikv_jemalloc_sys::*;
 }
