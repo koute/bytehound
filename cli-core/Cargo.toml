@@ -20,7 +20,7 @@ inferno = { version = "0.9", default-features = false }
 lazy_static = "1"
 ahash = "0.7"
 parking_lot = "0.11"
-crossbeam-channel = "0.3"
+crossbeam-channel = "0.5"
 rayon = "1"
 regex = "1"
 rhai = { version = "1", features = ["unchecked"] }

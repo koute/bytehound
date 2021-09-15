@@ -603,7 +603,7 @@ dependencies = [
  "colorgrad",
  "common",
  "cpp_demangle 0.2.16",
- "crossbeam-channel 0.3.9",
+ "crossbeam-channel 0.5.1",
  "ctrlc",
  "goblin",
  "inferno",
