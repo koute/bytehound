@@ -14,6 +14,7 @@ env_logger = "0.6"
 structopt = "0.2"
 cli-core = { path = "../cli-core" }
 server-core = { path = "../server-core", optional = true }
+tikv-jemallocator = "0.4"
 
 [features]
 default = ["subcommand-server"]

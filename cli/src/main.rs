@@ -18,6 +18,9 @@ use cli_core::{
     postprocess
 };
 
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn parse_anonymize( source: &str ) -> Anonymize {
     match source {
         "none" => Anonymize::None,
