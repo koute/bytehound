@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 lz4-compress = { path = "../lz4-compress" }
-speedy = "0.7"
+speedy = "0.8"
 byteorder = "1"
 libc = "0.2"

@@ -290,7 +290,7 @@ impl< 'a, C: Context > Readable< 'a, C > for FramedEvent< 'a > {
                 }
             },
             Cow::Owned( bytes ) => {
-                match Event::read_from_buffer_owned( &bytes ) {
+                match Event::read_from_buffer_copying_data( &bytes ) {
                     Ok( event ) => Ok( FramedEvent::Known( event ) ),
                     Err( _ ) => Ok( FramedEvent::Unknown( Cow::Owned( bytes ) ) )
                 }
