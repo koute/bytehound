@@ -20,6 +20,20 @@ use crate::threaded_lz4_stream::Lz4Writer;
 
 use crate::reader::parse_events;
 
+struct Allocation {
+    counter: u64,
+    events: smallvec::SmallVec< [BufferedAllocation; 1] >
+}
+
+impl Allocation {
+    pub fn new( counter: u64 ) -> Self {
+        Allocation {
+            counter,
+            events: Default::default()
+        }
+    }
+}
+
 struct BufferedAllocation {
     timestamp: Timestamp,
     allocation: AllocBody
@@ -69,6 +83,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
 {
     let (header, event_stream) = parse_events( input_fp )?;
 
+    let mut current_timestamp = header.initial_timestamp;
     let mut ofp = Lz4Writer::new( output_fp );
     Event::Header( header ).write_to_stream( &mut ofp )?;
     let threshold = threshold.map( Timestamp::from_secs );
@@ -78,8 +93,12 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
         let mut backtrace_cache: HashMap< Vec< u64 >, u64 > = Default::default();
         let mut backtrace_map: HashMap< u64, u64 > = Default::default();
         let mut stats_by_backtrace: HashMap< u64, GroupStatistics > = Default::default();
-        let mut allocations_by_id: HashMap< AllocationId, smallvec::SmallVec< [BufferedAllocation; 1] > > = Default::default();
-        let mut allocations_by_pointer: HashMap< u64, smallvec::SmallVec< [BufferedAllocation; 1] > > = Default::default();
+        let mut young_allocations_by_id: HashMap< AllocationId, Allocation > = Default::default();
+        let mut mature_allocations_by_id: HashMap< AllocationId, Allocation > = Default::default();
+        let mut allocations_by_pointer: HashMap< u64, Allocation > = Default::default();
+        let mut last_flush = current_timestamp;
+        let mut flushed_buffer = Vec::new();
+        let mut allocation_counter = 0;
 
         for event in event_stream {
             let event = event?;
@@ -110,6 +129,34 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                 },
                 event => event
             };
+
+            if let Some( threshold ) = threshold {
+                if current_timestamp - last_flush > threshold {
+                    std::mem::swap( &mut young_allocations_by_id, &mut mature_allocations_by_id );
+                    let mut allocations_kept = 0;
+                    for (id, allocation) in young_allocations_by_id.drain() {
+                        if allocation.events[0].timestamp < current_timestamp && current_timestamp - allocation.events[0].timestamp >= threshold {
+                            flushed_buffer.push( (id, allocation) );
+                        } else {
+                            // This should not happen, but let's handle it just in case.
+                            mature_allocations_by_id.insert( id, allocation );
+                            allocations_kept += 1;
+                        }
+                    }
+
+                    if allocations_kept > 0 {
+                        info!( "Was unable to flush {} allocation(s)", allocations_kept );
+                    }
+                    last_flush = current_timestamp;
+
+                    // Sort it so that the output doesn't differ based on the hashmap's iteration order.
+                    flushed_buffer.sort_unstable_by_key( |(_, allocation)| allocation.counter );
+
+                    for (id, allocation) in flushed_buffer.drain( .. ) {
+                        emit( id, allocation.events, &mut ofp )?;
+                    }
+                }
+            }
 
             match event {
                 | Event::Alloc { .. }
@@ -163,6 +210,8 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                     continue;
                 },
                 Event::AllocEx { mut allocation, timestamp, id, .. } => {
+                    current_timestamp = std::cmp::max( timestamp, current_timestamp );
+
                     let usable_size = allocation.size + allocation.extra_usable_space as u64;
                     {
                         allocation.backtrace = backtrace_map.get( &allocation.backtrace ).copied().unwrap();
@@ -185,8 +234,13 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
 
                     let entry;
                     if !id.is_invalid() && !id.is_untracked() {
-                        entry = match allocations_by_id.entry( id ) {
-                            Entry::Vacant( entry ) => entry.insert( Default::default() ),
+                        entry = match young_allocations_by_id.entry( id ) {
+                            Entry::Vacant( entry ) => {
+                                let counter = allocation_counter;
+                                allocation_counter += 1;
+                                let allocation = Allocation::new( counter );
+                                entry.insert( allocation )
+                            },
                             Entry::Occupied( .. ) => {
                                 warn!( "Duplicate allocation with ID: {:?}", id );
                                 continue;
@@ -194,7 +248,12 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                         };
                     } else {
                         entry = match allocations_by_pointer.entry( allocation.pointer ) {
-                            Entry::Vacant( entry ) => entry.insert( Default::default() ),
+                            Entry::Vacant( entry ) => {
+                                let counter = allocation_counter;
+                                allocation_counter += 1;
+                                let allocation = Allocation::new( counter );
+                                entry.insert( allocation )
+                            },
                             Entry::Occupied( .. ) => {
                                 warn!( "Duplicate allocation with address: 0x{:016X}", allocation.pointer );
                                 continue;
@@ -202,7 +261,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                         };
                     }
 
-                    entry.push( BufferedAllocation { timestamp, allocation } );
+                    entry.events.push( BufferedAllocation { timestamp, allocation } );
                     continue;
                 },
                 Event::ReallocEx { timestamp, mut allocation, old_pointer, id, .. } => {
@@ -228,11 +287,17 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
 
                     let entry;
                     if !id.is_invalid() && !id.is_untracked() {
-                        entry = match allocations_by_id.get_mut( &id ) {
+                        entry = match young_allocations_by_id.get_mut( &id ) {
                             Some( entry ) => entry,
                             None => {
-                                warn!( "Invalid reallocation with ID: {:?}", id );
-                                continue;
+                                match mature_allocations_by_id.get_mut( &id ) {
+                                    Some( entry ) => entry,
+                                    None => {
+                                        let event = Event::ReallocEx { timestamp, allocation, old_pointer, id };
+                                        event.write_to_stream( &mut ofp )?;
+                                        continue;
+                                    }
+                                }
                             }
                         };
                     } else {
@@ -253,28 +318,34 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                         };
                     }
 
-                    entry.push( BufferedAllocation { timestamp, allocation } );
+                    entry.events.push( BufferedAllocation { timestamp, allocation } );
                     continue;
                 },
                 Event::FreeEx { id, timestamp, pointer, backtrace, thread } => {
-                    let entry;
+                    let mut entry;
                     if !id.is_invalid() && !id.is_untracked() {
-                        entry = allocations_by_id.remove( &id );
+                        entry = young_allocations_by_id.remove( &id );
                         if entry.is_none() {
-                            warn!( "Invalid free with ID: {:?}", id );
+                            entry = mature_allocations_by_id.remove( &id );
+                        }
+
+                        if entry.is_none() {
+                            let event = Event::FreeEx { id, timestamp, pointer, backtrace, thread };
+                            event.write_to_stream( &mut ofp )?;
+                            continue;
                         }
                     } else {
                         entry = allocations_by_pointer.remove( &pointer );
                     }
 
                     if let Some( entry ) = entry {
-                        if timestamp < entry[0].timestamp {
+                        if timestamp < entry.events[0].timestamp {
                             warn!( "Deallocation in the past of address: 0x{:016X}", pointer );
                         } else {
                             if let Some( threshold ) = threshold {
-                                let lifetime = timestamp - entry[0].timestamp;
+                                let lifetime = timestamp - entry.events[0].timestamp;
                                 if lifetime > threshold {
-                                    emit( id, entry, &mut ofp )?;
+                                    emit( id, entry.events, &mut ofp )?;
                                     let event = Event::FreeEx { id, timestamp, pointer, backtrace, thread };
                                     event.write_to_stream( &mut ofp )?;
                                     continue;
@@ -282,7 +353,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                             }
                         }
 
-                        for buffered in entry {
+                        for buffered in entry.events {
                             let usable_size = buffered.allocation.size + buffered.allocation.extra_usable_space as u64;
                             let stats = stats_by_backtrace.get_mut( &buffered.allocation.backtrace ).unwrap();
                             stats.free_count += 1;
@@ -337,12 +408,16 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
             event.write_to_stream( &mut ofp )?;
         }
 
-        for (id, bucket) in allocations_by_id {
-            emit( id, bucket, &mut ofp )?;
+        for (id, bucket) in mature_allocations_by_id {
+            emit( id, bucket.events, &mut ofp )?;
+        }
+
+        for (id, bucket) in young_allocations_by_id {
+            emit( id, bucket.events, &mut ofp )?;
         }
 
         for (_, bucket) in allocations_by_pointer {
-            emit( common::event::AllocationId::UNTRACKED, bucket, &mut ofp )?;
+            emit( common::event::AllocationId::UNTRACKED, bucket.events, &mut ofp )?;
         }
 
         for (backtrace, stats) in stats_by_backtrace {
