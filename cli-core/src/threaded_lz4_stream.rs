@@ -77,10 +77,11 @@ impl< F: io::Read + Send + 'static > Lz4Reader< F > {
             let decompress_rx = decompress_rx.clone();
             let output_tx = output_tx.clone();
             thread::spawn( move || {
+                let mut output = Vec::new();
                 while let Ok( (counter, input) ) = decompress_rx.recv() {
-                    let mut output = Vec::new();
+                    output.clear();
                     if let Ok(()) = lz4_compress::decompress_into( &input, &mut output ) {
-                        if output_tx.send( (counter, output) ).is_err() {
+                        if output_tx.send( (counter, output.clone()) ).is_err() {
                             break;
                         }
                     }
