@@ -1,5 +1,5 @@
 use std::io::{self, Read};
-use std::collections::HashMap;
+use ahash::AHashMap as HashMap;
 use common::event::Event;
 use common::Timestamp;
 use crate::reader::parse_events;
