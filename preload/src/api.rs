@@ -821,9 +821,6 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
 
     let _lock = crate::global::MMAP_LOCK.lock();
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
-    if ptr == libc::MAP_FAILED {
-        return ptr;
-    }
 
     send_event_throttled( || InternalEvent::Mmap {
         pointer: ptr as usize,
@@ -860,15 +857,13 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let _lock = crate::global::MMAP_LOCK.lock();
     let result = syscall::munmap( ptr, length );
 
-    if !ptr.is_null() {
-        send_event_throttled( || InternalEvent::Munmap {
-            ptr: ptr as usize,
-            len: length as usize,
-            backtrace,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        });
-    }
+    send_event_throttled( || InternalEvent::Munmap {
+        ptr: ptr as usize,
+        len: length as usize,
+        backtrace,
+        timestamp: get_timestamp_if_enabled(),
+        thread: thread.decay()
+    });
 
     result
 }
