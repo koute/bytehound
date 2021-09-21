@@ -1123,7 +1123,7 @@ fn test_cull() {
 
     let g0 = analysis.groups.allocations.iter().find( |group| group.backtrace_id == a0.backtrace_id ).unwrap();
     assert_eq!( g0.all.leaked_count, 1 );
-    assert_eq!( g0.all.allocated_count, 3 );
+    assert_eq!( g0.all.allocated_count, 2 );
 
     let a2 = iter.next().unwrap();
     let a3 = iter.next().unwrap();

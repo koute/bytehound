@@ -497,8 +497,12 @@ unsafe impl Send for WeakThreadHandle {}
 unsafe impl Sync for WeakThreadHandle {}
 
 impl WeakThreadHandle {
-    pub fn tid( &self ) -> u32 {
+    pub fn system_tid( &self ) -> u32 {
         self.0.thread_id
+    }
+
+    pub fn unique_tid( &self ) -> u64 {
+        self.0.internal_thread_id
     }
 }
 

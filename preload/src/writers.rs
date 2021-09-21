@@ -17,9 +17,8 @@ use crate::{CMDLINE, EXECUTABLE, PID};
 use crate::arch;
 use crate::opt;
 use crate::timestamp::{get_timestamp, get_wall_clock};
-use crate::unwind::Backtrace;
 use crate::utils::read_file;
-use crate::processing_thread::BacktraceCache;
+use crate::processing_thread::{BacktraceCache, CachedBacktrace};
 
 fn read_maps() -> io::Result< Vec< Region > > {
     let maps = read_file( "/proc/self/maps" )?;
@@ -145,21 +144,24 @@ fn write_environ< U: Write >( mut serializer: U ) -> io::Result< () > {
     Ok(())
 }
 
-pub fn write_backtrace< U: Write >( serializer: &mut U, thread: u32, backtrace: Backtrace, cache: &mut BacktraceCache ) -> io::Result< u64 > {
-    let (id, backtrace) = cache.resolve( thread, backtrace );
-    let backtrace = match backtrace {
-        Some( backtrace ) => backtrace,
-        None => return Ok( id )
-    };
+pub(crate) fn write_backtrace< U: Write >( serializer: &mut U, backtrace: &CachedBacktrace, cache: &mut BacktraceCache ) -> io::Result< u64 > {
+    if let Some( id ) = backtrace.id() {
+        return Ok( id );
+    }
+
+    let id = cache.assign_id( backtrace );
+    let frames = backtrace.frames();
+
+    debug_assert_ne!( id, 0 );
 
     if mem::size_of::< usize >() == mem::size_of::< u32 >() {
-        let frames: &[u32] = unsafe { std::slice::from_raw_parts( backtrace.as_ptr() as *const u32, backtrace.len() ) };
+        let frames: &[u32] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u32, frames.len() ) };
         Event::Backtrace32 {
             id,
             addresses: frames.into()
         }.write_to_stream( serializer )?;
     } else if mem::size_of::< usize >() == mem::size_of::< u64 >() {
-        let frames: &[u64] = unsafe { std::slice::from_raw_parts( backtrace.as_ptr() as *const u64, backtrace.len() ) };
+        let frames: &[u64] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u64, frames.len() ) };
         Event::Backtrace {
             id,
             addresses: frames.into()
