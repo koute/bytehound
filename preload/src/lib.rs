@@ -35,6 +35,7 @@ mod init;
 mod processing_thread;
 mod global;
 mod ordered_map;
+mod nohash;
 
 use crate::event::InternalEvent;
 use crate::utils::read_file;
