@@ -154,6 +154,9 @@ pub(crate) fn write_backtrace< U: Write >( serializer: &mut U, backtrace: &Cache
 
     debug_assert_ne!( id, 0 );
 
+    // TODO: Get rid of this.
+    let frames: Vec< _ > = frames.iter().copied().rev().collect();
+
     if mem::size_of::< usize >() == mem::size_of::< u32 >() {
         let frames: &[u32] = unsafe { std::slice::from_raw_parts( frames.as_ptr() as *const u32, frames.len() ) };
         Event::Backtrace32 {

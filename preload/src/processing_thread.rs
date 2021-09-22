@@ -544,7 +544,6 @@ struct BacktraceCacheThreadState {
 pub struct BacktraceCache {
     next_id: u64,
     thread_state: lru::LruCache< u64, BacktraceCacheThreadState, NoHash >,
-    buffer: Vec< usize >,
     cache: lru::LruCache< usize, CachedBacktrace, NoHash >
 }
 
@@ -553,7 +552,6 @@ impl BacktraceCache {
         BacktraceCache {
             next_id: 1,
             thread_state: lru::LruCache::with_hasher( 65536, NoHash ),
-            buffer: Vec::new(),
             cache: lru::LruCache::with_hasher( cache_size, NoHash )
         }
     }
@@ -590,7 +588,7 @@ impl BacktraceCache {
             None => {
                 thread_state.current_backtrace.clear();
                 thread_state.current_backtrace.reserve( backtrace.frames.len() );
-                for &frame in &backtrace.frames {
+                for &frame in backtrace.frames.iter().rev() {
                     key = key.wrapping_mul( PRIME );
                     key ^= frame;
                     thread_state.current_backtrace.push( frame );
@@ -598,21 +596,21 @@ impl BacktraceCache {
             },
             Some( count ) => {
                 let count = count as usize;
-                self.buffer.reserve( backtrace.frames.len() + thread_state.current_backtrace[ count.. ].len() );
+                assert!( thread_state.current_backtrace.len() >= count );
 
-                for &frame in &backtrace.frames {
+                let remaining = thread_state.current_backtrace.len() - count;
+                thread_state.current_backtrace.truncate( remaining );
+                thread_state.current_backtrace.reserve( backtrace.frames.len() );
+
+                for &frame in &thread_state.current_backtrace {
                     key = key.wrapping_mul( PRIME );
                     key ^= frame;
-                    self.buffer.push( frame );
                 }
-                for &frame in &thread_state.current_backtrace[ count.. ] {
+                for &frame in backtrace.frames.iter().rev() {
                     key = key.wrapping_mul( PRIME );
                     key ^= frame;
-                    self.buffer.push( frame );
+                    thread_state.current_backtrace.push( frame );
                 }
-
-                std::mem::swap( &mut thread_state.current_backtrace, &mut self.buffer );
-                self.buffer.clear();
             }
         }
 
