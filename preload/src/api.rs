@@ -18,7 +18,7 @@ use crate::global::{StrongThreadHandle, on_exit};
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
-use crate::unwind::{self, Backtrace};
+use crate::unwind;
 
 #[cfg(not(feature = "jemalloc"))]
 extern "C" {
@@ -227,8 +227,7 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
     let id = thread.on_new_allocation();
     std::ptr::write_unaligned( tracking_pointer, id );
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     if matches!( kind, AllocationKind::Calloc ) {
         metadata.flags |= event::ALLOC_FLAG_CALLOC;
@@ -308,8 +307,7 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
         }
     };
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     let timestamp = get_timestamp_if_enabled();
     if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
@@ -338,7 +336,7 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
             InternalEvent::Free {
                 id,
                 address: old_address,
-                backtrace,
+                backtrace: Some( backtrace ),
                 timestamp,
                 thread: thread.decay()
             }
@@ -386,10 +384,11 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
     }
 
     let mut thread = if let Some( thread ) = thread { thread } else { return };
-    let mut backtrace = Backtrace::new();
-    if opt::get().grab_backtraces_on_free {
-        unwind::grab( &mut thread, &mut backtrace );
-    }
+    let backtrace = if opt::get().grab_backtraces_on_free {
+        Some( unwind::grab( &mut thread ) )
+    } else {
+        None
+    };
 
     send_event_throttled( || {
         InternalEvent::Free {
@@ -440,8 +439,7 @@ pub unsafe extern "C" fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -
     let id = thread.on_new_allocation();
     std::ptr::write_unaligned( tracking_pointer, id );
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
     send_event_throttled( move || {
         InternalEvent::Alloc {
             id,
@@ -497,8 +495,7 @@ pub unsafe extern "C" fn _rjem_calloc( count: size_t, element_size: size_t ) -> 
     let id = thread.on_new_allocation();
     std::ptr::write_unaligned( tracking_pointer, id );
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
     send_event_throttled( move || {
         InternalEvent::Alloc {
             id,
@@ -542,10 +539,12 @@ pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: s
     }
 
     let mut thread = if let Some( thread ) = thread { thread } else { return };
-    let mut backtrace = Backtrace::new();
-    if opt::get().grab_backtraces_on_free {
-        unwind::grab( &mut thread, &mut backtrace );
-    }
+    let backtrace =
+        if opt::get().grab_backtraces_on_free {
+            Some( unwind::grab( &mut thread ) )
+        } else {
+            None
+        };
 
     send_event_throttled( || {
         InternalEvent::Free {
@@ -601,8 +600,7 @@ pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size
         }
     };
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     let timestamp = get_timestamp_if_enabled();
     if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
@@ -632,7 +630,7 @@ pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size
             InternalEvent::Free {
                 id,
                 address: old_address,
-                backtrace,
+                backtrace: Some( backtrace ),
                 timestamp,
                 thread: thread.decay()
             }
@@ -677,8 +675,7 @@ pub unsafe extern "C" fn _rjem_xallocx( pointer: *mut c_void, requested_size: si
         return new_requested_size;
     };
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     let timestamp = get_timestamp_if_enabled();
 
@@ -816,8 +813,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
         return syscall::mmap( addr, length, prot, flags, fildes, off );
     };
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     let _lock = crate::global::MMAP_LOCK.lock();
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
@@ -851,8 +847,7 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
         return syscall::munmap( ptr, length );
     };
 
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     let _lock = crate::global::MMAP_LOCK.lock();
     let result = syscall::munmap( ptr, length );
@@ -874,8 +869,7 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     let result = mallopt_real( param, value );
 
     let mut thread = if let Some( thread ) = thread { thread } else { return result };
-    let mut backtrace = Backtrace::new();
-    unwind::grab( &mut thread, &mut backtrace );
+    let backtrace = unwind::grab( &mut thread );
 
     send_event_throttled( || InternalEvent::Mallopt {
         param: param as i32,

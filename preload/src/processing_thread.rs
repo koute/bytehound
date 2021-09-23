@@ -45,6 +45,7 @@ use crate::writer_memory;
 use crate::writers;
 use crate::ordered_map::OrderedMap;
 use crate::nohash::NoHash;
+use crate::unwind::Backtrace;
 
 fn get_hash< T: Hash >( value: T ) -> u64 {
     use std::collections::hash_map::DefaultHasher;
@@ -414,197 +415,54 @@ fn initialize_output_file() -> Option< (File, PathBuf) > {
     Some( (fp, output_path.into()) )
 }
 
-#[repr(C)]
-struct CachedBacktraceHeader {
-    id: u64,
-    counter: usize,
-    length: usize
-}
-
-pub(crate) struct CachedBacktrace( std::ptr::NonNull< CachedBacktraceHeader > );
-
-impl CachedBacktrace {
-    pub(crate) fn id( &self ) -> Option< u64 > {
-        let id = self.header().id;
-        if id == 0 {
-            None
-        } else {
-            Some( id )
-        }
-    }
-
-    pub(crate) fn frames( &self ) -> &[usize] {
-        let length = self.header().length;
-        unsafe {
-            let ptr = (self.0.as_ptr() as *const CachedBacktraceHeader as *const u8).add( std::mem::size_of::< CachedBacktraceHeader >() ) as *const usize;
-            std::slice::from_raw_parts( ptr, length )
-        }
-    }
-}
-
-impl Clone for CachedBacktrace {
-    fn clone( &self ) -> Self {
-        unsafe {
-            self.header_mut().counter += 1;
-        }
-        CachedBacktrace( self.0.clone() )
-    }
-}
-
-impl Drop for CachedBacktrace {
-    #[inline]
-    fn drop( &mut self ) {
-        unsafe {
-            self.header_mut().counter -= 1;
-            if self.header_mut().counter != 0 {
-                return;
-            }
-
-            self.drop_slow();
-        }
-    }
-}
-
-impl CachedBacktrace {
-    fn new( backtrace: &[usize] ) -> Self {
-        unsafe {
-            let length = backtrace.len();
-            let layout = std::alloc::Layout::from_size_align( std::mem::size_of::< CachedBacktraceHeader >() + std::mem::size_of::< usize >() * length, 8 ).unwrap();
-            let memory = std::alloc::alloc( layout ) as *mut CachedBacktraceHeader;
-            std::ptr::write( memory, CachedBacktraceHeader {
-                id: 0,
-                counter: 1,
-                length
-            });
-            std::ptr::copy_nonoverlapping(
-                backtrace.as_ptr(),
-                (memory as *mut u8).add( std::mem::size_of::< CachedBacktraceHeader >() ) as *mut usize,
-                length
-            );
-
-            CachedBacktrace( std::ptr::NonNull::new_unchecked( memory ) )
-        }
-    }
-
-    #[inline(never)]
-    unsafe fn drop_slow( &mut self ) {
-        let length = self.header().length;
-        let layout = std::alloc::Layout::from_size_align( std::mem::size_of::< CachedBacktraceHeader >() + std::mem::size_of::< usize >() * length, 8 ).unwrap();
-        std::alloc::dealloc( self.0.as_ptr() as *mut u8, layout );
-    }
-
-    fn header( &self ) -> &CachedBacktraceHeader {
-        unsafe {
-            self.0.as_ref()
-        }
-    }
-
-    unsafe fn header_mut( &self ) -> &mut CachedBacktraceHeader {
-        &mut *self.0.as_ptr()
-    }
-}
-
-#[derive(Default)]
-struct BacktraceCacheThreadState {
-    current_backtrace: Vec< usize >
-}
-
 pub struct BacktraceCache {
     next_id: u64,
-    thread_state: lru::LruCache< u64, BacktraceCacheThreadState, NoHash >,
-    cache: lru::LruCache< usize, CachedBacktrace, NoHash >
+    cache: lru::LruCache< u64, Backtrace, NoHash >
 }
 
 impl BacktraceCache {
     pub fn new( cache_size: usize ) -> Self {
         BacktraceCache {
             next_id: 1,
-            thread_state: lru::LruCache::with_hasher( 65536, NoHash ),
             cache: lru::LruCache::with_hasher( cache_size, NoHash )
         }
     }
 
-    pub(crate) fn assign_id( &mut self, backtrace: &CachedBacktrace ) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        unsafe {
-            backtrace.header_mut().id = id;
-        }
-
-        id
-    }
-
-    pub(crate) fn resolve( &mut self, unique_tid: u64, backtrace: crate::unwind::Backtrace ) -> CachedBacktrace {
-        debug_assert!( !backtrace.is_empty() );
-
-        let thread_state = match self.thread_state.get_mut( &unique_tid ) {
-            Some( thread_state ) => thread_state,
-            None => {
-                self.thread_state.put( unique_tid, BacktraceCacheThreadState::default() );
-                self.thread_state.get_mut( &unique_tid ).unwrap()
-            }
-        };
-
-        // These are taken from FNV.
-        #[cfg(target_pointer_width = "32")]
-        const PRIME: usize = 16777619;
-        #[cfg(target_pointer_width = "64")]
-        const PRIME: usize = 1099511628211;
-
-        let mut key: usize = 0;
-        match backtrace.stale_count {
-            None => {
-                thread_state.current_backtrace.clear();
-                thread_state.current_backtrace.reserve( backtrace.frames.len() );
-                for &frame in backtrace.frames.iter().rev() {
-                    key = key.wrapping_mul( PRIME );
-                    key ^= frame;
-                    thread_state.current_backtrace.push( frame );
-                }
-            },
-            Some( count ) => {
-                let count = count as usize;
-                assert!( thread_state.current_backtrace.len() >= count );
-
-                let remaining = thread_state.current_backtrace.len() - count;
-                thread_state.current_backtrace.truncate( remaining );
-                thread_state.current_backtrace.reserve( backtrace.frames.len() );
-
-                for &frame in &thread_state.current_backtrace {
-                    key = key.wrapping_mul( PRIME );
-                    key ^= frame;
-                }
-                for &frame in backtrace.frames.iter().rev() {
-                    key = key.wrapping_mul( PRIME );
-                    key ^= frame;
-                    thread_state.current_backtrace.push( frame );
-                }
-            }
+    pub(crate) fn assign_id( &mut self, backtrace: &Backtrace ) -> (u64, bool) {
+        let key = backtrace.key();
+        if let Some( id ) = backtrace.id() {
+            self.cache.get( &key );
+            return (id, false);
         }
 
         match self.cache.get_mut( &key ) {
             None => {
                 if cfg!( debug_assertions ) {
                     if self.cache.len() >= self.cache.cap() {
-                        debug!( "Backtrace cache overflow" );
+                        debug!( "2nd level backtrace cache overflow" );
                     }
                 }
 
-                let entry = CachedBacktrace::new( &thread_state.current_backtrace );
-                self.cache.put( key, entry.clone() );
+                let id = self.next_id;
+                self.next_id += 1;
+                backtrace.set_id( id );
 
-                entry
+                self.cache.put( key, backtrace.clone() );
+                (id, true)
             },
-            Some( entry ) => {
-                if entry.frames() == thread_state.current_backtrace {
-                    entry.clone()
+            Some( cached_backtrace ) => {
+                if Backtrace::ptr_eq( &cached_backtrace, &backtrace ) || cached_backtrace.frames() == backtrace.frames() {
+                    (cached_backtrace.id().expect( "internal error: id was not set on a cached backtrace" ), false)
                 } else {
-                    info!( "Backtrace cache conflict detected!" );
+                    info!( "2nd level backtrace cache conflict detected!" );
 
-                    let new_entry = CachedBacktrace::new( &thread_state.current_backtrace );
-                    *entry = new_entry.clone();
+                    let id = self.next_id;
+                    self.next_id += 1;
+                    backtrace.set_id( id );
 
-                    new_entry
+                    *cached_backtrace = backtrace.clone();
+
+                    (id, true)
                 }
             }
         }
@@ -623,7 +481,7 @@ struct GroupStatistics {
 struct BufferedAllocation {
     timestamp: Timestamp,
     allocation: AllocBody,
-    backtrace: CachedBacktrace
+    backtrace: Backtrace
 }
 
 struct AllocationBucket {
@@ -644,7 +502,7 @@ impl AllocationBucket {
         let mut iter = self.events.drain( .. );
 
         let BufferedAllocation { timestamp, mut allocation, backtrace } = iter.next().unwrap();
-        allocation.backtrace = writers::write_backtrace( &mut *fp, &backtrace, backtrace_cache )?;
+        allocation.backtrace = writers::write_backtrace( &mut *fp, backtrace, backtrace_cache )?;
 
         let mut old_pointer = allocation.pointer;
         Event::AllocEx {
@@ -654,7 +512,7 @@ impl AllocationBucket {
         }.write_to_stream( &mut *fp )?;
 
         while let Some( BufferedAllocation { timestamp, mut allocation, backtrace } ) = iter.next() {
-            allocation.backtrace = writers::write_backtrace( &mut *fp, &backtrace, backtrace_cache )?;
+            allocation.backtrace = writers::write_backtrace( &mut *fp, backtrace, backtrace_cache )?;
 
             let new_pointer = allocation.pointer;
             Event::ReallocEx {
@@ -827,10 +685,7 @@ pub(crate) fn thread_main() {
                     debug_assert!( id.is_valid() );
 
                     let system_tid = thread.system_tid();
-                    let unique_tid = thread.unique_tid();
                     mem::drop( thread );
-
-                    let backtrace = backtrace_cache.resolve( unique_tid, backtrace );
 
                     if skip {
                         continue;
@@ -863,7 +718,7 @@ pub(crate) fn thread_main() {
                             error!( "Duplicate allocation 0x{:08X} with ID {}; this should never happen", address.get(), id );
                         }
                     } else {
-                        if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, &backtrace, &mut backtrace_cache ) {
+                        if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
                             allocation.backtrace = backtrace;
                             let _ = Event::AllocEx {
                                 id: id.into(),
@@ -892,10 +747,7 @@ pub(crate) fn thread_main() {
                     }
 
                     let system_tid = thread.system_tid();
-                    let unique_tid = thread.unique_tid();
                     mem::drop( thread );
-
-                    let backtrace = backtrace_cache.resolve( unique_tid, backtrace );
 
                     if skip {
                         continue;
@@ -946,7 +798,7 @@ pub(crate) fn thread_main() {
                     }
 
                     if let Some( mut allocation ) = allocation.take() {
-                        if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, &backtrace, &mut backtrace_cache ) {
+                        if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
                             allocation.backtrace = backtrace;
                             let event = Event::ReallocEx {
                                 id: id.into(),
@@ -972,15 +824,7 @@ pub(crate) fn thread_main() {
                     }
 
                     let system_tid = thread.system_tid();
-                    let unique_tid = thread.unique_tid();
                     mem::drop( thread );
-
-                    let backtrace =
-                        if backtrace.is_empty() {
-                            None
-                        } else {
-                            Some( backtrace_cache.resolve( unique_tid, backtrace ) )
-                        };
 
                     if skip {
                         continue;
@@ -1035,7 +879,7 @@ pub(crate) fn thread_main() {
                     if should_write {
                         let backtrace =
                             if let Some( backtrace ) = backtrace {
-                                writers::write_backtrace( &mut *serializer, &backtrace, &mut backtrace_cache ).ok()
+                                writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ).ok()
                             } else {
                                 Some( 0 )
                             };
@@ -1053,10 +897,7 @@ pub(crate) fn thread_main() {
                 },
                 InternalEvent::Mmap { pointer, length, backtrace, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, mut timestamp, thread } => {
                     let system_tid = thread.system_tid();
-                    let unique_tid = thread.unique_tid();
                     mem::drop( thread );
-
-                    let backtrace = backtrace_cache.resolve( unique_tid, backtrace );
 
                     if skip {
                         continue;
@@ -1068,7 +909,7 @@ pub(crate) fn thread_main() {
 
                     timestamp = timestamp_override.take().unwrap_or( timestamp );
 
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, &backtrace, &mut backtrace_cache ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
                         let event = Event::MemoryMap {
                             timestamp,
                             pointer: pointer as u64,
@@ -1087,10 +928,7 @@ pub(crate) fn thread_main() {
                 },
                 InternalEvent::Munmap { ptr, len, backtrace, mut timestamp, thread } => {
                     let system_tid = thread.system_tid();
-                    let unique_tid = thread.unique_tid();
                     mem::drop( thread );
-
-                    let backtrace = backtrace_cache.resolve( unique_tid, backtrace );
 
                     if skip {
                         continue;
@@ -1102,17 +940,14 @@ pub(crate) fn thread_main() {
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
 
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, &backtrace, &mut backtrace_cache ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
                         let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread: system_tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }
                 },
                 InternalEvent::Mallopt { param, value, result, mut timestamp, backtrace, thread } => {
                     let system_tid = thread.system_tid();
-                    let unique_tid = thread.unique_tid();
                     mem::drop( thread );
-
-                    let backtrace = backtrace_cache.resolve( unique_tid, backtrace );
 
                     if skip {
                         continue;
@@ -1124,7 +959,7 @@ pub(crate) fn thread_main() {
 
                     let timestamp = timestamp_override.take().unwrap_or( timestamp );
 
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, &backtrace, &mut backtrace_cache ) {
+                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
                         let event = Event::Mallopt { timestamp, param, value, result, backtrace, thread: system_tid };
                         let _ = event.write_to_stream( &mut *serializer );
                     }

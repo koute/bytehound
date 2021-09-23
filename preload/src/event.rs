@@ -94,7 +94,7 @@ pub(crate) enum InternalEvent {
     Free {
         id: InternalAllocationId,
         address: NonZeroUsize,
-        backtrace: Backtrace,
+        backtrace: Option< Backtrace >,
         timestamp: Timestamp,
         thread: WeakThreadHandle
     },

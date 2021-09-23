@@ -1,7 +1,6 @@
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
@@ -205,7 +204,6 @@ fn spawn_processing_thread() {
 
             debug!( "Disabling thread {:04x}...", tls.thread_id );
             tls.set_enabled( false );
-            tls.unwind_cache.clear();
         }
 
         STATE.store( STATE_DISABLED, Ordering::SeqCst );
@@ -500,10 +498,6 @@ impl WeakThreadHandle {
     pub fn system_tid( &self ) -> u32 {
         self.0.thread_id
     }
-
-    pub fn unique_tid( &self ) -> u64 {
-        self.0.internal_thread_id
-    }
 }
 
 /// A handle to per-thread storage.
@@ -580,15 +574,6 @@ impl StrongThreadHandle {
         unsafe {
             &mut *tls.unwind_state.get()
         }
-    }
-
-    pub fn unwind_cache( &self ) -> &Arc< crate::unwind::Cache > {
-        let tls = match self.0.as_ref() {
-            Some( tls ) => tls,
-            None => unsafe { std::hint::unreachable_unchecked() }
-        };
-
-        &tls.unwind_cache
     }
 
     pub fn on_new_allocation( &mut self ) -> InternalAllocationId {
@@ -682,7 +667,6 @@ pub struct ThreadData {
     internal_thread_id: u64,
     is_internal: UnsafeCell< bool >,
     enabled: AtomicBool,
-    unwind_cache: Arc< crate::unwind::Cache >,
     unwind_state: UnsafeCell< ThreadUnwindState >,
     allocation_counter: UnsafeCell< u64 >
 }
@@ -738,7 +722,6 @@ thread_local_reentrant! {
             internal_thread_id,
             is_internal: UnsafeCell::new( false ),
             enabled: AtomicBool::new( registry.enabled_for_new_threads ),
-            unwind_cache: Arc::new( crate::unwind::Cache::new() ),
             unwind_state: UnsafeCell::new( ThreadUnwindState::new() ),
             allocation_counter: UnsafeCell::new( 1 )
         };

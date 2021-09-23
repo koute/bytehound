@@ -18,7 +18,8 @@ use crate::arch;
 use crate::opt;
 use crate::timestamp::{get_timestamp, get_wall_clock};
 use crate::utils::read_file;
-use crate::processing_thread::{BacktraceCache, CachedBacktrace};
+use crate::processing_thread::BacktraceCache;
+use crate::unwind::Backtrace;
 
 fn read_maps() -> io::Result< Vec< Region > > {
     let maps = read_file( "/proc/self/maps" )?;
@@ -144,15 +145,15 @@ fn write_environ< U: Write >( mut serializer: U ) -> io::Result< () > {
     Ok(())
 }
 
-pub(crate) fn write_backtrace< U: Write >( serializer: &mut U, backtrace: &CachedBacktrace, cache: &mut BacktraceCache ) -> io::Result< u64 > {
-    if let Some( id ) = backtrace.id() {
+pub(crate) fn write_backtrace< U: Write >( serializer: &mut U, backtrace: Backtrace, cache: &mut BacktraceCache ) -> io::Result< u64 > {
+    let (id, is_new) = cache.assign_id( &backtrace );
+    debug_assert_ne!( id, 0 );
+
+    if !is_new {
         return Ok( id );
     }
 
-    let id = cache.assign_id( backtrace );
     let frames = backtrace.frames();
-
-    debug_assert_ne!( id, 0 );
 
     // TODO: Get rid of this.
     let frames: Vec< _ > = frames.iter().copied().rev().collect();

@@ -1,5 +1,5 @@
 use std::mem::{self, transmute};
-use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use libc::{self, c_void, c_int, uintptr_t};
 use perf_event_open::{Perf, EventSource, Event};
 use nwind::{
@@ -13,11 +13,115 @@ use parking_lot::{RwLock, RwLockWriteGuard};
 use crate::global::StrongThreadHandle;
 use crate::spin_lock::SpinLock;
 use crate::opt;
+use crate::nohash::NoHash;
+
+#[repr(C)]
+pub struct BacktraceHeader {
+    pub key: u64,
+    pub id: AtomicU64,
+    counter: AtomicUsize,
+    length: usize
+}
+
+pub struct Backtrace( std::ptr::NonNull< BacktraceHeader > );
+unsafe impl Send for Backtrace {}
+
+impl Backtrace {
+    pub fn ptr_eq( lhs: &Backtrace, rhs: &Backtrace ) -> bool {
+        lhs.0.as_ptr() == rhs.0.as_ptr()
+    }
+
+    pub fn key( &self ) -> u64 {
+        self.header().key
+    }
+
+    pub fn id( &self ) -> Option< u64 > {
+        let id = self.header().id.load( std::sync::atomic::Ordering::Relaxed );
+        if id == 0 {
+            None
+        } else {
+            Some( id )
+        }
+    }
+
+    pub fn set_id( &self, value: u64 ) {
+        self.header().id.store( value, std::sync::atomic::Ordering::Relaxed );
+    }
+
+    pub fn frames( &self ) -> &[usize] {
+        let length = self.header().length;
+        unsafe {
+            let ptr = (self.0.as_ptr() as *const BacktraceHeader as *const u8).add( std::mem::size_of::< BacktraceHeader >() ) as *const usize;
+            std::slice::from_raw_parts( ptr, length )
+        }
+    }
+}
+
+impl Clone for Backtrace {
+    #[inline]
+    fn clone( &self ) -> Self {
+        self.header().counter.fetch_add( 1, std::sync::atomic::Ordering::Relaxed );
+        Backtrace( self.0.clone() )
+    }
+}
+
+impl Drop for Backtrace {
+    #[inline]
+    fn drop( &mut self ) {
+        unsafe {
+            if self.header().counter.fetch_sub( 1, std::sync::atomic::Ordering::Release ) != 1 {
+                return;
+            }
+
+            std::sync::atomic::fence( std::sync::atomic::Ordering::Acquire );
+            self.drop_slow();
+        }
+    }
+}
+
+impl Backtrace {
+    fn new( key: u64, backtrace: &[usize] ) -> Self {
+        unsafe {
+            let length = backtrace.len();
+            let layout = std::alloc::Layout::from_size_align( std::mem::size_of::< BacktraceHeader >() + std::mem::size_of::< usize >() * length, 8 ).unwrap();
+            let memory = std::alloc::alloc( layout ) as *mut BacktraceHeader;
+            std::ptr::write( memory, BacktraceHeader {
+                key,
+                id: AtomicU64::new( 0 ),
+                counter: AtomicUsize::new( 1 ),
+                length
+            });
+            std::ptr::copy_nonoverlapping(
+                backtrace.as_ptr(),
+                (memory as *mut u8).add( std::mem::size_of::< BacktraceHeader >() ) as *mut usize,
+                length
+            );
+
+            Backtrace( std::ptr::NonNull::new_unchecked( memory ) )
+        }
+    }
+
+    #[inline(never)]
+    unsafe fn drop_slow( &mut self ) {
+        let length = self.header().length;
+        let layout = std::alloc::Layout::from_size_align( std::mem::size_of::< BacktraceHeader >() + std::mem::size_of::< usize >() * length, 8 ).unwrap();
+        std::alloc::dealloc( self.0.as_ptr() as *mut u8, layout );
+    }
+
+    #[inline]
+    fn header( &self ) -> &BacktraceHeader {
+        unsafe {
+            self.0.as_ref()
+        }
+    }
+}
 
 pub struct ThreadUnwindState {
     unwind_ctx: LocalUnwindContext,
     last_dl_state: (u64, u64),
-    last_backtrace_depth: usize
+    current_backtrace: Vec< usize >,
+    buffer: Vec< usize >,
+    cache: lru::LruCache< u64, Backtrace, NoHash >
 }
 
 impl ThreadUnwindState {
@@ -25,7 +129,9 @@ impl ThreadUnwindState {
         ThreadUnwindState {
             unwind_ctx: LocalUnwindContext::new(),
             last_dl_state: (0, 0),
-            last_backtrace_depth: 0
+            current_backtrace: Vec::new(),
+            buffer: Vec::new(),
+            cache: lru::LruCache::with_hasher( crate::opt::get().backtrace_cache_size, NoHash )
         }
     }
 }
@@ -33,103 +139,6 @@ impl ThreadUnwindState {
 type Context = *mut c_void;
 type ReasonCode = c_int;
 type Callback = extern "C" fn( Context, *mut c_void ) -> ReasonCode;
-
-struct CacheEntry {
-    frames: *mut usize,
-    capacity: usize,
-    cache: Weak< Cache >
-}
-
-unsafe impl Send for CacheEntry {}
-
-impl CacheEntry {
-    #[inline(always)]
-    fn pack( mut frames: Vec< usize >, cache: Weak< Cache > ) -> Self {
-        let entry = CacheEntry {
-            frames: frames.as_mut_ptr(),
-            capacity: frames.capacity(),
-            cache
-        };
-
-        mem::forget( frames );
-        entry
-    }
-
-    #[inline(always)]
-    fn unpack( self ) -> (Vec< usize >, Weak< Cache >) {
-        let frames = unsafe { Vec::from_raw_parts( self.frames, 0, self.capacity ) };
-        (frames, self.cache)
-    }
-}
-
-pub struct Cache {
-    entries: SpinLock< Vec< CacheEntry > >
-}
-
-impl Cache {
-    pub fn new() -> Self {
-        Cache {
-            entries: SpinLock::new( Vec::new() )
-        }
-    }
-
-    pub fn clear( &self ) {
-        let mut entries = self.entries.lock();
-        let entries: &mut Vec< _ > = &mut entries;
-        *entries = Vec::new();
-    }
-}
-
-impl Drop for Cache {
-    fn drop( &mut self ) {
-        let mut entries = self.entries.lock();
-        for entry in entries.drain( .. ) {
-            mem::drop( entry.unpack() );
-        }
-    }
-}
-
-pub struct Backtrace {
-    pub frames: Vec< usize >,
-    pub stale_count: Option< u32 >,
-    cache: Weak< Cache >
-}
-
-impl Backtrace {
-    fn reserve_from_cache( &mut self, unwind_cache: &Arc< Cache > ) {
-        let mut entries = unwind_cache.entries.lock();
-        if let Some( entry ) = entries.pop() {
-            let (frames, cache) = entry.unpack();
-            self.frames = frames;
-            self.cache = cache;
-        } else {
-            self.cache = Arc::downgrade( &unwind_cache );
-        }
-    }
-
-    pub fn new() -> Self {
-        Backtrace {
-            frames: Vec::new(),
-            stale_count: None,
-            cache: Weak::new()
-        }
-    }
-
-    pub fn is_empty( &self ) -> bool {
-        self.frames.is_empty()
-    }
-}
-
-impl Drop for Backtrace {
-    fn drop( &mut self ) {
-        let frames = mem::replace( &mut self.frames, Vec::new() );
-        let cache_weak = mem::replace( &mut self.cache, Weak::new() );
-        if let Some( cache ) = cache_weak.upgrade() {
-            let mut entries = cache.entries.lock();
-            entries.push( CacheEntry::pack( frames, cache_weak ) );
-        }
-    }
-}
 
 extern "C" {
     fn _Unwind_Backtrace( callback: Callback, data: *mut c_void ) -> ReasonCode;
@@ -320,18 +329,7 @@ fn on_broken_unwinding( last_backtrace_depth: usize, stale_frame_count: usize ) 
 }
 
 #[inline(never)]
-pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
-    out.reserve_from_cache( tls.unwind_cache() );
-    debug_assert!( out.frames.is_empty() );
-
-    if false {
-        unsafe {
-            _Unwind_Backtrace( on_backtrace, transmute( &mut out.frames ) );
-        }
-
-        return;
-    }
-
+pub fn grab( tls: &mut StrongThreadHandle ) -> Backtrace {
     let unwind_state = tls.unwind_state();
     let unwind_ctx = &mut unwind_state.unwind_ctx;
 
@@ -343,30 +341,37 @@ pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
         }
     };
 
+    let stale_count;
     let debug_crosscheck_unwind_results = opt::crosscheck_unwind_results_with_libunwind() && !address_space.is_shadow_stack_enabled();
     if debug_crosscheck_unwind_results || !opt::emit_partial_backtraces() {
+        stale_count = unwind_state.current_backtrace.len();
+
+        let buffer = &mut unwind_state.buffer;
+        buffer.clear();
+
         address_space.unwind( unwind_ctx, |address| {
-            out.frames.push( address );
+            buffer.push( address );
             UnwindControl::Continue
         });
-        out.stale_count = None;
-        unwind_state.last_backtrace_depth = out.frames.len();
     } else {
-        let stale_count = address_space.unwind_through_fresh_frames( unwind_ctx, |address| {
-            out.frames.push( address );
+        let buffer = &mut unwind_state.buffer;
+        buffer.clear();
+
+        let stale_count_opt = address_space.unwind_through_fresh_frames( unwind_ctx, |address| {
+            buffer.push( address );
             UnwindControl::Continue
         });
 
-        let last_backtrace_depth = unwind_state.last_backtrace_depth;
-        let mut new_backtrace_depth = out.frames.len();
+        let last_backtrace_depth = unwind_state.current_backtrace.len();
+        let mut new_backtrace_depth = buffer.len();
 
-        if let Some( stale_frame_count ) = stale_count {
+        if let Some( stale_frame_count ) = stale_count_opt {
             if stale_frame_count > last_backtrace_depth {
                 on_broken_unwinding( last_backtrace_depth, stale_frame_count );
             } else {
                 new_backtrace_depth += last_backtrace_depth - stale_frame_count;
                 if cfg!( feature = "debug-logs" ) {
-                    debug!( "Finished unwinding; backtrace depth: {} (fresh = {}, non-fresh = {})", new_backtrace_depth, out.frames.len(), last_backtrace_depth - stale_frame_count );
+                    debug!( "Finished unwinding; backtrace depth: {} (fresh = {}, non-fresh = {})", new_backtrace_depth, buffer.len(), last_backtrace_depth - stale_frame_count );
                 }
             }
         } else {
@@ -375,14 +380,57 @@ pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
             }
         }
 
-        unwind_state.last_backtrace_depth = new_backtrace_depth;
-        out.stale_count = stale_count.map( |value| value as u32 );
+        stale_count = stale_count_opt.unwrap_or( unwind_state.current_backtrace.len() );
     }
 
     mem::drop( address_space );
 
+    let remaining = unwind_state.current_backtrace.len() - stale_count;
+    unwind_state.current_backtrace.truncate( remaining );
+    unwind_state.current_backtrace.reserve( unwind_state.buffer.len() );
+
+    const PRIME: u64 = 1099511628211;
+    let mut key: u64 = 0;
+    for &frame in &unwind_state.current_backtrace {
+        key = key.wrapping_mul( PRIME );
+        key ^= frame as u64;
+    }
+    for &frame in unwind_state.buffer.iter().rev() {
+        key = key.wrapping_mul( PRIME );
+        key ^= frame as u64;
+        unwind_state.current_backtrace.push( frame );
+    }
+    unwind_state.buffer.clear();
+
+    let backtrace = match unwind_state.cache.get_mut( &key ) {
+        None => {
+            if cfg!( debug_assertions ) {
+                if unwind_state.cache.len() >= unwind_state.cache.cap() {
+                    debug!( "1st level backtrace cache overflow" );
+                }
+            }
+
+            let entry = Backtrace::new( key, &unwind_state.current_backtrace );
+            unwind_state.cache.put( key, entry.clone() );
+
+            entry
+        },
+        Some( entry ) => {
+            if entry.frames() == unwind_state.current_backtrace {
+                entry.clone()
+            } else {
+                info!( "1st level backtrace cache conflict detected!" );
+
+                let new_entry = Backtrace::new( key, &unwind_state.current_backtrace );
+                *entry = new_entry.clone();
+
+                new_entry
+            }
+        }
+    };
+
     if debug_crosscheck_unwind_results {
-        let mut expected: Vec< usize > = Vec::with_capacity( out.frames.len() );
+        let mut expected: Vec< usize > = Vec::with_capacity( backtrace.frames().len() );
         unsafe {
             _Unwind_Backtrace( on_backtrace, transmute( &mut expected ) );
         }
@@ -391,21 +439,24 @@ pub fn grab( tls: &mut StrongThreadHandle, out: &mut Backtrace ) {
             expected.pop();
         }
 
-        if out.frames[ 1.. ] != expected[ 1.. ] {
+        expected.reverse();
+        if backtrace.frames()[ ..backtrace.frames().len() - 1 ] != expected[ ..expected.len() - 1 ] {
             info!( "/proc/self/maps:\n{}", String::from_utf8_lossy( &::std::fs::read( "/proc/self/maps" ).unwrap() ).trim() );
 
             let address_space = AS.read();
-            info!( "Expected: " );
-            for &address in &expected {
-                info!( "    {:?}", address_space.decode_symbol_once( address ) );
+            info!( "Expected: ({} frames)", expected.len() );
+            for (nth, &address) in expected.iter().enumerate() {
+                info!( "({:02})    {:?}", nth, address_space.decode_symbol_once( address ) );
             }
 
-            info!( "Actual: " );
-            for &address in out.frames.iter() {
-                info!( "    {:?}", address_space.decode_symbol_once( address ) );
+            info!( "Actual: ({} frames)", backtrace.frames().len() );
+            for (nth, &address) in backtrace.frames().iter().enumerate() {
+                info!( "({:02})    {:?}", nth, address_space.decode_symbol_once( address ) );
             }
 
-            panic!( "Wrong backtrace; expected: {:?}, got: {:?}", expected, out.frames );
+            panic!( "Wrong backtrace; expected: {:?}, got: {:?}", expected, backtrace.frames() );
         }
     }
+
+    backtrace
 }
