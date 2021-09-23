@@ -57,8 +57,8 @@ impl Buffer {
         }
     }
 
-    fn as_slice( &self ) -> &[u8] {
-        unsafe { std::slice::from_raw_parts( self.buffer.as_ptr() as *const u8, self.length ) }
+    fn as_slice_mut( &mut self ) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut( self.buffer.as_mut_ptr() as *mut u8, self.length ) }
     }
 }
 
@@ -79,11 +79,11 @@ impl Write for Buffer {
 
 fn stack_format< R, F, G >( format_callback: F, use_callback: G ) -> R
     where F: FnOnce( &mut Buffer ),
-          G: FnOnce( &[u8] ) -> R
+          G: FnOnce( &mut [u8] ) -> R
 {
     let mut buffer = Buffer::new();
     format_callback( &mut buffer );
-    use_callback( buffer.as_slice() )
+    use_callback( buffer.as_slice_mut() )
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn test_stack_format_long() {
 }
 
 pub fn stack_format_bytes< R, F >( args: fmt::Arguments, callback: F ) -> R
-    where F: FnOnce( &[u8] ) -> R
+    where F: FnOnce( &mut [u8] ) -> R
 {
     stack_format( |out| {
         let _ = out.write_fmt( args );
@@ -118,7 +118,7 @@ pub fn stack_format_bytes< R, F >( args: fmt::Arguments, callback: F ) -> R
 }
 
 pub fn stack_null_terminate< R, F >( input: &[u8], callback: F ) -> R
-    where F: FnOnce( &[u8] ) -> R
+    where F: FnOnce( &mut [u8] ) -> R
 {
     stack_format( |out| {
         let _ = out.write_all( input );

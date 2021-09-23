@@ -67,6 +67,7 @@ impl log::Log for SyscallLogger {
             }
 
             stack_format_bytes( format_args!( "bytehound: {:04x} {:04x} {} {}\n", self.pid, syscall::gettid(), level_to_str( record.level() ), record.args() ), |buffer| {
+                buffer[ buffer.len() - 1 ] = b'\n';
                 raw_eprint( buffer );
             });
         }
