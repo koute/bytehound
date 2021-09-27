@@ -484,7 +484,7 @@ checksum = "9c59e7af012c713f529e7a3ee57ce9b31ddd858d4b512923602f74608b009631"
 
 [[package]]
 name = "bytehound-cli"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cli-core",
  "env_logger 0.6.2",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "bytehound-gather"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "chrono",
  "clap",
@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "bytehound-preload"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "common",
  "glob 0.2.11",
@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "cli-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "ahash 0.7.4",
  "bitflags",
@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "byteorder",
  "libc",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "server-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "actix",
  "actix-cors",

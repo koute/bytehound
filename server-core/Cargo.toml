@@ -1,6 +1,6 @@
 [package]
 name = "server-core"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Jan Bujak <j@exia.io>"]
 edition = "2018"
 
