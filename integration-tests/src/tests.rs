@@ -270,7 +270,12 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     assert_file_exists( path );
 
     static PORT: AtomicUsize = AtomicUsize::new( 8080 );
-    let port = PORT.fetch_add( 1, Ordering::SeqCst );
+    let port = loop {
+        let port = PORT.fetch_add( 1, Ordering::SeqCst );
+        if std::net::TcpListener::bind( format!( "127.0.0.1:{}", port ) ).is_ok() {
+            break port;
+        }
+    };
 
     let _child = run_in_the_background(
         &cwd,
