@@ -25,6 +25,7 @@ pub struct BacktraceHeader {
 
 pub struct Backtrace( std::ptr::NonNull< BacktraceHeader > );
 unsafe impl Send for Backtrace {}
+unsafe impl Sync for Backtrace {}
 
 impl Backtrace {
     pub fn ptr_eq( lhs: &Backtrace, rhs: &Backtrace ) -> bool {

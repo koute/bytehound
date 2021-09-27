@@ -1139,3 +1139,59 @@ fn test_cull() {
 
     assert_eq!( iter.next(), None );
 }
+
+#[test]
+fn test_cross_thread_alloc_culled() {
+    let cwd = workdir();
+
+    compile_with_flags( "cross-thread-alloc.c", &["-o", "cross-thread-alloc-culled"] );
+
+    run_on_target(
+        &cwd,
+        "./cross-thread-alloc-culled",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-cross-thread-alloc-culled.dat".into()),
+            ("MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS", "1".into()),
+            ("MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD", "1000".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "cross-thread-alloc-culled", cwd.join( "memory-profiling-cross-thread-alloc-culled.dat" ) );
+    let mut iter = analysis.allocations_from_source( "cross-thread-alloc.c" ).filter( move |alloc| !is_from_function( alloc, "pthread_create" ) );
+    assert!( iter.next().is_none() );
+}
+
+#[test]
+fn test_cross_thread_alloc_non_culled() {
+    let cwd = workdir();
+
+    compile_with_flags( "cross-thread-alloc.c", &["-o", "cross-thread-alloc-non-culled"] );
+
+    run_on_target(
+        &cwd,
+        "./cross-thread-alloc-non-culled",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-cross-thread-alloc-non-culled.dat".into()),
+            ("MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS", "1".into()),
+            ("MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD", "1".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "cross-thread-alloc-non-culled", cwd.join( "memory-profiling-cross-thread-alloc-non-culled.dat" ) );
+    let mut iter = analysis.allocations_from_source( "cross-thread-alloc.c" ).filter( move |alloc| !is_from_function( alloc, "pthread_create" ) );
+    let a0 = iter.next().unwrap();
+    let a1 = iter.next().unwrap();
+    let a2 = iter.next().unwrap();
+
+    assert_eq!( a0.size, 1234 );
+    assert_eq!( a1.size, 1235 );
+    assert_eq!( a2.size, 1236 );
+
+    assert!( iter.next().is_none() );
+}

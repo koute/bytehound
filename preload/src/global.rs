@@ -10,21 +10,23 @@ use crate::spin_lock::{SpinLock, SpinLockGuard};
 use crate::syscall;
 use crate::unwind::{ThreadUnwindState, prepare_to_start_unwinding};
 use crate::timestamp::Timestamp;
+use crate::allocation_tracker::AllocationTracker;
+use crate::thread_local::TlsAccessError;
 
 pub type RawThreadHandle = ArcLite< ThreadData >;
 
 struct ThreadRegistry {
     enabled_for_new_threads: bool,
-    threads: Option< HashMap< u32, RawThreadHandle > >,
-    dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >,
+    threads_by_system_id: Option< HashMap< u32, RawThreadHandle > >,
+    new_dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >,
     thread_counter: u64
 }
 
 unsafe impl Send for ThreadRegistry {}
 
 impl ThreadRegistry {
-    fn threads( &mut self ) -> &mut HashMap< u32, RawThreadHandle > {
-        self.threads.get_or_insert_with( HashMap::new )
+    fn threads_by_system_id( &mut self ) -> &mut HashMap< u32, RawThreadHandle > {
+        self.threads_by_system_id.get_or_insert_with( HashMap::new )
     }
 }
 
@@ -45,10 +47,15 @@ static DESIRED_STATE: AtomicUsize = AtomicUsize::new( DESIRED_STATE_DISABLED );
 
 static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegistry {
     enabled_for_new_threads: false,
-    threads: None,
-    dead_thread_queue: Vec::new(),
+    threads_by_system_id: None,
+    new_dead_thread_queue: Vec::new(),
     thread_counter: 1
 });
+
+#[inline(never)]
+fn lock_thread_registry< R >( callback: impl FnOnce( &mut ThreadRegistry ) -> R ) -> R {
+    callback( &mut THREAD_REGISTRY.lock() )
+}
 
 static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () > > > = SpinLock::new( None );
 
@@ -163,8 +170,8 @@ pub unsafe extern fn on_fork() {
         let tid = syscall::gettid();
         let mut registry = THREAD_REGISTRY.lock();
         registry.enabled_for_new_threads = false;
-        registry.threads().retain( |&thread_id, _| {
-            thread_id == tid
+        registry.threads_by_system_id().retain( |&_, thread| {
+            thread.thread_id == tid
         });
     }
 
@@ -195,21 +202,22 @@ fn spawn_processing_thread() {
             DESIRED_STATE.store( DESIRED_STATE_DISABLED, Ordering::SeqCst );
         }
 
-        let mut thread_registry = THREAD_REGISTRY.lock();
-        thread_registry.enabled_for_new_threads = false;
-        for tls in thread_registry.threads().values() {
-            if tls.is_internal() {
-                continue;
+        lock_thread_registry( |thread_registry| {
+            thread_registry.enabled_for_new_threads = false;
+            for tls in thread_registry.threads_by_system_id().values() {
+                if tls.is_internal() {
+                    continue;
+                }
+
+                debug!( "Disabling thread {:04x}...", tls.thread_id );
+                tls.set_enabled( false );
             }
 
-            debug!( "Disabling thread {:04x}...", tls.thread_id );
-            tls.set_enabled( false );
-        }
+            STATE.store( STATE_DISABLED, Ordering::SeqCst );
+            info!( "Tracing was disabled" );
 
-        STATE.store( STATE_DISABLED, Ordering::SeqCst );
-        info!( "Tracing was disabled" );
-
-        THREAD_RUNNING.store( false, Ordering::SeqCst );
+            THREAD_RUNNING.store( false, Ordering::SeqCst );
+        });
 
         if let Err( err ) = result {
             std::panic::resume_unwind( err );
@@ -429,18 +437,16 @@ fn try_enable( state: usize ) -> bool {
         }
     };
 
-    {
-        let thread_registry = THREAD_REGISTRY.lock();
+    lock_thread_registry( |thread_registry| {
         assert!( !thread_registry.enabled_for_new_threads );
-    }
+    });
 
     prepare_to_start_unwinding();
     spawn_processing_thread();
 
-    {
-        let mut thread_registry = THREAD_REGISTRY.lock();
+    lock_thread_registry( |thread_registry| {
         thread_registry.enabled_for_new_threads = true;
-        for tls in thread_registry.threads().values() {
+        for tls in thread_registry.threads_by_system_id().values() {
             if tls.is_internal() {
                 continue;
             }
@@ -448,12 +454,14 @@ fn try_enable( state: usize ) -> bool {
             debug!( "Enabling thread {:04x}...", tls.thread_id );
             tls.set_enabled( true );
         }
-    }
+    });
 
     resolve_original_syms();
 
     #[cfg(target_arch = "x86_64")]
     hook_jemalloc();
+
+    crate::allocation_tracker::initialize();
 
     STATE.store( STATE_ENABLED, Ordering::SeqCst );
     info!( "Tracing was enabled" );
@@ -510,14 +518,15 @@ impl StrongThreadHandle {
     #[inline(never)]
     fn acquire_slow() -> Option< Self > {
         let current_thread_id = syscall::gettid();
-        let mut registry = THREAD_REGISTRY.lock();
-        if let Some( thread ) = registry.threads().get( &current_thread_id ) {
-            debug!( "Acquired a dead thread: {:04X}", current_thread_id );
-            Some( StrongThreadHandle( Some( thread.clone() ) ) )
-        } else {
-            warn!( "Failed to acquire a handle for thread: {:04X}", current_thread_id );
-            None
-        }
+        lock_thread_registry( |thread_registry| {
+            if let Some( thread ) = thread_registry.threads_by_system_id().get( &current_thread_id ) {
+                debug!( "Acquired a dead thread: {:04X}", current_thread_id );
+                Some( StrongThreadHandle( Some( thread.clone() ) ) )
+            } else {
+                warn!( "Failed to acquire a handle for thread: {:04X}", current_thread_id );
+                None
+            }
+        })
     }
 
     #[inline(always)]
@@ -529,7 +538,7 @@ impl StrongThreadHandle {
             }
         }
 
-        let tls = TLS.with( |tls| {
+        let tls = TLS.with_ex( |tls| {
             if ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
                 throttle( tls );
             }
@@ -543,13 +552,13 @@ impl StrongThreadHandle {
         });
 
         match tls {
-            Some( Some( tls ) ) => {
+            Ok( Some( tls ) ) => {
                 Some( StrongThreadHandle( Some( tls ) ) )
             },
-            Some( None ) => {
+            Ok( None ) | Err( TlsAccessError::Uninitialized ) => {
                 None
             },
-            None => {
+            Err( TlsAccessError::Destroyed ) => {
                 Self::acquire_slow()
             }
         }
@@ -591,6 +600,51 @@ impl StrongThreadHandle {
 
         InternalAllocationId::new( tls.internal_thread_id, allocation )
     }
+
+    pub fn system_tid( &self ) -> u32 {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        tls.thread_id
+    }
+
+    pub fn unique_tid( &self ) -> u64 {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        tls.internal_thread_id
+    }
+
+    pub fn allocation_tracker( &self ) -> &AllocationTracker {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        &tls.allocation_tracker
+    }
+
+    pub(crate) fn zombie_events( &self ) -> &SpinLock< Vec< InternalEvent > > {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        &tls.zombie_events
+    }
+
+    pub fn is_dead( &self ) -> bool {
+        let tls = match self.0.as_ref() {
+            Some( tls ) => tls,
+            None => unsafe { std::hint::unreachable_unchecked() }
+        };
+
+        tls.is_dead.load( Ordering::Relaxed )
+    }
 }
 
 impl Drop for StrongThreadHandle {
@@ -610,7 +664,7 @@ impl AllocationLock {
     pub fn new() -> Self {
         let mut registry_lock = THREAD_REGISTRY.lock();
         let current_thread_id = syscall::gettid();
-        let threads = registry_lock.threads();
+        let threads = registry_lock.threads_by_system_id();
         for (&thread_id, tls) in threads.iter_mut() {
             if thread_id == current_thread_id {
                 continue;
@@ -650,7 +704,7 @@ impl AllocationLock {
 
 impl Drop for AllocationLock {
     fn drop( &mut self ) {
-        for (&thread_id, tls) in self.registry_lock.threads().iter_mut() {
+        for (&thread_id, tls) in self.registry_lock.threads_by_system_id().iter_mut() {
             if thread_id == self.current_thread_id {
                 continue;
             }
@@ -667,8 +721,11 @@ pub struct ThreadData {
     internal_thread_id: u64,
     is_internal: UnsafeCell< bool >,
     enabled: AtomicBool,
+    is_dead: AtomicBool,
     unwind_state: UnsafeCell< ThreadUnwindState >,
-    allocation_counter: UnsafeCell< u64 >
+    allocation_counter: UnsafeCell< u64 >,
+    allocation_tracker: AllocationTracker,
+    zombie_events: SpinLock< Vec< InternalEvent > >
 }
 
 impl ThreadData {
@@ -700,63 +757,95 @@ impl Deref for ThreadSentinel {
 
 impl Drop for ThreadSentinel {
     fn drop( &mut self ) {
-        let mut registry = THREAD_REGISTRY.lock();
-        if let Some( thread ) = registry.threads().get( &self.thread_id ) {
-            let thread = thread.clone();
-            registry.dead_thread_queue.push( (crate::timestamp::get_timestamp(), thread) );
-        }
+        self.is_dead.store( true, Ordering::SeqCst );
+
+        let is_enabled = self.enabled.load( Ordering::SeqCst );
+        self.enabled.store( false, Ordering::SeqCst );
+
+        lock_thread_registry( |thread_registry| {
+            if let Some( thread ) = thread_registry.threads_by_system_id().get( &self.thread_id ) {
+                let thread = thread.clone();
+                thread_registry.new_dead_thread_queue.push( (crate::timestamp::get_timestamp(), thread) );
+            }
+        });
 
         debug!( "Thread dropped: {:04X}", self.thread_id );
+        self.enabled.store( is_enabled, Ordering::SeqCst );
     }
 }
 
 thread_local_reentrant! {
     static TLS: ThreadSentinel = |callback| {
         let thread_id = syscall::gettid();
-        let mut registry = THREAD_REGISTRY.lock();
-        let internal_thread_id = registry.thread_counter;
-        registry.thread_counter += 1;
+        let tls = lock_thread_registry( |registry| {
+            let internal_thread_id = registry.thread_counter;
+            registry.thread_counter += 1;
 
-        let tls = ThreadData {
-            thread_id,
-            internal_thread_id,
-            is_internal: UnsafeCell::new( false ),
-            enabled: AtomicBool::new( registry.enabled_for_new_threads ),
-            unwind_state: UnsafeCell::new( ThreadUnwindState::new() ),
-            allocation_counter: UnsafeCell::new( 1 )
-        };
+            let tls = ThreadData {
+                thread_id,
+                internal_thread_id,
+                is_internal: UnsafeCell::new( false ),
+                is_dead: AtomicBool::new( false ),
+                enabled: AtomicBool::new( registry.enabled_for_new_threads ),
+                unwind_state: UnsafeCell::new( ThreadUnwindState::new() ),
+                allocation_counter: UnsafeCell::new( 1 ),
+                allocation_tracker: crate::allocation_tracker::on_thread_created( internal_thread_id ),
+                zombie_events: SpinLock::new( Vec::new() )
+            };
 
-        let tls = ArcLite::new( tls );
-        registry.threads().insert( thread_id, tls.clone() );
+            let tls = ArcLite::new( tls );
+            registry.threads_by_system_id().insert( thread_id, tls.clone() );
+
+            tls
+        });
 
         callback( ThreadSentinel( tls ) )
     };
 }
 
-pub fn garbage_collect_dead_threads( now: Timestamp ) {
-    use std::collections::hash_map::Entry;
+#[derive(Default)]
+pub struct ThreadGarbageCollector {
+    buffer: Vec< (Timestamp, RawThreadHandle) >,
+    dead_threads: Vec< (Timestamp, RawThreadHandle) >,
+}
 
-    let mut registry = THREAD_REGISTRY.lock();
-    let registry = &mut *registry;
+impl ThreadGarbageCollector {
+    pub(crate) fn run( &mut self, now: Timestamp, events: &mut Vec< InternalEvent > ) {
+        use std::collections::hash_map::Entry;
 
-    if registry.dead_thread_queue.is_empty() {
-        return;
-    }
+        lock_thread_registry( |thread_registry| {
+            std::mem::swap( &mut thread_registry.new_dead_thread_queue, &mut self.buffer );
+        });
 
-    let count = registry.dead_thread_queue.iter()
-        .take_while( |&(time_of_death, _)| time_of_death.as_secs() + 3 < now.as_secs() )
-        .count();
+        for (timestamp, thread) in self.buffer.drain( .. ) {
+            crate::allocation_tracker::on_thread_destroyed( thread.internal_thread_id );
+            events.extend( thread.zombie_events.lock().drain( .. ) );
+            self.dead_threads.push( (timestamp, thread) );
+        }
 
-    if count == 0 {
-        return;
-    }
+        if self.dead_threads.is_empty() {
+            return;
+        }
 
-    let threads = registry.threads.get_or_insert_with( HashMap::new );
-    for (_, thread) in registry.dead_thread_queue.drain( ..count ) {
-        if let Entry::Occupied( entry ) = threads.entry( thread.thread_id ) {
-            if RawThreadHandle::ptr_eq( entry.get(), &thread ) {
-                entry.remove_entry();
-            }
+        let count = self.dead_threads.iter()
+            .take_while( |&(time_of_death, _)| time_of_death.as_secs() + 3 < now.as_secs() )
+            .count();
+
+        if count == 0 {
+            return;
+        }
+
+        for (_, thread) in self.dead_threads.drain( ..count ) {
+            lock_thread_registry( |thread_registry| {
+                let mut entry_by_system_id = None;
+                if let Entry::Occupied( entry ) = thread_registry.threads_by_system_id.as_mut().unwrap().entry( thread.thread_id ) {
+                    if RawThreadHandle::ptr_eq( entry.get(), &thread ) {
+                        entry_by_system_id = Some( entry.remove_entry() );
+                    }
+                }
+
+                entry_by_system_id
+            });
         }
     }
 }

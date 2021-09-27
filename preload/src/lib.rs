@@ -36,6 +36,7 @@ mod processing_thread;
 mod global;
 mod ordered_map;
 mod nohash;
+mod allocation_tracker;
 
 use crate::event::InternalEvent;
 use crate::utils::read_file;

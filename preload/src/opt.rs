@@ -14,7 +14,6 @@ pub struct Opts {
     pub grab_backtraces_on_free: bool,
     pub include_file: Option< String >,
     pub output_path_pattern: Cow< 'static, str >,
-    pub precise_timestamps: bool,
     pub register_sigusr1: bool,
     pub register_sigusr2: bool,
     pub use_perf_event_open: bool,
@@ -24,7 +23,7 @@ pub struct Opts {
     pub backtrace_cache_size: usize,
     pub cull_temporary_allocations: bool,
     pub temporary_allocation_lifetime_threshold: u64,
-    pub temporary_allocation_pending_threshold: usize
+    pub temporary_allocation_pending_threshold: Option< usize >
 }
 
 static mut OPTS: Opts = Opts {
@@ -39,7 +38,6 @@ static mut OPTS: Opts = Opts {
     grab_backtraces_on_free: false,
     include_file: None,
     output_path_pattern: Cow::Borrowed( "memory-profiling_%e_%t_%p.dat" ),
-    precise_timestamps: false,
     register_sigusr1: true,
     register_sigusr2: true,
     use_perf_event_open: true,
@@ -49,7 +47,7 @@ static mut OPTS: Opts = Opts {
     backtrace_cache_size: 320 * 1024,
     cull_temporary_allocations: false,
     temporary_allocation_lifetime_threshold: 10000,
-    temporary_allocation_pending_threshold: 320 * 1024,
+    temporary_allocation_pending_threshold: None,
 };
 
 trait ParseVar: Sized {
@@ -136,7 +134,6 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_GRAB_BACKTRACES_ON_FREE"   => &mut opts.grab_backtraces_on_free,
         "MEMORY_PROFILER_INCLUDE_FILE"              => &mut opts.include_file,
         "MEMORY_PROFILER_OUTPUT"                    => &mut opts.output_path_pattern,
-        "MEMORY_PROFILER_PRECISE_TIMESTAMPS"        => &mut opts.precise_timestamps,
         "MEMORY_PROFILER_REGISTER_SIGUSR1"          => &mut opts.register_sigusr1,
         "MEMORY_PROFILER_REGISTER_SIGUSR2"          => &mut opts.register_sigusr2,
         "MEMORY_PROFILER_USE_PERF_EVENT_OPEN"       => &mut opts.use_perf_event_open,

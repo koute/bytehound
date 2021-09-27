@@ -59,7 +59,7 @@ Only makes sense when `MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS` is turned on.
 
 ### `MEMORY_PROFILER_TEMPORARY_ALLOCATION_PENDING_THRESHOLD`
 
-*Default: `65536`*
+*Default: None*
 
 The maximum number of allocations to be kept in memory when tracking which
 allocations are temporary and which are not.
@@ -124,13 +124,6 @@ it's being profiled. This is used by `bytehound gather` and `bytehound-gather`
 to automatically discover `bytehound` instances to which to connect.
 
 Requires `MEMORY_PROFILER_ENABLE_SERVER` to be set to `1`.
-
-### `MEMORY_PROFILER_PRECISE_TIMESTAMPS`
-
-*Default: `0`*
-
-Decides whenever timestamps will be gathered for every event, or only for chunks of events.
-When enabled the timestamps will be more precise at a cost of extra CPU usage.
 
 ### `MEMORY_PROFILER_WRITE_BINARIES_TO_OUTPUT`
 

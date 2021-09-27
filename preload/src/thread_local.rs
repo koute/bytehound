@@ -39,6 +39,13 @@ impl< T > DerefMut for TlsValue< T > {
 enum SlotKind< T > {
     Uninitialized,
     Initialized( ManuallyDrop< T > ),
+    Destroyed,
+    Initializing
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum TlsAccessError {
+    Uninitialized,
     Destroyed
 }
 
@@ -85,7 +92,7 @@ unsafe fn initialize_slot< K >( slot: &Slot< K::Value > ) -> &K::Value
     let pointer: *mut SlotKind< K::Value > = slot.0.get();
 
     assert!( matches!( *pointer, SlotKind::Uninitialized ) );
-    *pointer = SlotKind::Destroyed;
+    *pointer = SlotKind::Initializing;
 
     let value = K::construct( move |value| {
         libc::pthread_setspecific( K::initialize_pthread_key(), pointer as *const libc::c_void );
@@ -108,15 +115,16 @@ pub trait Key {
     fn access_raw< R >( callback: impl FnOnce( &Slot< Self::Value > ) -> R ) -> R;
 
     #[inline(always)]
-    fn access< R >( callback: impl FnOnce( &Self::Value ) -> R ) -> Option< R > {
+    fn access< R >( callback: impl FnOnce( &Self::Value ) -> R ) -> Result< R, TlsAccessError > {
         Self::access_raw( |slot| {
             let value = match *unsafe { &mut *slot.0.get() } {
                 SlotKind::Initialized( ref value ) => value,
-                SlotKind::Destroyed => return None,
+                SlotKind::Destroyed => return Err( TlsAccessError::Destroyed ),
+                SlotKind::Initializing => return Err( TlsAccessError::Uninitialized ),
                 SlotKind::Uninitialized => unsafe { initialize_slot::< Self >( slot ) }
             };
 
-            Some( callback( value ) )
+            Ok( callback( value ) )
         })
     }
 }
@@ -153,8 +161,15 @@ macro_rules! thread_local_reentrant {
         }
 
         impl $name {
+            #[allow(dead_code)]
             #[inline(always)]
             pub fn with< R >( &self, callback: impl FnOnce( &$ty ) -> R ) -> Option< R > {
+                <Self as $crate::thread_local::Key>::access( callback ).ok()
+            }
+
+            #[allow(dead_code)]
+            #[inline(always)]
+            pub fn with_ex< R >( &self, callback: impl FnOnce( &$ty ) -> R ) -> Result< R, $crate::thread_local::TlsAccessError > {
                 <Self as $crate::thread_local::Key>::access( callback )
             }
         }
@@ -259,6 +274,27 @@ fn test_thread_local_reentrant_custom_constructor() {
 
             let mut tls = callback( tls );
             assert_eq!( tls.value, 10 );
+            tls.value = 20;
+            tls
+        };
+    }
+
+    let value = TLS.with( |value| value.value );
+    assert_eq!( value.unwrap(), 20 );
+}
+
+#[test]
+fn test_thread_local_reentrant_uninitialized() {
+    struct Tls {
+        value: u32
+    }
+
+    thread_local_reentrant! {
+        static TLS: Tls = |callback| {
+            assert_eq!( TLS.with_ex( |value| value.value ), Err( TlsAccessError::Uninitialized ) );
+            let mut tls = callback( Tls { value: 10 } );
+            assert_eq!( tls.value, 10 );
+            assert_eq!( TLS.with_ex( |value| value.value ), Err( TlsAccessError::Uninitialized ) );
             tls.value = 20;
             tls
         };

@@ -13,12 +13,13 @@ use common::event;
 use common::Timestamp;
 
 use crate::InternalEvent;
-use crate::event::{InternalAllocationId, send_event, send_event_throttled};
+use crate::event::{InternalAllocation, InternalAllocationId, send_event, send_event_throttled};
 use crate::global::{StrongThreadHandle, on_exit};
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
 use crate::unwind;
+use crate::allocation_tracker::{on_allocation, on_reallocation, on_free};
 
 #[cfg(not(feature = "jemalloc"))]
 extern "C" {
@@ -81,14 +82,6 @@ unsafe fn mallopt_real( _: c_int, _: c_int ) -> c_int {
 extern "C" {
     #[link_name = "__libc_fork"]
     fn fork_real() -> libc::pid_t;
-}
-
-fn get_timestamp_if_enabled() -> Timestamp {
-    if opt::get().precise_timestamps {
-        get_timestamp()
-    } else {
-        Timestamp::min()
-    }
 }
 
 #[no_mangle]
@@ -233,20 +226,16 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
         metadata.flags |= event::ALLOC_FLAG_CALLOC;
     }
 
-    send_event_throttled( move || {
-        InternalEvent::Alloc {
-            id,
-            address,
-            size: requested_size as usize,
-            usable_size: metadata.usable_size,
-            preceding_free_space: metadata.preceding_free_space,
-            flags: metadata.flags,
-            backtrace,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        }
-    });
+    let allocation = InternalAllocation {
+        address,
+        size: requested_size as usize,
+        flags: metadata.flags,
+        tid: thread.system_tid(),
+        extra_usable_space: (metadata.usable_size - requested_size) as u32,
+        preceding_free_space: metadata.preceding_free_space as u64,
+    };
 
+    on_allocation( id, allocation, backtrace, thread );
     pointer
 }
 
@@ -309,39 +298,24 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
 
     let backtrace = unwind::grab( &mut thread );
 
-    let timestamp = get_timestamp_if_enabled();
     if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
         let new_metadata = get_allocation_metadata( new_pointer );
         let new_tracking_pointer = tracking_pointer( new_pointer, new_metadata.usable_size );
         std::ptr::write_unaligned( new_tracking_pointer, id );
 
-        send_event_throttled( move || {
-            InternalEvent::Realloc {
-                id,
-                old_address,
-                new_address,
-                new_size: requested_size as usize,
-                new_usable_size: new_metadata.usable_size,
-                new_preceding_free_space: new_metadata.preceding_free_space,
-                new_flags: new_metadata.flags,
-                backtrace,
-                timestamp,
-                thread: thread.decay()
-            }
-        });
+        let allocation = InternalAllocation {
+            address: new_address,
+            size: requested_size as usize,
+            flags: new_metadata.flags,
+            tid: thread.system_tid(),
+            extra_usable_space: (new_metadata.usable_size - requested_size) as u32,
+            preceding_free_space: new_metadata.preceding_free_space as u64,
+        };
 
+        on_reallocation( id, old_address, allocation, backtrace, thread );
         new_pointer
     } else {
-        send_event_throttled( || {
-            InternalEvent::Free {
-                id,
-                address: old_address,
-                backtrace: Some( backtrace ),
-                timestamp,
-                thread: thread.decay()
-            }
-        });
-
+        on_free( id, old_address, Some( backtrace ), thread );
         ptr::null_mut()
     }
 }
@@ -390,15 +364,7 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
         None
     };
 
-    send_event_throttled( || {
-        InternalEvent::Free {
-            id,
-            address,
-            backtrace,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        }
-    });
+    on_free( id, address, backtrace, thread );
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -440,20 +406,16 @@ pub unsafe extern "C" fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -
     std::ptr::write_unaligned( tracking_pointer, id );
 
     let backtrace = unwind::grab( &mut thread );
-    send_event_throttled( move || {
-        InternalEvent::Alloc {
-            id,
-            address,
-            size: requested_size as usize,
-            usable_size,
-            preceding_free_space: 0,
-            flags: event::ALLOC_FLAG_JEMALLOC,
-            backtrace,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        }
-    });
+    let allocation = InternalAllocation {
+        address,
+        size: requested_size as usize,
+        flags: event::ALLOC_FLAG_JEMALLOC,
+        tid: thread.system_tid(),
+        extra_usable_space: 0,
+        preceding_free_space: 0
+    };
 
+    on_allocation( id, allocation, backtrace, thread );
     pointer
 }
 
@@ -496,20 +458,16 @@ pub unsafe extern "C" fn _rjem_calloc( count: size_t, element_size: size_t ) -> 
     std::ptr::write_unaligned( tracking_pointer, id );
 
     let backtrace = unwind::grab( &mut thread );
-    send_event_throttled( move || {
-        InternalEvent::Alloc {
-            id,
-            address,
-            size: requested_size as usize,
-            usable_size,
-            preceding_free_space: 0,
-            flags: event::ALLOC_FLAG_JEMALLOC | event::ALLOC_FLAG_CALLOC,
-            backtrace,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        }
-    });
+    let allocation = InternalAllocation {
+        address,
+        size: requested_size as usize,
+        flags: event::ALLOC_FLAG_JEMALLOC | event::ALLOC_FLAG_CALLOC,
+        tid: thread.system_tid(),
+        extra_usable_space: 0,
+        preceding_free_space: 0
+    };
 
+    on_allocation( id, allocation, backtrace, thread );
     pointer
 }
 
@@ -546,15 +504,7 @@ pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: s
             None
         };
 
-    send_event_throttled( || {
-        InternalEvent::Free {
-            id,
-            address,
-            backtrace,
-            timestamp: get_timestamp_if_enabled(),
-            thread: thread.decay()
-        }
-    });
+    on_free( id, address, backtrace, thread );
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -602,40 +552,25 @@ pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size
 
     let backtrace = unwind::grab( &mut thread );
 
-    let timestamp = get_timestamp_if_enabled();
     if let Some( new_address ) = NonZeroUsize::new( new_pointer as usize ) {
         let new_usable_size = jem_malloc_usable_size_real( new_pointer );
         debug_assert!( new_usable_size >= effective_size );
         let new_tracking_pointer = tracking_pointer( new_pointer, new_usable_size );
         std::ptr::write_unaligned( new_tracking_pointer, id );
 
-        send_event_throttled( move || {
-            InternalEvent::Realloc {
-                id,
-                old_address,
-                new_address,
-                new_size: requested_size as usize,
-                new_usable_size,
-                new_preceding_free_space: 0,
-                new_flags: event::ALLOC_FLAG_JEMALLOC,
-                backtrace,
-                timestamp,
-                thread: thread.decay()
-            }
-        });
+        let allocation = InternalAllocation {
+            address: new_address,
+            size: requested_size as usize,
+            flags: event::ALLOC_FLAG_JEMALLOC,
+            tid: thread.system_tid(),
+            extra_usable_space: 0,
+            preceding_free_space: 0
+        };
 
+        on_reallocation( id, old_address, allocation, backtrace, thread );
         new_pointer
     } else {
-        send_event_throttled( || {
-            InternalEvent::Free {
-                id,
-                address: old_address,
-                backtrace: Some( backtrace ),
-                timestamp,
-                thread: thread.decay()
-            }
-        });
-
+        on_free( id, old_address, Some( backtrace ), thread );
         ptr::null_mut()
     }
 }
@@ -677,28 +612,21 @@ pub unsafe extern "C" fn _rjem_xallocx( pointer: *mut c_void, requested_size: si
 
     let backtrace = unwind::grab( &mut thread );
 
-    let timestamp = get_timestamp_if_enabled();
-
     let new_usable_size = jem_malloc_usable_size_real( pointer );
     debug_assert!( new_usable_size >= effective_size );
     let new_tracking_pointer = tracking_pointer( pointer, new_usable_size );
     std::ptr::write_unaligned( new_tracking_pointer, id );
 
-    send_event_throttled( move || {
-        InternalEvent::Realloc {
-            id,
-            old_address: address,
-            new_address: address,
-            new_size: new_requested_size as usize,
-            new_usable_size,
-            new_preceding_free_space: 0,
-            new_flags: event::ALLOC_FLAG_JEMALLOC,
-            backtrace,
-            timestamp,
-            thread: thread.decay()
-        }
-    });
+    let allocation = InternalAllocation {
+        address: address,
+        size: new_requested_size as usize,
+        flags: event::ALLOC_FLAG_JEMALLOC,
+        tid: thread.system_tid(),
+        extra_usable_space: 0,
+        preceding_free_space: 0
+    };
 
+    on_reallocation( id, address, allocation, backtrace, thread );
     new_requested_size
 }
 
@@ -818,6 +746,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
     let _lock = crate::global::MMAP_LOCK.lock();
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
 
+    let timestamp = get_timestamp();
     send_event_throttled( || InternalEvent::Mmap {
         pointer: ptr as usize,
         length: length as usize,
@@ -827,7 +756,7 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
         file_descriptor: fildes as u32,
         offset: off as u64,
         backtrace,
-        timestamp: get_timestamp_if_enabled(),
+        timestamp,
         thread: thread.decay()
     });
 
@@ -852,11 +781,12 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let _lock = crate::global::MMAP_LOCK.lock();
     let result = syscall::munmap( ptr, length );
 
+    let timestamp = get_timestamp();
     send_event_throttled( || InternalEvent::Munmap {
         ptr: ptr as usize,
         len: length as usize,
         backtrace,
-        timestamp: get_timestamp_if_enabled(),
+        timestamp,
         thread: thread.decay()
     });
 
@@ -871,12 +801,13 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     let mut thread = if let Some( thread ) = thread { thread } else { return result };
     let backtrace = unwind::grab( &mut thread );
 
+    let timestamp = get_timestamp();
     send_event_throttled( || InternalEvent::Mallopt {
         param: param as i32,
         value: value as i32,
         result: result as i32,
         backtrace,
-        timestamp: get_timestamp_if_enabled(),
+        timestamp,
         thread: thread.decay()
     });
 

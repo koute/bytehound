@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::num::NonZeroUsize;
 
 use common::Timestamp;
+use common::event::AllocationId;
 
 use crate::channel::Channel;
 use crate::global::WeakThreadHandle;
@@ -67,36 +68,35 @@ impl From< InternalAllocationId > for common::event::AllocationId {
     }
 }
 
+pub struct InternalAllocation {
+    pub address: NonZeroUsize,
+    pub size: usize,
+    pub flags: u32,
+    pub tid: u32,
+    pub extra_usable_space: u32,
+    pub preceding_free_space: u64,
+}
+
 pub(crate) enum InternalEvent {
     Alloc {
-        id: InternalAllocationId,
-        address: NonZeroUsize,
-        size: usize,
-        usable_size: usize,
-        preceding_free_space: usize,
-        flags: u32,
-        backtrace: Backtrace,
+        id: AllocationId,
         timestamp: Timestamp,
-        thread: WeakThreadHandle
+        allocation: InternalAllocation,
+        backtrace: Backtrace,
     },
     Realloc {
-        id: InternalAllocationId,
-        old_address: NonZeroUsize,
-        new_address: NonZeroUsize,
-        new_size: usize,
-        new_usable_size: usize,
-        new_preceding_free_space: usize,
-        new_flags: u32,
-        backtrace: Backtrace,
+        id: AllocationId,
         timestamp: Timestamp,
-        thread: WeakThreadHandle
+        old_address: NonZeroUsize,
+        allocation: InternalAllocation,
+        backtrace: Backtrace,
     },
     Free {
-        id: InternalAllocationId,
+        id: AllocationId,
+        timestamp: Timestamp,
         address: NonZeroUsize,
         backtrace: Option< Backtrace >,
-        timestamp: Timestamp,
-        thread: WeakThreadHandle
+        tid: u32
     },
     Exit,
     GrabMemoryDump,
@@ -136,7 +136,8 @@ pub(crate) enum InternalEvent {
     AddressSpaceUpdated {
         maps: String,
         new_binaries: Vec< Arc< nwind::BinaryData > >
-    }
+    },
+    AllocationBucket( crate::allocation_tracker::AllocationBucket ),
 }
 
 static EVENT_CHANNEL: Channel< InternalEvent > = Channel::new();
