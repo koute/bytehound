@@ -556,7 +556,7 @@ pub(crate) fn thread_main() {
     let mut last_server_poll = coarse_timestamp;
     let mut timestamp_override = None;
     let mut poll_fds = Vec::new();
-    let mut backtrace_cache = BacktraceCache::new( opt::get().backtrace_cache_size );
+    let mut backtrace_cache = BacktraceCache::new( opt::get().backtrace_cache_size_level_2 );
     let mut thread_gc = crate::global::ThreadGarbageCollector::default();
     loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );

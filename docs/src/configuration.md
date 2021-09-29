@@ -141,11 +141,21 @@ hunt down the original binaries.
 
 Decides whenever `malloc` will behave like `calloc` and fill the memory it returns with zeros.
 
-### `MEMORY_PROFILER_BACKTRACE_CACHE_SIZE`
+### `MEMORY_PROFILER_BACKTRACE_CACHE_SIZE_LEVEL_1`
 
-*Default: `32768`*
+*Default: `16384`*
 
 Controls the size of the internal backtrace cache used to deduplicate emitted stack traces.
+
+This is the size of the per-thread cache.
+
+### `MEMORY_PROFILER_BACKTRACE_CACHE_SIZE_LEVEL_2`
+
+*Default: `327680`*
+
+Controls the size of the internal backtrace cache used to deduplicate emitted stack traces.
+
+This is the size of the global cache.
 
 ### `MEMORY_PROFILER_GATHER_MMAP_CALLS`
 

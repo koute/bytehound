@@ -132,7 +132,7 @@ impl ThreadUnwindState {
             last_dl_state: (0, 0),
             current_backtrace: Vec::new(),
             buffer: Vec::new(),
-            cache: lru::LruCache::with_hasher( crate::opt::get().backtrace_cache_size, NoHash )
+            cache: lru::LruCache::with_hasher( crate::opt::get().backtrace_cache_size_level_1, NoHash )
         }
     }
 }
