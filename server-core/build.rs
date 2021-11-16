@@ -70,6 +70,12 @@ fn main() {
             }
         }
 
+        if !check_command( "nodejs" ) {
+            if !check_command( "node" ) {
+                panic!( "Node.js not found; you need to install it before you can build the WebUI" );
+            }
+        }
+
         if !webui_dir.join( "node_modules" ).exists() {
             let mut child = Command::new( yarn )
                 .args( &[ "install" ] )
@@ -90,8 +96,21 @@ fn main() {
 
         assert!( webui_dir.join( "node_modules" ).exists() );
 
+        let mut bin_path = format!( "$({} bin)", yarn );
+        let yarn_supports_bin = Command::new( "/bin/sh" )
+            .args( &[ String::from( "-c" ), bin_path.clone() ] )
+            .current_dir( &webui_dir )
+            .status()
+            .expect( "cannot launch a child process to check whether Yarn supports the 'bin' subcommand" )
+            .success();
+
+        if !yarn_supports_bin {
+            println!( "cargo:warning=You're using an ancient version of Yarn; this is unsupported" );
+            bin_path = "node_modules/.bin".into();
+        }
+
         let mut parcel_build_cmd = OsString::new();
-        parcel_build_cmd.push( format!( "$({} bin)/parcel build src/index.html -d ", yarn ) );
+        parcel_build_cmd.push( format!( "{}/parcel build src/index.html -d ", bin_path ) );
         parcel_build_cmd.push( &webui_out_dir );
 
         let mut child = Command::new( "/bin/sh" )
