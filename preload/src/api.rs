@@ -326,7 +326,7 @@ pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn reallocarray( old_ptr: &mut c_void, count: size_t, element_size: size_t ) -> *mut c_void {
+pub unsafe extern "C" fn reallocarray( old_ptr: *mut c_void, count: size_t, element_size: size_t ) -> *mut c_void {
     let size = match (count as usize).checked_mul( element_size as usize ) {
         None => {
             *libc::__errno_location() = libc::ENOMEM;
