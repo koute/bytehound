@@ -1549,7 +1549,7 @@ dependencies = [
 [[package]]
 name = "nwind"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=51003a4#51003a40e2d7dba135161fedf0a2e428908555f3"
+source = "git+https://github.com/koute/not-perf.git?rev=20e4ddc#20e4ddc2bf8895d96664ab839a64c36f416023c8"
 dependencies = [
  "addr2line",
  "byteorder",
@@ -1681,7 +1681,7 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 [[package]]
 name = "perf_event_open"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=51003a4#51003a40e2d7dba135161fedf0a2e428908555f3"
+source = "git+https://github.com/koute/not-perf.git?rev=20e4ddc#20e4ddc2bf8895d96664ab839a64c36f416023c8"
 dependencies = [
  "byteorder",
  "libc",
@@ -1800,7 +1800,7 @@ dependencies = [
 [[package]]
 name = "proc-maps"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=51003a4#51003a40e2d7dba135161fedf0a2e428908555f3"
+source = "git+https://github.com/koute/not-perf.git?rev=20e4ddc#20e4ddc2bf8895d96664ab839a64c36f416023c8"
 
 [[package]]
 name = "quick-error"
