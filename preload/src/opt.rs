@@ -36,7 +36,7 @@ static mut OPTS: Opts = Opts {
     enable_broadcasts: false,
     enable_server: false,
     enable_shadow_stack: true,
-    grab_backtraces_on_free: false,
+    grab_backtraces_on_free: true,
     include_file: None,
     output_path_pattern: Cow::Borrowed( "memory-profiling_%e_%t_%p.dat" ),
     register_sigusr1: true,
