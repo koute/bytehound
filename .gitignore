@@ -2,6 +2,7 @@ target
 target-docker
 **/*.rs.bk
 webui/.cache
+webui/.parcel-cache
 webui/dist
 webui/node_modules
 replay/replay

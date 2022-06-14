@@ -1,22 +1,21 @@
 {
   "name": "webui",
   "version": "0.0.0",
-  "main": "index.js",
+  "source": "src/index.html",
   "author": "Jan Bujak <j@exia.io>",
   "license": "MIT",
   "private": true,
   "devDependencies": {
-    "babel-plugin-transform-class-properties": "^6.24.1",
-    "babel-plugin-transform-es2015-parameters": "^6.24.1",
-    "babel-plugin-transform-es2015-template-literals": "^6.22.0",
-    "babel-plugin-transform-object-rest-spread": "^6.26.0",
-    "babel-preset-env": "^1.7.0",
-    "babel-preset-react": "^6.24.1",
-    "parcel-bundler": "^1.9.4"
+    "@babel/core": "^7.12.0",
+    "@babel/preset-env": "^7.12.0",
+    "@babel/preset-react": "^7.12.0",
+    "parcel": "^2.0.0",
+    "process": "^0.11.10"
   },
   "dependencies": {
     "bootstrap": "^4.1.1",
     "bootswatch": "^4.1.1",
+    "classnames": "^2.3.1",
     "dygraphs": "^2.1.0",
     "feather-icons": "^4.7.3",
     "font-awesome": "^4.7.0",

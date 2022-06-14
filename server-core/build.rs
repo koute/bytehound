@@ -39,9 +39,6 @@ fn main() {
     let crate_root: PathBuf = env::var_os( "CARGO_MANIFEST_DIR" ).expect( "missing CARGO_MANIFEST_DIR" ).into();
     let target_dir: PathBuf = env::var_os( "CARGO_TARGET_DIR" ).map( |directory| directory.into() ).unwrap_or( crate_root.join( ".." ).join( "target" ) );
 
-    let webui_dir = crate_root.join( ".." ).join( "webui" );
-    let webui_out_dir = target_dir.join( "webui" );
-
     struct Lock {
         semaphore: Option< semalock::Semalock >
     }
@@ -54,12 +51,27 @@ fn main() {
 
     let _ = std::fs::create_dir_all( &target_dir );
 
+    let webui_dir = crate_root.join( ".." ).join( "webui" );
+    let webui_out_dir = webui_dir.join( "dist" );
+
+    {
+        let mut paths: Vec< PathBuf > = Vec::new();
+        paths.push( webui_dir.join( ".babelrc" ) );
+        paths.push( webui_dir.join( "node_modules" ) );
+        paths.push( webui_dir.join( "package.json" ) );
+        grab_paths( webui_dir.join( "src" ), &mut paths );
+
+        for path in paths {
+            println!( "cargo:rerun-if-changed={}", path.to_str().unwrap() );
+        }
+    }
+
     let lock_path = target_dir.join( ".webui-lock" );
     let mut lock = Lock {
         semaphore: Some( semalock::Semalock::new( &lock_path ).expect( "failed to acquire a semaphore" ) )
     };
 
-    lock.semaphore.as_mut().unwrap().with( |_| {
+    lock.semaphore.as_mut().unwrap().with( move |_| {
         let _ = fs::remove_dir_all( &webui_out_dir );
 
         let mut yarn = "yarn";
@@ -103,18 +115,33 @@ fn main() {
             .expect( "cannot launch a child process to check whether Yarn supports the 'bin' subcommand" )
             .success();
 
-        let mut bin_path = format!( "$({} bin)", yarn );
-        if !yarn_supports_bin {
-            println!( "cargo:warning=You're using an ancient version of Yarn; this is unsupported" );
-            bin_path = "node_modules/.bin".into();
-        }
+        let bin_path: PathBuf =
+            if !yarn_supports_bin {
+                println!( "cargo:warning=You're using an ancient version of Yarn; this is unsupported" );
+                "node_modules/.bin".into()
+            } else {
+                let mut bin_path = Command::new( yarn )
+                    .args( &[ "bin" ] )
+                    .current_dir( &webui_dir )
+                    .output()
+                    .expect( "cannot launch a child process to get Yarn's bin directory" )
+                    .stdout;
 
-        let mut parcel_build_cmd = OsString::new();
-        parcel_build_cmd.push( format!( "{}/parcel build src/index.html -d ", bin_path ) );
-        parcel_build_cmd.push( &webui_out_dir );
+                while bin_path.ends_with( b"\n" ) {
+                    bin_path.pop();
+                }
 
-        let mut child = Command::new( "/bin/sh" )
-            .args( &[ OsString::from( String::from( "-c" ) ), parcel_build_cmd ] )
+                let bin_path = String::from_utf8( bin_path ).unwrap();
+                bin_path.into()
+            };
+
+        let mut child = Command::new( bin_path.join( "parcel" ) )
+            .args( &[
+                "build".into(),
+                "src/index.html".into(),
+                "--dist-dir".into(),
+                OsString::from( webui_out_dir.clone() )
+            ])
             .current_dir( &webui_dir )
             .spawn()
             .expect( "cannot launch a child process to build the WebUI" );
@@ -130,8 +157,10 @@ fn main() {
         }
 
         let webui_out_dir = webui_out_dir.canonicalize().unwrap();
+
         let mut assets: Vec< PathBuf > = Vec::new();
         grab_paths( &webui_out_dir, &mut assets );
+        assert!( !assets.is_empty() );
 
         let mut fp = File::create( src_out_dir.join( "webui_assets.rs" ) ).unwrap();
         writeln!( fp, "#[cfg(not(test))]" ).unwrap();
@@ -147,14 +176,4 @@ fn main() {
         writeln!( fp, "static WEBUI_ASSETS: &'static [(&'static str, &'static [u8])] = &[" ).unwrap();
         writeln!( fp, "];" ).unwrap();
     }).unwrap();
-
-    let mut paths: Vec< PathBuf > = Vec::new();
-    paths.push( webui_dir.join( ".babelrc" ) );
-    paths.push( webui_dir.join( "node_modules" ) );
-    paths.push( webui_dir.join( "package.json" ) );
-    grab_paths( webui_dir.join( "src" ), &mut paths );
-
-    for path in paths {
-        println!( "cargo:rerun-if-changed={}", path.to_str().unwrap() );
-    }
 }
