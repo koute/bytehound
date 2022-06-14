@@ -96,14 +96,14 @@ fn main() {
 
         assert!( webui_dir.join( "node_modules" ).exists() );
 
-        let mut bin_path = format!( "$({} bin)", yarn );
         let yarn_supports_bin = Command::new( "/bin/sh" )
-            .args( &[ String::from( "-c" ), bin_path.clone() ] )
+            .args( &[ String::from( "-c" ), format!( "{} bin", yarn ) ] )
             .current_dir( &webui_dir )
             .status()
             .expect( "cannot launch a child process to check whether Yarn supports the 'bin' subcommand" )
             .success();
 
+        let mut bin_path = format!( "$({} bin)", yarn );
         if !yarn_supports_bin {
             println!( "cargo:warning=You're using an ancient version of Yarn; this is unsupported" );
             bin_path = "node_modules/.bin".into();
