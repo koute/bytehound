@@ -1305,7 +1305,24 @@ export default class PageDataAllocations extends React.Component {
                     onPageSizeChange={(page_size, page) => update_query( this.props, {page: page + 1, page_size} )}
                     showPaginationBottom={false}
                     SubComponent={row => {
-                        const cell = backtrace_cell( show_full_backtraces, row.original.backtrace );
+                        const allocation_backtrace = backtrace_cell( show_full_backtraces, row.original.backtrace );
+                        const deallocation_backtrace = (row.original.deallocation && row.original.deallocation.backtrace)
+                            ? backtrace_cell( show_full_backtraces, row.original.deallocation.backtrace )
+                            : null;
+
+                        let cell;
+                        if (deallocation_backtrace) {
+                            const s = {fontStyle: "italic", color: "black"};
+                            cell = [
+                                <div style={s}>Allocated at:</div>,
+                                allocation_backtrace,
+                                <div style={{marginTop: "1rem"}}></div>,
+                                <div style={s}>Deallocated at:</div>,
+                                deallocation_backtrace
+                            ];
+                        } else {
+                            cell = allocation_backtrace;
+                        }
 
                         const q = _.omit( extract_query( this.props.location.search ), "count", "skip", "group_allocations", "sort_by", "order" );
                         q.backtraces = row.original.backtrace_id;

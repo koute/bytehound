@@ -118,9 +118,11 @@ pub struct ResponseBacktrace< 'a > {
 }
 
 #[derive(Serialize)]
-pub struct Deallocation {
+pub struct Deallocation< 'a > {
     pub timestamp: Timeval,
-    pub thread: u32
+    pub thread: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtrace: Option< Vec< Frame< 'a > > >
 }
 
 #[derive(Serialize)]
@@ -135,7 +137,7 @@ pub struct Allocation< 'a > {
     pub size: u64,
     pub backtrace_id: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub deallocation: Option< Deallocation >,
+    pub deallocation: Option< Deallocation< 'a > >,
     pub backtrace: Vec< Frame< 'a > >,
     pub is_mmaped: bool,
     pub is_jemalloc: bool,
