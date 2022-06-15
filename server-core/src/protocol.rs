@@ -66,6 +66,7 @@ impl From< Timestamp > for Timeval {
 pub struct ResponseMetadata {
     pub id: String,
     pub executable: String,
+    pub cmdline: String,
     pub architecture: String,
     pub final_allocated: u64,
     pub final_allocated_count: u64,

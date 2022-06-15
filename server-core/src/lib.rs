@@ -348,6 +348,13 @@ impl protocol::ResponseMetadata {
         protocol::ResponseMetadata {
             id: format!( "{}", data.id() ),
             executable: data.executable().to_owned(),
+            cmdline: data.cmdline().into_iter().map( |arg| {
+                if arg.contains( " " ) {
+                    format!( "\"{}\"", arg )
+                } else {
+                    arg
+                }
+            }).collect::< Vec< _ > >().join( " " ),
             architecture: data.architecture().to_owned(),
             final_allocated: data.total_allocated() - data.total_freed(),
             final_allocated_count: data.total_allocated_count() - data.total_freed_count(),

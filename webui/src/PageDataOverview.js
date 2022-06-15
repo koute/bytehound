@@ -88,19 +88,23 @@ export default class PageDataOverview extends React.Component {
                                 <td>{this.state.general.executable}</td>
                             </tr>
                             <tr>
+                                <td>Command&nbsp;line</td>
+                                <td>{this.state.general.cmdline}</td>
+                            </tr>
+                            <tr>
                                 <td>Architecture</td>
                                 <td>{this.state.general.architecture}</td>
                             </tr>
                             <tr>
-                                <td>Total runtime</td>
+                                <td>Total&nbsp;runtime</td>
                                 <td>{fmt_uptime( this.state.general.runtime.secs )}</td>
                             </tr>
                             <tr>
-                                <td>Unique backtraces</td>
+                                <td>Unique&nbsp;backtraces</td>
                                 <td>{this.state.general.unique_backtrace_count}</td>
                             </tr>
                             <tr>
-                                <td>Max. backtrace depth</td>
+                                <td>Max.&nbsp;backtrace&nbsp;depth</td>
                                 <td>{this.state.general.maximum_backtrace_depth}</td>
                             </tr>
                         </tbody>

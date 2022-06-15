@@ -125,6 +125,7 @@ pub struct Data {
     pub(crate) initial_timestamp: Timestamp,
     pub(crate) last_timestamp: Timestamp,
     pub(crate) executable: String,
+    pub(crate) cmdline: String,
     pub(crate) architecture: String,
     pub(crate) pointer_size: u64,
     pub(crate) interner: StringInterner,
@@ -725,6 +726,11 @@ impl Data {
     #[inline]
     pub fn executable( &self ) -> &str {
         &self.executable
+    }
+
+    #[inline]
+    pub fn cmdline( &self ) -> Vec< String > {
+        self.cmdline.split( "\0" ).map( |arg| arg.to_owned() ).collect()
     }
 
     #[inline]

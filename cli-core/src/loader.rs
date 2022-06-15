@@ -1114,6 +1114,7 @@ impl Loader {
             initial_timestamp,
             last_timestamp,
             executable: String::from_utf8_lossy( &self.header.executable ).into_owned(),
+            cmdline: String::from_utf8_lossy( &self.header.cmdline ).into_owned(),
             architecture: self.header.arch,
             pointer_size: self.header.pointer_size as _,
             interner: self.interner.into_inner(),
