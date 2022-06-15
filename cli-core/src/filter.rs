@@ -63,6 +63,8 @@ pub struct BasicFilter {
     pub only_chain_length_at_most: Option< u32 >,
     pub only_chain_alive_for_at_least: Option< Duration >,
     pub only_chain_alive_for_at_most: Option< Duration >,
+    pub only_position_in_chain_at_least: Option< u32 >,
+    pub only_position_in_chain_at_most: Option< u32 >,
 
     pub only_group_allocations_at_least: Option< usize >,
     pub only_group_allocations_at_most: Option< usize >,
@@ -135,6 +137,8 @@ pub struct CompiledBasicFilter {
     only_chain_alive_for_at_most: Option< Duration >,
     only_chain_leaked_or_deallocated_after: Timestamp,
     only_chain_deallocated_between_inclusive: Option< (Timestamp, Timestamp) >,
+    only_position_in_chain_at_least: u32,
+    only_position_in_chain_at_most: u32,
 
     enable_group_filter: bool,
     only_group_allocations_at_least: usize,
@@ -417,6 +421,8 @@ impl BasicFilter {
             self.only_chain_length_at_most.is_some() ||
             self.only_chain_alive_for_at_least.is_some() ||
             self.only_chain_alive_for_at_most.is_some() ||
+            self.only_position_in_chain_at_least.is_some() ||
+            self.only_position_in_chain_at_most.is_some() ||
             self.only_chain_leaked ||
             self.only_chain_temporary;
 
@@ -476,6 +482,8 @@ impl BasicFilter {
             only_chain_length_at_most: self.only_chain_length_at_most.unwrap_or( !0 ),
             only_chain_alive_for_at_least: self.only_chain_alive_for_at_least.unwrap_or( Duration::from_secs( 0 ) ),
             only_chain_alive_for_at_most: self.only_chain_alive_for_at_most,
+            only_position_in_chain_at_least: self.only_position_in_chain_at_least.unwrap_or( 0 ),
+            only_position_in_chain_at_most: self.only_position_in_chain_at_most.unwrap_or( !0 ),
             only_chain_leaked_or_deallocated_after,
             only_chain_deallocated_between_inclusive,
 
@@ -678,6 +686,10 @@ impl CompiledBasicFilter {
                 if !(chain_lifetime_end >= min && chain_lifetime_end <= max) {
                     return false;
                 }
+            }
+
+            if !(allocation.position_in_chain >= self.only_position_in_chain_at_least && allocation.position_in_chain <= self.only_position_in_chain_at_most) {
+                return false;
             }
         }
 

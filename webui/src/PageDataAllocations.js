@@ -350,6 +350,16 @@ const FIELDS = {
         label: "Max chain length",
         badge: value => "At most " + value + " allocations in chain"
     },
+    position_in_chain_min: {
+        ...POSITIVE_INTEGER_FIELD,
+        label: "Min position in chain",
+        badge: value => "At least " + value + " position in chain"
+    },
+    position_in_chain_max: {
+        ...POSITIVE_INTEGER_FIELD,
+        label: "Max position in chain",
+        badge: value => "At most " + value + " position in chain"
+    },
     lifetime: {
         ...RADIO_FIELD,
         variants: {
@@ -582,6 +592,11 @@ class FilterEditor extends React.Component {
                         {this.field("chain_length_min")}
                         <div className="px-2" />
                         {this.field("chain_length_max")}
+                    </div>
+                    <div className="d-flex flex-row">
+                        {this.field("position_in_chain_min")}
+                        <div className="px-2" />
+                        {this.field("position_in_chain_max")}
                     </div>
                 </div>
                 <div title="Misc" className="d-flex">

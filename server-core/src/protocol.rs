@@ -662,6 +662,8 @@ pub struct AllocFilter {
     pub chain_length_max: Option< u32 >,
     pub chain_lifetime_min: Option< Interval >,
     pub chain_lifetime_max: Option< Interval >,
+    pub position_in_chain_min: Option< u32 >,
+    pub position_in_chain_max: Option< u32 >,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]

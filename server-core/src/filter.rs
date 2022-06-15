@@ -190,6 +190,8 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
     output.only_chain_length_at_most = filter.chain_length_max;
     output.only_chain_alive_for_at_least = filter.chain_lifetime_min.map( |interval| Duration( interval.0 ) );
     output.only_chain_alive_for_at_most = filter.chain_lifetime_max.map( |interval| Duration( interval.0 ) );
+    output.only_position_in_chain_at_least = filter.position_in_chain_min;
+    output.only_position_in_chain_at_most = filter.position_in_chain_max;
 
     match filter.lifetime.unwrap_or( protocol::LifetimeFilter::All ) {
         protocol::LifetimeFilter::All => {},
