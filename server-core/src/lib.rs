@@ -696,6 +696,20 @@ fn get_allocations< 'a >(
                             })
                         }
                     }),
+                    chain_deallocation: if chain.last == allocation_id {
+                        None
+                    } else {
+                        data.get_allocation( chain.last ).deallocation.as_ref().map( |deallocation| {
+                            protocol::Deallocation {
+                                timestamp: deallocation.timestamp.into(),
+                                thread: deallocation.thread,
+                                backtrace_id: deallocation.backtrace.map( |id| id.raw() ),
+                                backtrace: deallocation.backtrace.map( |backtrace_id| {
+                                    data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
+                                })
+                            }
+                        })
+                    },
                     backtrace,
                     in_main_arena: !allocation.in_non_main_arena(),
                     is_mmaped: allocation.is_mmaped(),

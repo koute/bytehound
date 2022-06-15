@@ -1328,6 +1328,7 @@ export default class PageDataAllocations extends React.Component {
                                     return this.allocation_menu_trigger.handleContextClick( event );
                                 }}>{backtrace_cell( show_full_backtraces, row.original.backtrace )}
                             </div>;
+
                         const deallocation_backtrace = (row.original.deallocation && row.original.deallocation.backtrace) ?
                             <div className="backtrace-cell" onContextMenu={event => {
                                     const lq = _.cloneDeep(q);
@@ -1343,9 +1344,35 @@ export default class PageDataAllocations extends React.Component {
                             </div>
                             : null;
 
+                        const chain_deallocation_backtrace = (row.original.chain_deallocation && row.original.chain_deallocation.backtrace) ?
+                            <div className="backtrace-cell" onContextMenu={event => {
+                                    const lq = _.cloneDeep(q);
+                                    lq.deallocation_backtraces = row.original.chain_deallocation.backtrace_id;
+                                    const url = "/#" + this.props.location.pathname + "?" + create_query( lq ).toString();
+
+                                    this.setState({
+                                        showOnlyAllocationsUrl: url,
+                                        selectedBacktrace: row.original.chain_deallocation.backtrace_id
+                                    });
+                                    return this.deallocation_menu_trigger.handleContextClick( event );
+                                }}>{backtrace_cell( show_full_backtraces, row.original.chain_deallocation.backtrace )}
+                            </div>
+                            : null;
+
+                        const s = {fontStyle: "italic", color: "black"};
                         let cell;
-                        if (deallocation_backtrace) {
-                            const s = {fontStyle: "italic", color: "black"};
+                        if (deallocation_backtrace && chain_deallocation_backtrace) {
+                            cell = [
+                                <div style={s}>Allocated at:</div>,
+                                allocation_backtrace,
+                                <div style={{marginTop: "1rem"}}></div>,
+                                <div style={s}>Reallocated at:</div>,
+                                deallocation_backtrace,
+                                <div style={{marginTop: "1rem"}}></div>,
+                                <div style={s}>Deallocated at:</div>,
+                                chain_deallocation_backtrace
+                            ]
+                        } else if (deallocation_backtrace) {
                             cell = [
                                 <div style={s}>Allocated at:</div>,
                                 allocation_backtrace,

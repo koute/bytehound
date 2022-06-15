@@ -140,6 +140,8 @@ pub struct Allocation< 'a > {
     pub backtrace_id: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deallocation: Option< Deallocation< 'a > >,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain_deallocation: Option< Deallocation< 'a > >,
     pub backtrace: Vec< Frame< 'a > >,
     pub is_mmaped: bool,
     pub is_jemalloc: bool,
