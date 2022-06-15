@@ -21,6 +21,7 @@ pub use common::event::DataId;
 pub type StringInterner = string_interner::StringInterner< StringId >;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(transparent)]
 pub struct StringId( NonZeroU32 );
 
 impl string_interner::Symbol for StringId {
@@ -56,6 +57,7 @@ impl AllocationId {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(transparent)]
 pub struct OperationId( u64 );
 
 impl OperationId {
@@ -151,6 +153,7 @@ pub type FrameId = usize;
 pub type ThreadId = u32;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[repr(transparent)]
 pub struct CodePointer( u64 );
 
 impl CodePointer {
@@ -184,6 +187,7 @@ impl From< u64 > for CodePointer {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(transparent)]
 pub struct BacktraceId( u32 );
 
 impl BacktraceId {
