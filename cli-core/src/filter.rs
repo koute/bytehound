@@ -299,6 +299,10 @@ fn compile_backtrace_filter( data: &Data, filter: &BasicFilter ) -> Option< Hash
         }
     }
 
+    if let Some( ref only_matching_backtraces ) = filter.only_matching_backtraces {
+        matched_backtraces = matched_backtraces.intersection( &only_matching_backtraces ).copied().collect();
+    }
+
     Some( matched_backtraces )
 }
 
