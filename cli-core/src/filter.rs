@@ -74,7 +74,9 @@ pub struct BasicFilter {
     pub only_group_leaked_allocations_at_most: Option< NumberOrFractionOfTotal >,
 
     pub only_leaked: bool,
+    pub only_chain_leaked: bool,
     pub only_temporary: bool,
+    pub only_chain_temporary: bool,
     pub only_ptmalloc_mmaped: bool,
     pub only_ptmalloc_not_mmaped: bool,
     pub only_ptmalloc_from_main_arena: bool,
@@ -131,6 +133,8 @@ pub struct CompiledBasicFilter {
     only_chain_length_at_most: u32,
     only_chain_alive_for_at_least: Duration,
     only_chain_alive_for_at_most: Option< Duration >,
+    only_chain_leaked_or_deallocated_after: Timestamp,
+    only_chain_deallocated_between_inclusive: Option< (Timestamp, Timestamp) >,
 
     enable_group_filter: bool,
     only_group_allocations_at_least: usize,
@@ -408,7 +412,24 @@ impl BasicFilter {
             self.only_chain_length_at_least.is_some() ||
             self.only_chain_length_at_most.is_some() ||
             self.only_chain_alive_for_at_least.is_some() ||
-            self.only_chain_alive_for_at_most.is_some();
+            self.only_chain_alive_for_at_most.is_some() ||
+            self.only_chain_leaked ||
+            self.only_chain_temporary;
+
+        let mut only_chain_leaked_or_deallocated_after = data.initial_timestamp;
+        if self.only_chain_leaked {
+            only_chain_leaked_or_deallocated_after = data.last_timestamp;
+        }
+
+        let mut only_chain_deallocated_between_inclusive = None;
+        if self.only_chain_temporary {
+            if let Some( (ref mut min, ref mut max) ) = only_chain_deallocated_between_inclusive {
+                *min = std::cmp::max( *min, data.initial_timestamp );
+                *max = std::cmp::min( *max, data.last_timestamp );
+            } else {
+                only_chain_deallocated_between_inclusive = Some( (data.initial_timestamp, data.last_timestamp) );
+            }
+        }
 
         let enable_group_filter =
             self.only_group_allocations_at_least.is_some() ||
@@ -451,6 +472,8 @@ impl BasicFilter {
             only_chain_length_at_most: self.only_chain_length_at_most.unwrap_or( !0 ),
             only_chain_alive_for_at_least: self.only_chain_alive_for_at_least.unwrap_or( Duration::from_secs( 0 ) ),
             only_chain_alive_for_at_most: self.only_chain_alive_for_at_most,
+            only_chain_leaked_or_deallocated_after,
+            only_chain_deallocated_between_inclusive,
 
             only_group_allocations_at_least: self.only_group_allocations_at_least.unwrap_or( 0 ),
             only_group_allocations_at_most: self.only_group_allocations_at_most.unwrap_or( !0 ),
@@ -592,6 +615,8 @@ impl CompiledBasicFilter {
             let last_allocation_size;
             let chain_length;
             let chain_lifetime;
+            let chain_lifetime_end;
+            let was_deallocated;
             if let Some( first_in_chain ) = allocation.first_allocation_in_chain {
                 let chain = data.get_chain_by_first_allocation( first_in_chain ).unwrap();
                 let first_allocation = data.get_allocation( chain.first );
@@ -601,13 +626,16 @@ impl CompiledBasicFilter {
                 last_allocation_size = last_allocation.size;
                 chain_length = chain.length;
 
-                let chain_lifetime_end = last_allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
+                chain_lifetime_end = last_allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
                 chain_lifetime = Duration( chain_lifetime_end - first_allocation.timestamp );
+                was_deallocated = last_allocation.deallocation.is_some();
             } else {
                 first_allocation_size = allocation.size;
                 last_allocation_size = allocation.size;
                 chain_length = 1;
                 chain_lifetime = lifetime;
+                chain_lifetime_end = allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
+                was_deallocated = allocation.deallocation.is_some();
             }
 
             if !(first_allocation_size <= self.only_first_size_smaller_or_equal && first_allocation_size >= self.only_first_size_larger_or_equal) {
@@ -628,6 +656,22 @@ impl CompiledBasicFilter {
 
             if let Some( max ) = self.only_chain_alive_for_at_most {
                 if chain_lifetime > max {
+                    return false;
+                }
+            }
+
+            if was_deallocated {
+                if !(chain_lifetime_end > self.only_chain_leaked_or_deallocated_after) {
+                    return false;
+                }
+            }
+
+            if let Some( (min, max) ) = self.only_chain_deallocated_between_inclusive {
+                if !was_deallocated {
+                    return false;
+                }
+
+                if !(chain_lifetime_end >= min && chain_lifetime_end <= max) {
                     return false;
                 }
             }

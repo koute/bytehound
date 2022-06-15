@@ -196,6 +196,9 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
         protocol::LifetimeFilter::OnlyLeaked => {
             output.only_leaked = true;
         },
+        protocol::LifetimeFilter::OnlyChainLeaked => {
+            output.only_chain_leaked = true;
+        },
         protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
             output.only_not_deallocated_after_at_least = output.only_allocated_after_at_least;
             output.only_not_deallocated_until_at_most = output.only_allocated_until_at_most;
@@ -212,6 +215,9 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
         },
         protocol::LifetimeFilter::OnlyTemporary => {
             output.only_temporary = true;
+        },
+        protocol::LifetimeFilter::OnlyChainTemporary => {
+            output.only_chain_temporary = true;
         },
         protocol::LifetimeFilter::OnlyWholeGroupLeaked => {
             output.only_group_leaked_allocations_at_least = Some( cli_core::NumberOrFractionOfTotal::Fraction( 1.0 ) );
