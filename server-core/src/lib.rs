@@ -690,6 +690,7 @@ fn get_allocations< 'a >(
                         protocol::Deallocation {
                             timestamp: deallocation.timestamp.into(),
                             thread: deallocation.thread,
+                            backtrace_id: deallocation.backtrace.map( |id| id.raw() ),
                             backtrace: deallocation.backtrace.map( |backtrace_id| {
                                 data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
                             })

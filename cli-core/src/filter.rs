@@ -31,6 +31,9 @@ pub struct BasicFilter {
     pub only_backtrace_length_at_least: Option< usize >,
     pub only_backtrace_length_at_most: Option< usize >,
 
+    pub only_matching_deallocation_backtraces: Option< HashSet< BacktraceId > >,
+    pub only_not_matching_deallocation_backtraces: Option< HashSet< BacktraceId > >,
+
     pub only_larger_or_equal: Option< u64 >,
     pub only_larger: Option< u64 >,
     pub only_smaller_or_equal: Option< u64 >,
@@ -102,6 +105,9 @@ pub struct CompiledBasicFilter {
 
     only_backtraces: Option< HashSet< BacktraceId > >,
     only_not_matching_backtraces: Option< HashSet< BacktraceId > >,
+
+    only_deallocation_backtraces: Option< HashSet< BacktraceId > >,
+    only_not_matching_deallocation_backtraces: Option< HashSet< BacktraceId > >,
 
     only_larger_or_equal: u64,
     only_smaller_or_equal: u64,
@@ -420,6 +426,9 @@ impl BasicFilter {
             only_backtraces,
             only_not_matching_backtraces: self.only_not_matching_backtraces.clone(),
 
+            only_deallocation_backtraces: self.only_matching_deallocation_backtraces.clone(),
+            only_not_matching_deallocation_backtraces: self.only_not_matching_deallocation_backtraces.clone(),
+
             only_larger_or_equal,
             only_smaller_or_equal,
             only_address_at_least: self.only_address_at_least.unwrap_or( 0 ),
@@ -551,6 +560,30 @@ impl CompiledBasicFilter {
         if let Some( ref set ) = self.only_not_matching_backtraces {
             if set.contains( &allocation.backtrace ) {
                 return false;
+            }
+        }
+
+        if let Some( ref only_deallocation_backtraces ) = self.only_deallocation_backtraces {
+            if let Some( ref deallocation ) = allocation.deallocation {
+                if let Some( backtrace ) = deallocation.backtrace {
+                    if !only_deallocation_backtraces.contains( &backtrace ) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some( ref set ) = self.only_not_matching_deallocation_backtraces {
+            if let Some( ref deallocation ) = allocation.deallocation {
+                if let Some( backtrace ) = deallocation.backtrace {
+                    if set.contains( &backtrace ) {
+                        return false;
+                    }
+                }
             }
         }
 

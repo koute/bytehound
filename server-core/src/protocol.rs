@@ -122,6 +122,8 @@ pub struct Deallocation< 'a > {
     pub timestamp: Timeval,
     pub thread: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtrace_id: Option< u32 >,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub backtrace: Option< Vec< Frame< 'a > > >
 }
 
@@ -633,6 +635,7 @@ pub struct AllocFilter {
     pub backtrace_depth_min: Option< u32 >,
     pub backtrace_depth_max: Option< u32 >,
     pub backtraces: Option< u32 >, // TODO: Support multiple.
+    pub deallocation_backtraces: Option< u32 >, // TODO: Support multiple.
     pub mmaped: Option< MmapedFilter >,
     pub jemalloc: Option< JemallocFilter >,
     pub arena: Option< ArenaFilter >,

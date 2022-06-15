@@ -296,6 +296,10 @@ const FIELDS = {
         label: "Backtrace",
         badge: value => "Matching backtrace with ID " + value
     },
+    deallocation_backtraces: {
+        label: "Dealloc backtrace",
+        badge: value => "Matching dealloc backtrace with ID " + value
+    },
     group_interval_min: {
         ...DURATION_OR_PERCENTAGE_FIELD,
         label: "Min group interval",
@@ -1305,9 +1309,34 @@ export default class PageDataAllocations extends React.Component {
                     onPageSizeChange={(page_size, page) => update_query( this.props, {page: page + 1, page_size} )}
                     showPaginationBottom={false}
                     SubComponent={row => {
-                        const allocation_backtrace = backtrace_cell( show_full_backtraces, row.original.backtrace );
-                        const deallocation_backtrace = (row.original.deallocation && row.original.deallocation.backtrace)
-                            ? backtrace_cell( show_full_backtraces, row.original.deallocation.backtrace )
+                        const q = _.omit( extract_query( this.props.location.search ), "count", "skip", "group_allocations", "sort_by", "order" );
+
+                        const allocation_backtrace =
+                            <div className="backtrace-cell" onContextMenu={event => {
+                                    const lq = _.cloneDeep(q);
+                                    lq.backtraces = row.original.backtrace_id;
+                                    const url = "/#" + this.props.location.pathname + "?" + create_query( lq ).toString();
+
+                                    this.setState({
+                                        showOnlyAllocationsUrl: url,
+                                        selectedBacktrace: row.original.backtrace_id
+                                    });
+                                    return this.allocation_menu_trigger.handleContextClick( event );
+                                }}>{backtrace_cell( show_full_backtraces, row.original.backtrace )}
+                            </div>;
+                        const deallocation_backtrace = (row.original.deallocation && row.original.deallocation.backtrace) ?
+                            <div className="backtrace-cell" onContextMenu={event => {
+                                    const lq = _.cloneDeep(q);
+                                    lq.deallocation_backtraces = row.original.deallocation.backtrace_id;
+                                    const url = "/#" + this.props.location.pathname + "?" + create_query( lq ).toString();
+
+                                    this.setState({
+                                        showOnlyAllocationsUrl: url,
+                                        selectedBacktrace: row.original.deallocation.backtrace_id
+                                    });
+                                    return this.deallocation_menu_trigger.handleContextClick( event );
+                                }}>{backtrace_cell( show_full_backtraces, row.original.deallocation.backtrace )}
+                            </div>
                             : null;
 
                         let cell;
@@ -1324,10 +1353,6 @@ export default class PageDataAllocations extends React.Component {
                             cell = allocation_backtrace;
                         }
 
-                        const q = _.omit( extract_query( this.props.location.search ), "count", "skip", "group_allocations", "sort_by", "order" );
-                        q.backtraces = row.original.backtrace_id;
-                        const url = "/#" + this.props.location.pathname + "?" + create_query( q ).toString();
-
                         let graph = "";
                         if( row.original.only_matched && row.original.only_matched.graph_url ) {
                             const url_preview = (this.props.sourceUrl || "") + row.original.only_matched.graph_preview_url;
@@ -1340,25 +1365,28 @@ export default class PageDataAllocations extends React.Component {
                         }
 
                         return <div className="backtrace-parent">
-                            <div className="backtrace-cell" onContextMenu={event => {
-                                    this.setState({
-                                        showOnlyAllocationsUrl: url,
-                                        selectedBacktrace: row.original.backtrace_id
-                                    });
-                                    return this.menu_trigger.handleContextClick( event );
-                                }}>{cell}
+                            <div>
+                                {cell}
                             </div>
                             {graph}
                         </div>;
                     }}
                     expanded={expanded}
                 />
-                <ContextMenuTrigger id="allocation_context_menu" ref={c => this.menu_trigger = c}>
+                <ContextMenuTrigger id="allocation_context_menu" ref={c => this.allocation_menu_trigger = c}>
+                    <div />
+                </ContextMenuTrigger>
+                <ContextMenuTrigger id="deallocation_context_menu" ref={c => this.deallocation_menu_trigger = c}>
                     <div />
                 </ContextMenuTrigger>
                 <ContextMenu id="allocation_context_menu">
                     <MenuItem>
                         <a href={this.state.showOnlyAllocationsUrl || "#"}>Show only allocations with this backtrace...</a>
+                    </MenuItem>
+                </ContextMenu>
+                <ContextMenu id="deallocation_context_menu">
+                    <MenuItem>
+                        <a href={this.state.showOnlyAllocationsUrl || "#"}>Show only allocations with this deallocation backtrace...</a>
                     </MenuItem>
                 </ContextMenu>
             </div>

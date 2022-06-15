@@ -129,6 +129,10 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
         output.only_matching_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
     }
 
+    if let Some( id ) = filter.deallocation_backtraces {
+        output.only_matching_deallocation_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
+    }
+
     match filter.mmaped {
         None => {},
         Some( protocol::MmapedFilter::Yes ) => output.only_ptmalloc_mmaped = true,
