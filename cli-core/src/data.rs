@@ -1,6 +1,6 @@
 use std::fmt;
 use std::ops::Range;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::cmp::Ordering;
 use std::borrow::{Borrow, Cow};
 use std::iter::FusedIterator;
@@ -38,15 +38,20 @@ impl string_interner::Symbol for StringId {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct AllocationId( u64 );
+#[repr(transparent)]
+pub struct AllocationId( NonZeroU64 );
 
 impl AllocationId {
+    #[inline(always)]
     pub(crate) fn new( raw: u64 ) -> Self {
-        AllocationId( raw )
+        unsafe {
+            AllocationId( NonZeroU64::new_unchecked( raw + 1 ) )
+        }
     }
 
+    #[inline(always)]
     pub fn raw( &self ) -> u64 {
-        self.0
+        self.0.get() - 1
     }
 }
 
@@ -56,17 +61,17 @@ pub struct OperationId( u64 );
 impl OperationId {
     #[inline]
     pub fn new_allocation( id: AllocationId ) -> Self {
-        OperationId( id.0 )
+        OperationId( id.raw() )
     }
 
     #[inline]
     pub fn new_deallocation( id: AllocationId ) -> Self {
-        OperationId( (1 << 62) | id.0 )
+        OperationId( (1 << 62) | id.raw() )
     }
 
     #[inline]
     pub fn new_reallocation( id: AllocationId ) -> Self {
-        OperationId( (2 << 62) | id.0 )
+        OperationId( (2 << 62) | id.raw() )
     }
 
     #[inline]
@@ -87,7 +92,7 @@ impl OperationId {
 
     #[inline]
     pub fn id( &self ) -> AllocationId {
-        AllocationId( self.0 & !(3 << 62) )
+        AllocationId::new( self.0 & !(3 << 62) )
     }
 }
 
