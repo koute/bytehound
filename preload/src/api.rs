@@ -108,6 +108,10 @@ pub unsafe extern "C" fn _Exit( status: c_int ) {
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn malloc_usable_size( ptr: *mut c_void ) -> size_t {
+    if ptr.is_null() {
+        return 0;
+    }
+
     #[cfg(feature = "jemalloc")]
     {
         _rjem_malloc_usable_size( ptr )
