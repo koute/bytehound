@@ -85,11 +85,17 @@ fn preload_path() -> PathBuf {
 }
 
 fn cli_path() -> PathBuf {
-    if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_CLI_PATH" ) {
+    let path = if let Ok( path ) = std::env::var( "MEMORY_PROFILER_TEST_CLI_PATH" ) {
         build_root().join( path ).join( "bytehound" )
     } else {
         build_root().join( "x86_64-unknown-linux-gnu" ).join( "release" ).join( "bytehound" )
+    };
+
+    if !path.exists() {
+        panic!( "Missing CLI binary at {:?}; compile it and try again", path );
     }
+
+    path
 }
 
 fn target_toolchain_prefix() -> &'static str {
