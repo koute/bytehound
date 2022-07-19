@@ -511,6 +511,77 @@ fn test_basic() {
     assert_eq!( iter.next(), None );
 }
 
+#[cfg(test)]
+fn run_jemalloc_test( name: &str ) {
+    let cwd = compile_with_cargo( &format!( "jemalloc/{}", name ) );
+
+    run_on_target(
+        &cwd,
+        &format!( "./{}", name ),
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", format!( "memory-profiling-{}.dat", name ).into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( name, cwd.join( format!( "memory-profiling-{}.dat", name ) ) );
+    let mut iter = analysis.allocations_from_source( "main.rs" ).filter( |alloc| {
+        is_from_function_fuzzy( alloc, "run_test" )
+    });
+
+    let a0 = iter.next().unwrap(); // (jemalloc) malloc, leaked
+    let a1 = iter.next().unwrap(); // (jemalloc) malloc, freed
+    let a2 = iter.next().unwrap(); // (jemalloc) malloc, freed through realloc
+    let a3 = iter.next().unwrap(); // (jemalloc) realloc
+    let a4 = iter.next().unwrap(); // (jemalloc) calloc, freed
+    let a5 = iter.next().unwrap(); // (libc) malloc, freed through realloc
+    let a6 = iter.next().unwrap(); // (libc) realloc, freed
+
+    assert!( a0.deallocation.is_none() );
+    assert!( a1.deallocation.is_some() );
+    assert!( a2.deallocation.is_some() );
+    assert!( a3.deallocation.is_none() );
+    assert!( a4.deallocation.is_none() );
+    assert!( a5.deallocation.is_some() );
+    assert!( a6.deallocation.is_some() );
+
+    assert!( a0.size < a1.size );
+    assert!( a1.size < a2.size );
+    assert!( a2.size < a3.size );
+    assert!( a3.size < a4.size );
+    assert_eq!( a5.size, 200 );
+    assert_eq!( a6.size, 400 );
+
+    assert_eq!( a0.thread, a1.thread );
+    assert_eq!( a1.thread, a2.thread );
+    assert_eq!( a2.thread, a3.thread );
+    assert_eq!( a3.thread, a4.thread );
+    assert_eq!( a4.thread, a5.thread );
+    assert_eq!( a5.thread, a6.thread );
+
+    assert_eq!( a0.chain_length, 1 );
+    assert_eq!( a1.chain_length, 1 );
+    assert_eq!( a2.chain_length, 2 );
+    assert_eq!( a3.chain_length, 2 );
+    assert_eq!( a4.chain_length, 1 );
+    assert_eq!( a5.chain_length, 2 );
+    assert_eq!( a6.chain_length, 2 );
+
+    assert_eq!( iter.next(), None );
+}
+
+#[test]
+fn test_jemalloc_v03() {
+    run_jemalloc_test( "jemalloc-v03" );
+}
+
+#[test]
+fn test_jemalloc_v05() {
+    run_jemalloc_test( "jemalloc-v05" );
+}
+
 #[test]
 fn test_alloc_in_tls() {
     let cwd = workdir();
