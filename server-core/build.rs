@@ -169,6 +169,7 @@ fn main() {
             let target_path = asset.canonicalize().unwrap();
             let key = target_path.strip_prefix( &webui_out_dir ).unwrap();
             writeln!( fp, r#"    ("{}", include_bytes!( "{}" )),"#, key.to_str().unwrap(), target_path.to_str().unwrap() ).unwrap();
+            println!( "cargo:rerun-if-changed={}", target_path.to_str().unwrap() );
         }
         writeln!( fp, "];" ).unwrap();
 
