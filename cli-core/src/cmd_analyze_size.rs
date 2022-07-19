@@ -100,6 +100,7 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
             | Event::PartialBacktrace32 { .. }
             | Event::Backtrace32 { .. } => S_BACKTRACE,
             | Event::File { .. } => S_FILE,
+            | Event::File64 { .. } => S_FILE,
             | Event::GroupStatistics { .. } => S_STATS,
             _ => S_OTHER
         };

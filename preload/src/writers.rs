@@ -36,7 +36,7 @@ fn mmap_file< P: AsRef< Path >, R, F: FnOnce( &[u8] ) -> R >( path: P, callback:
 }
 
 fn write_file< U: Write >( mut serializer: &mut U, path: &str, bytes: &[u8] ) -> io::Result< () > {
-    Event::File {
+    Event::File64 {
         timestamp: get_timestamp(),
         path: path.into(),
         contents: bytes.into()
@@ -110,7 +110,7 @@ pub fn write_binaries< U: Write >( mut serializer: &mut U ) -> io::Result< () > 
 
 pub fn write_maps< U: Write >( serializer: &mut U ) -> io::Result< Vec< u8 > > {
     let maps = read_file( "/proc/self/maps" )?;
-    Event::File { timestamp: get_timestamp(), path: "/proc/self/maps".into(), contents: maps.clone().into() }.write_to_stream( serializer )?;
+    Event::File64 { timestamp: get_timestamp(), path: "/proc/self/maps".into(), contents: maps.clone().into() }.write_to_stream( serializer )?;
     Ok( maps )
 }
 

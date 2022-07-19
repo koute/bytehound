@@ -242,6 +242,12 @@ pub enum Event< 'a > {
         backtrace: u64,
         thread: u32
     },
+    File64 {
+        timestamp: Timestamp,
+        path: Cow< 'a, str >,
+        #[speedy(length_type = u64)]
+        contents: Cow< 'a, [u8] >
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

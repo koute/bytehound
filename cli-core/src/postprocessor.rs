@@ -161,12 +161,12 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I, anonymize: 
                 }
             },
 
-            Event::File { ref mut contents, .. } if contents.starts_with( b"\x7FELF" ) => {
+            Event::File { ref mut contents, .. } | Event::File64 { ref mut contents, .. } if contents.starts_with( b"\x7FELF" ) => {
                 process = true;
                 write = false;
             },
 
-            Event::File { .. } => {
+            Event::File { .. } | Event::File64 { .. } => {
                 process = true;
                 if anonymize != Anonymize::None {
                     write = false;

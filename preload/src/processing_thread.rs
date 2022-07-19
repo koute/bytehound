@@ -815,7 +815,7 @@ pub(crate) fn thread_main() {
                     if opt::get().write_binaries_to_output || serializer.inner_mut_without_flush().file.is_none() {
                         for binary in new_binaries {
                             debug!( "Writing new binary: {}", binary.name() );
-                            let event = Event::File {
+                            let event = Event::File64 {
                                 timestamp,
                                 path: binary.name().into(),
                                 contents: binary.as_bytes().into()
@@ -826,7 +826,7 @@ pub(crate) fn thread_main() {
                     }
 
                     debug!( "Writing new maps..." );
-                    let event = Event::File {
+                    let event = Event::File64 {
                         timestamp,
                         path: "/proc/self/maps".into(),
                         contents: maps.as_bytes().into()

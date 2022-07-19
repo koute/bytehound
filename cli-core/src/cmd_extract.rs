@@ -21,7 +21,7 @@ pub fn extract( input: PathBuf, output: PathBuf ) -> Result< (), std::io::Error 
         };
 
         match event {
-            Event::File { path, contents, .. } => {
+            Event::File { path, contents, .. } | Event::File64 { path, contents, .. } => {
                 let mut relative_path = &*path;
                 if relative_path.starts_with( "/" ) {
                     relative_path = &relative_path[ 1.. ];

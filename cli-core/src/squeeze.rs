@@ -395,6 +395,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                 },
 
                 Event::File { .. } => {},
+                Event::File64 { .. } => {},
                 Event::Header { .. } => {},
                 Event::MemoryDump { .. } => {},
                 Event::Marker { .. } => {},

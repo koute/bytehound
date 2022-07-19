@@ -766,7 +766,7 @@ impl Loader {
                 assert_eq!( header.id, self.header.id );
                 assert_eq!( header.initial_timestamp, self.header.initial_timestamp );
             },
-            Event::File { ref path, ref contents, .. } if path == "/proc/self/maps" => {
+            Event::File { ref path, ref contents, .. } | Event::File64 { ref path, ref contents, .. } if path == "/proc/self/maps" => {
                 let contents = String::from_utf8_lossy( &contents );
                 trace!( "/proc/self/maps:\n{}", contents );
 
@@ -798,7 +798,7 @@ impl Loader {
 
                 self.address_space_needs_reloading = true;
             },
-            Event::File { ref path, ref contents, .. } => {
+            Event::File { ref path, ref contents, .. } | Event::File64 { ref path, ref contents, .. } => {
                 if !contents.starts_with( b"\x7FELF" ) {
                     return;
                 }
