@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 use libc;
+use crate::utils::Buffer;
 
 #[cfg(not(feature = "sc"))]
 macro_rules! syscall {
@@ -111,4 +112,44 @@ pub unsafe fn mmap( addr: *mut libc::c_void, length: libc::size_t, prot: libc::c
 
 pub unsafe fn munmap( addr: *mut libc::c_void, length: libc::size_t ) -> libc::c_int {
     syscall!( MUNMAP, addr, length ) as libc::c_int
+}
+
+extern "C" {
+    static __environ: *const *const u8;
+}
+
+pub unsafe fn getenv( key: &[u8] ) -> Option< Buffer > {
+    let mut current = __environ;
+    loop {
+        let p = *current;
+        if p.is_null() {
+            return None;
+        }
+
+        let mut r = p;
+        while *r != b'=' {
+            r = r.add( 1 );
+        }
+
+        let entry_key_length = r as usize - p as usize;
+        let entry_key = std::slice::from_raw_parts( p, entry_key_length );
+        if key == entry_key {
+            r = r.add( 1 );
+            let value_pointer = r;
+            while *r != 0 {
+                r = r.add( 1 );
+            }
+
+            let value_length = r as usize - value_pointer as usize;
+            return Buffer::from_slice( std::slice::from_raw_parts( value_pointer, value_length ) );
+        }
+
+        current = current.add( 1 );
+    }
+}
+
+#[test]
+fn test_getenv() {
+    std::env::set_var( "GETENV_TEST_VAR", "1234" );
+    assert_eq!( unsafe { getenv( b"GETENV_TEST_VAR" ) }.unwrap().to_str().unwrap(), "1234" );
 }

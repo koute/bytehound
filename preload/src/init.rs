@@ -8,13 +8,13 @@ use crate::utils::generate_filename;
 fn initialize_logger() {
     static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
     static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
-    let log_level = if let Ok( value ) = env::var( "MEMORY_PROFILER_LOG" ) {
-        match value.as_str() {
-            "trace" => log::LevelFilter::Trace,
-            "debug" => log::LevelFilter::Debug,
-            "info" => log::LevelFilter::Info,
-            "warn" => log::LevelFilter::Warn,
-            "error" => log::LevelFilter::Error,
+    let log_level = if let Some( value ) = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_LOG" ) } {
+        match value.to_str() {
+            Some( "trace" ) => log::LevelFilter::Trace,
+            Some( "debug" ) => log::LevelFilter::Debug,
+            Some( "info" ) => log::LevelFilter::Info,
+            Some( "warn" ) => log::LevelFilter::Warn,
+            Some( "error" ) => log::LevelFilter::Error,
             _ => log::LevelFilter::Off
         }
     } else {
@@ -23,9 +23,9 @@ fn initialize_logger() {
 
     let pid = crate::syscall::getpid();
 
-    if let Ok( value ) = env::var( "MEMORY_PROFILER_LOGFILE" ) {
-        let path = generate_filename( &value, None );
-        let rotate_at = env::var( "MEMORY_PROFILER_LOGFILE_ROTATE_WHEN_BIGGER_THAN" ).ok().and_then( |value| value.parse().ok() );
+    if let Some( value ) = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_LOGFILE" ) } {
+        let path = generate_filename( value.as_slice(), None );
+        let rotate_at = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_LOGFILE_ROTATE_WHEN_BIGGER_THAN" ) }.and_then( |value| value.to_str()?.parse().ok() );
 
         unsafe {
             if let Ok(()) = FILE_LOGGER.initialize( path, rotate_at, log_level, pid ) {

@@ -5,7 +5,7 @@ use log::{self, Level, Record, Metadata};
 use std::os::unix::io::{IntoRawFd, FromRawFd};
 use libc;
 
-use crate::utils::{stack_format_bytes, temporarily_change_umask};
+use crate::utils::{Buffer, stack_format_bytes, temporarily_change_umask};
 use crate::spin_lock::SpinLock;
 use crate::raw_file::{RawFile, rename};
 use crate::syscall;
@@ -78,9 +78,9 @@ impl log::Log for SyscallLogger {
 }
 
 struct RotationState {
-    path: String,
-    old_path: String,
-    initial_path: String,
+    path: Buffer,
+    old_path: Buffer,
+    initial_path: Buffer,
     rotated: bool
 }
 
@@ -116,7 +116,7 @@ pub struct FileLoggerOutput {
 }
 
 impl FileLoggerOutput {
-    fn new( path: String, mut rotate_at: Option< usize > ) -> Result< Self, io::Error > {
+    fn new( path: Buffer, mut rotate_at: Option< usize > ) -> Result< Self, io::Error > {
         let fp = {
             let _handle = temporarily_change_umask( 0o777 );
             RawFile::create( &path, 0o777 )?
@@ -128,8 +128,13 @@ impl FileLoggerOutput {
             rotate_at = None;
         }
 
-        let initial_path = format!( "{}.initial", path );
-        let old_path = format!( "{}.old", path );
+        let mut initial_path = Buffer::new();
+        initial_path.write( path.as_slice() ).unwrap();
+        initial_path.write( b".initial" ).unwrap();
+
+        let mut old_path = Buffer::new();
+        old_path.write( path.as_slice() ).unwrap();
+        old_path.write( b".old" ).unwrap();
 
         let output = FileLoggerOutput {
             raw_fd: AtomicUsize::new( fp.into_raw_fd() as _ ),
@@ -195,7 +200,7 @@ impl FileLogger {
         }
     }
 
-    pub fn initialize( &mut self, path: String, rotate_at: Option< usize >, level: log::LevelFilter, pid: libc::pid_t ) -> io::Result< () > {
+    pub fn initialize( &mut self, path: Buffer, rotate_at: Option< usize >, level: log::LevelFilter, pid: libc::pid_t ) -> io::Result< () > {
         let output = FileLoggerOutput::new( path, rotate_at )?;
         self.level = level;
         self.pid = pid;

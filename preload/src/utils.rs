@@ -4,7 +4,9 @@ use std::fmt;
 use std::mem::MaybeUninit;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::fmt::Write as _;
+use std::ffi::OsStr;
+use std::path::Path;
+use std::os::unix::ffi::OsStrExt;
 
 use crate::{EXECUTABLE, PID};
 use crate::syscall;
@@ -42,13 +44,13 @@ pub fn temporarily_change_umask( umask: libc::c_int ) -> RestoreFileCreationMask
 
 const STACK_BUFFER_LEN: usize = 1024;
 
-struct Buffer {
+pub struct Buffer {
     buffer: [MaybeUninit< u8 >; STACK_BUFFER_LEN],
     length: usize
 }
 
 impl Buffer {
-    fn new() -> Self {
+    pub fn new() -> Self {
         unsafe {
             Self {
                 buffer: MaybeUninit::< [MaybeUninit< u8 >; STACK_BUFFER_LEN] >::uninit().assume_init(),
@@ -57,8 +59,54 @@ impl Buffer {
         }
     }
 
+    pub fn from_slice( slice: &[u8] ) -> Option< Self > {
+        if slice.len() > STACK_BUFFER_LEN {
+            return None;
+        }
+
+        let mut buffer = Self::new();
+        buffer.write( slice ).unwrap();
+        Some( buffer )
+    }
+
+    pub fn to_str( &self ) -> Option< &str > {
+        std::str::from_utf8( self.as_slice() ).ok()
+    }
+
+    pub fn as_slice( &self ) -> &[u8] {
+        unsafe { std::slice::from_raw_parts( self.buffer.as_ptr() as *const u8, self.length ) }
+    }
+
     fn as_slice_mut( &mut self ) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut( self.buffer.as_mut_ptr() as *mut u8, self.length ) }
+    }
+
+    fn push( &mut self, byte: u8 ) {
+        if self.length >= self.buffer.len() {
+            return;
+        }
+
+        self.buffer[ self.length ] = MaybeUninit::new( byte );
+        self.length += 1;
+    }
+}
+
+impl std::ops::Deref for Buffer {
+    type Target = [u8];
+    fn deref( &self ) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl AsRef< OsStr > for Buffer {
+    fn as_ref( &self ) -> &OsStr {
+        OsStr::from_bytes( self.as_slice() )
+    }
+}
+
+impl AsRef< Path > for Buffer {
+    fn as_ref( &self ) -> &Path {
+        Path::new( self )
     }
 }
 
@@ -126,11 +174,11 @@ pub fn stack_null_terminate< R, F >( input: &[u8], callback: F ) -> R
     }, callback )
 }
 
-pub fn generate_filename( pattern: &str, counter: Option< &AtomicUsize > ) -> String {
-    let mut output = String::new();
+pub fn generate_filename( pattern: &[u8], counter: Option< &AtomicUsize > ) -> Buffer {
+    let mut output = Buffer::new();
     let mut seen_percent = false;
-    for ch in pattern.chars() {
-        if !seen_percent && ch == '%' {
+    for &ch in pattern.as_ref() {
+        if !seen_percent && ch == b'%' {
             seen_percent = true;
             continue;
         }
@@ -138,23 +186,23 @@ pub fn generate_filename( pattern: &str, counter: Option< &AtomicUsize > ) -> St
         if seen_percent {
             seen_percent = false;
             match ch {
-                '%' => {
+                b'%' => {
                     output.push( ch );
                 },
-                'p' => {
+                b'p' => {
                     let pid = *PID;
                     write!( &mut output, "{}", pid ).unwrap();
                 },
-                't' => {
+                b't' => {
                     let timestamp = unsafe { libc::time( ptr::null_mut() ) };
                     write!( &mut output, "{}", timestamp ).unwrap();
                 },
-                'e' => {
+                b'e' => {
                     let executable = String::from_utf8_lossy( &*EXECUTABLE );
                     let executable = &executable[ executable.rfind( "/" ).map( |index| index + 1 ).unwrap_or( 0 ).. ];
                     write!( &mut output, "{}", executable ).unwrap();
                 },
-                'n' => {
+                b'n' => {
                     if let Some( counter ) = counter {
                         let value = counter.fetch_add( 1, Ordering::SeqCst );
                         write!( &mut output, "{}", value ).unwrap();
