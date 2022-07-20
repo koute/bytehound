@@ -21,7 +21,7 @@ fn initialize_logger() {
         log::LevelFilter::Off
     };
 
-    let pid = unsafe { libc::getpid() };
+    let pid = crate::syscall::getpid();
 
     if let Ok( value ) = env::var( "MEMORY_PROFILER_LOGFILE" ) {
         let path = generate_filename( &value, None );

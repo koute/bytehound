@@ -16,6 +16,7 @@ macro_rules! syscall {
     (@to_libc MMAP) => { libc::SYS_mmap };
     (@to_libc MMAP2) => { libc::SYS_mmap2 };
     (@to_libc MUNMAP) => { libc::SYS_munmap };
+    (@to_libc GETPID) => { libc::SYS_getpid };
 
     ($num:ident) => {
         libc::syscall( syscall!( @to_libc $num ) )
@@ -76,6 +77,12 @@ pub fn rename( source: &CStr, destination: &CStr ) -> libc::c_int {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         syscall!( RENAMEAT, libc::AT_FDCWD, source, libc::AT_FDCWD, destination ) as _
+    }
+}
+
+pub fn getpid() -> libc::pid_t {
+    unsafe {
+        syscall!( GETPID ) as libc::pid_t
     }
 }
 

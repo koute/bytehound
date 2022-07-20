@@ -46,7 +46,7 @@ pub(crate) const PAGE_SIZE: usize = 4096;
 
 lazy_static! {
     pub(crate) static ref PID: u32 = {
-        let pid = unsafe { libc::getpid() } as u32;
+        let pid = crate::syscall::getpid() as u32;
         pid
     };
     pub(crate) static ref CMDLINE: Vec< u8 > = {
