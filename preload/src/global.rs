@@ -238,7 +238,7 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
     unsafe {
         use goblin::elf64::header::Header;
         use goblin::elf64::section_header::SectionHeader;
-        use goblin::elf::section_header::SHT_SYMTAB;
+        use goblin::elf::section_header::{SHT_DYNSYM, SHT_SYMTAB};
         use goblin::elf::sym::sym64::Sym;
 
         let mut path = libc::getauxval( libc::AT_EXECFN ) as *const libc::c_char;
@@ -275,7 +275,7 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
         );
 
         for section_header in section_headers {
-            if section_header.sh_type != SHT_SYMTAB {
+            if section_header.sh_type != SHT_SYMTAB && section_header.sh_type != SHT_DYNSYM {
                 continue;
             }
             let strtab_key = section_header.sh_link as usize;
@@ -291,6 +291,9 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
                 let bytes = &strtab_bytes[ sym.st_name as usize.. ];
                 let name = &bytes[ ..bytes.iter().position( |&byte| byte == 0 ).unwrap_or( bytes.len() ) ];
                 for (target_name, output_address) in names.iter().zip( addresses.iter_mut() ) {
+                    if *output_address != 0 {
+                        continue;
+                    }
                     if name == target_name.as_bytes() {
                         if let Some( address ) = address_offset.checked_add( sym.st_value as usize ) {
                             info!( "Found '{}' at: 0x{:016X}", target_name, address );
@@ -300,8 +303,6 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
                     }
                 }
             }
-
-            break;
         }
 
         if syscall::munmap( executable, size ) != 0 {
