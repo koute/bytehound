@@ -15,6 +15,8 @@ use std::fs::read_link;
 
 use std::os::unix::ffi::OsStrExt;
 
+#[macro_use]
+mod macros;
 mod unwind;
 mod timestamp;
 mod spin_lock;

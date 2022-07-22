@@ -3,9 +3,10 @@ use crate::logger;
 use crate::opt;
 use crate::utils::generate_filename;
 
+pub static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
+pub static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
+
 pub fn initialize_logger() {
-    static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
-    static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
     let log_level = if let Some( value ) = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_LOG" ) } {
         match value.to_str() {
             Some( "trace" ) => log::LevelFilter::Trace,
@@ -20,6 +21,9 @@ pub fn initialize_logger() {
     };
 
     let pid = crate::syscall::getpid();
+    unsafe {
+        SYSCALL_LOGGER.initialize( log_level, pid );
+    }
 
     if let Some( value ) = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_LOGFILE" ) } {
         let path = generate_filename( value.as_slice(), None );
@@ -32,7 +36,6 @@ pub fn initialize_logger() {
         }
     } else {
         unsafe {
-            SYSCALL_LOGGER.initialize( log_level, pid );
             log::set_logger( &SYSCALL_LOGGER ).unwrap();
         }
     }
