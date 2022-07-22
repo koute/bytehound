@@ -654,7 +654,10 @@ pub unsafe extern "C" fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -
 pub unsafe extern "C" fn _rjem_malloc_usable_size( pointer: *mut c_void ) -> size_t {
     let usable_size = jem_malloc_usable_size_real( pointer );
     match usable_size.checked_sub( mem::size_of::< InternalAllocationId >() ) {
-        Some( size ) => size,
+        Some( size ) => {
+            debug_assert!( std::ptr::read_unaligned( tracking_pointer( pointer, usable_size ) ).is_valid() );
+            size
+        },
         None => panic!( "_rjem_malloc_usable_size: underflow (pointer=0x{:016X}, usable_size={})", pointer as usize , usable_size )
     }
 }
