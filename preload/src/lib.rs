@@ -8,12 +8,13 @@ extern crate lazy_static;
 #[macro_use]
 extern crate sc;
 
+#[macro_use]
+extern crate thread_local_reentrant;
+
 use std::fs::read_link;
 
 use std::os::unix::ffi::OsStrExt;
 
-#[macro_use]
-mod thread_local;
 mod unwind;
 mod timestamp;
 mod spin_lock;

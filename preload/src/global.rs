@@ -11,7 +11,7 @@ use crate::syscall;
 use crate::unwind::{ThreadUnwindState, prepare_to_start_unwinding};
 use crate::timestamp::Timestamp;
 use crate::allocation_tracker::AllocationTracker;
-use crate::thread_local::TlsAccessError;
+use thread_local_reentrant::AccessError as TlsAccessError;
 
 pub type RawThreadHandle = ArcLite< ThreadData >;
 
@@ -175,7 +175,7 @@ pub unsafe extern fn on_fork() {
         });
     }
 
-    TLS.with( |tls| tls.set_enabled( false ) );
+    let _ = TLS.try_with( |tls| tls.set_enabled( false ) );
 }
 
 fn spawn_processing_thread() {
@@ -185,12 +185,12 @@ fn spawn_processing_thread() {
     assert!( !THREAD_RUNNING.load( Ordering::SeqCst ) );
 
     let new_handle = thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
-        TLS.with( |tls| {
+        TLS.try_with( |tls| {
             unsafe {
                 *tls.is_internal.get() = true;
             }
             assert!( !tls.is_enabled() );
-        });
+        }).unwrap();
 
         THREAD_RUNNING.store( true, Ordering::SeqCst );
 
@@ -549,7 +549,7 @@ impl StrongThreadHandle {
             }
         }
 
-        let tls = TLS.with_ex( |tls| {
+        let tls = TLS.try_with( |tls| {
             if ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
                 throttle( tls );
             }
