@@ -21,34 +21,19 @@ use crate::timestamp::get_timestamp;
 use crate::unwind;
 use crate::allocation_tracker::{on_allocation, on_reallocation, on_free};
 
-#[cfg(not(feature = "jemalloc"))]
 extern "C" {
     #[link_name = "__libc_malloc"]
-    fn malloc_real( size: size_t ) -> *mut c_void;
+    fn libc_malloc_real( size: size_t ) -> *mut c_void;
     #[link_name = "__libc_calloc"]
-    fn calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
+    fn libc_calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
     #[link_name = "__libc_realloc"]
-    fn realloc_real( ptr: *mut c_void, size: size_t ) -> *mut c_void;
+    fn libc_realloc_real( ptr: *mut c_void, size: size_t ) -> *mut c_void;
     #[link_name = "__libc_free"]
-    fn free_real( ptr: *mut c_void );
+    fn libc_free_real( ptr: *mut c_void );
     #[link_name = "__libc_memalign"]
-    fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
+    fn libc_memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
     #[link_name = "__libc_mallopt"]
-    fn mallopt_real( params: c_int, value: c_int ) -> c_int;
-}
-
-#[cfg(feature = "jemalloc")]
-extern "C" {
-    #[link_name = "_rjem_mp_malloc"]
-    fn malloc_real( size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_calloc"]
-    fn calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_realloc"]
-    fn realloc_real( ptr: *mut c_void, size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_free"]
-    fn free_real( ptr: *mut c_void );
-    #[link_name = "_rjem_mp_memalign"]
-    fn memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
+    fn libc_mallopt_real( params: c_int, value: c_int ) -> c_int;
 }
 
 extern "C" {
@@ -80,11 +65,6 @@ extern "C" {
     fn jem_free_real( ptr: *mut c_void );
     #[link_name = "_rjem_mp_memalign"]
     fn jem_memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
-}
-
-#[cfg(feature = "jemalloc")]
-unsafe fn mallopt_real( _: c_int, _: c_int ) -> c_int {
-    1
 }
 
 extern "C" {
@@ -143,17 +123,13 @@ struct Metadata {
 }
 
 fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
-    #[cfg(feature = "jemalloc")]
-    {
+    if crate::global::using_unprefixed_jemalloc() {
         return Metadata {
             flags: 0,
             preceding_free_space: 0,
             usable_size: unsafe { jem_malloc_usable_size_real( ptr ) }
         }
-    }
-
-    #[cfg(not(feature = "jemalloc"))]
-    {
+    } else {
         let raw_chunk_size = unsafe { *(ptr as *mut usize).offset( -1 ) };
         let flags = raw_chunk_size & 0b111;
         let chunk_size = raw_chunk_size & !0b111;
@@ -196,17 +172,37 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
 
     let mut thread = StrongThreadHandle::acquire();
     let pointer =
-        match kind {
-            AllocationKind::Malloc => {
-                if opt::get().zero_memory {
-                    calloc_real( effective_size as size_t, 1 )
-                } else {
-                    malloc_real( effective_size as size_t )
+        if !crate::global::using_unprefixed_jemalloc() {
+            match kind {
+                AllocationKind::Malloc => {
+                    if opt::get().zero_memory {
+                        libc_calloc_real( effective_size as size_t, 1 )
+                    } else {
+                        libc_malloc_real( effective_size as size_t )
+                    }
+                },
+                AllocationKind::Calloc => {
+                    libc_calloc_real( effective_size as size_t, 1 )
+                },
+                AllocationKind::Aligned( alignment ) => {
+                    libc_memalign_real( alignment, effective_size as size_t )
                 }
-            },
-            AllocationKind::Calloc => calloc_real( effective_size as size_t, 1 ),
-            AllocationKind::Aligned( alignment ) => {
-                memalign_real( alignment, effective_size as size_t )
+            }
+        } else {
+            match kind {
+                AllocationKind::Malloc => {
+                    if opt::get().zero_memory {
+                        jem_calloc_real( effective_size as size_t, 1 )
+                    } else {
+                        jem_malloc_real( effective_size as size_t )
+                    }
+                },
+                AllocationKind::Calloc => {
+                    jem_calloc_real( effective_size as size_t, 1 )
+                },
+                AllocationKind::Aligned( alignment ) => {
+                    jem_memalign_real( alignment, effective_size as size_t )
+                }
             }
         };
 
@@ -289,7 +285,11 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
     debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
-    let new_pointer = realloc_real( old_pointer, effective_size );
+    let new_pointer = if !crate::global::using_unprefixed_jemalloc() {
+        libc_realloc_real( old_pointer, effective_size )
+    } else {
+        jem_realloc_real( old_pointer, effective_size )
+    };
     if id.is_untracked() && !crate::global::is_actively_running() {
         thread = None;
     }
@@ -363,7 +363,11 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
     debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
-    free_real( pointer );
+    if !crate::global::using_unprefixed_jemalloc() {
+        libc_free_real( pointer );
+    } else {
+        jem_free_real( pointer );
+    }
 
     if id.is_untracked() && !crate::global::is_actively_running() {
         thread = None;
@@ -696,6 +700,16 @@ pub unsafe extern "C" fn _rjem_aligned_alloc( _alignment: size_t, _size: size_t 
 }
 
 #[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_memalign( _alignment: size_t, _size: size_t ) -> *mut c_void {
+    todo!( "_rjem_memalign" );
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn _rjem_valloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
+    todo!( "_rjem_valloc" );
+}
+
+#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_free( pointer: *mut c_void ) {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
@@ -848,8 +862,12 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
+    if crate::global::using_unprefixed_jemalloc() {
+        return 0;
+    }
+
     let thread = StrongThreadHandle::acquire();
-    let result = mallopt_real( param, value );
+    let result = libc_mallopt_real( param, value );
 
     let mut thread = if let Some( thread ) = thread { thread } else { return result };
     let backtrace = unwind::grab( &mut thread );

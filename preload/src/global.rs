@@ -67,6 +67,21 @@ pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u
 
 pub static MMAP_LOCK: SpinLock< () > = SpinLock::new(());
 
+#[cfg(feature = "jemalloc")]
+#[inline]
+pub fn using_unprefixed_jemalloc() -> bool {
+    true
+}
+
+#[cfg(not(feature = "jemalloc"))]
+static USING_UNPREFIXED_JEMALLOC: AtomicBool = AtomicBool::new( false );
+
+#[cfg(not(feature = "jemalloc"))]
+#[inline]
+pub fn using_unprefixed_jemalloc() -> bool {
+    USING_UNPREFIXED_JEMALLOC.load( Ordering::Relaxed )
+}
+
 pub fn toggle() {
     if STATE.load( Ordering::SeqCst ) == STATE_PERMANENTLY_DISABLED {
         return;
@@ -358,9 +373,33 @@ fn hook_jemalloc() {
         "_rjem_mallctlnametomib",
         "_rjem_mallctlbymib",
         "_rjem_malloc_stats_print",
+        "_rjem_memalign",
+        "_rjem_valloc",
+
+        "malloc",
+        "mallocx",
+        "calloc",
+        "sdallocx",
+        "realloc",
+        "rallocx",
+        "nallocx",
+        "xallocx",
+        "malloc_usable_size",
+        "mallctl",
+        "posix_memalign",
+        "aligned_alloc",
+        "free",
+        "sallocx",
+        "dallocx",
+        "mallctlnametomib",
+        "mallctlbymib",
+        "malloc_stats_print",
+        "memalign",
+        "valloc",
     ];
 
     let replacements = [
+        // Prefixed jemalloc.
         crate::api::_rjem_malloc as usize,
         crate::api::_rjem_mallocx as usize,
         crate::api::_rjem_calloc as usize,
@@ -379,18 +418,66 @@ fn hook_jemalloc() {
         crate::api::_rjem_mallctlnametomib as usize,
         crate::api::_rjem_mallctlbymib as usize,
         crate::api::_rjem_malloc_stats_print as usize,
+        crate::api::_rjem_memalign as usize,
+        crate::api::_rjem_valloc as usize,
+
+        // Unprefixed jemalloc.
+        crate::api::_rjem_malloc as usize,
+        crate::api::_rjem_mallocx as usize,
+        crate::api::_rjem_calloc as usize,
+        crate::api::_rjem_sdallocx as usize,
+        crate::api::_rjem_realloc as usize,
+        crate::api::_rjem_rallocx as usize,
+        crate::api::_rjem_nallocx as usize,
+        crate::api::_rjem_xallocx as usize,
+        crate::api::_rjem_malloc_usable_size as usize,
+        crate::api::_rjem_mallctl as usize,
+        crate::api::_rjem_posix_memalign as usize,
+        crate::api::_rjem_aligned_alloc as usize,
+        crate::api::_rjem_free as usize,
+        crate::api::_rjem_sallocx as usize,
+        crate::api::_rjem_dallocx as usize,
+        crate::api::_rjem_mallctlnametomib as usize,
+        crate::api::_rjem_mallctlbymib as usize,
+        crate::api::_rjem_malloc_stats_print as usize,
+        crate::api::_rjem_memalign as usize,
+        crate::api::_rjem_valloc as usize,
     ];
 
     let addresses = find_internal_syms( &names );
     if addresses.iter().all( |&address| address == 0 ) {
-        info!( "Couldn't find jemalloc in the executable's address space" );
         return;
     }
 
+    let index_mallocx = names.iter().position( |name| *name == "mallocx" ).unwrap();
+    let index_sdallocx = names.iter().position( |name| *name == "sdallocx" ).unwrap();
+    let index_rallocx = names.iter().position( |name| *name == "rallocx" ).unwrap();
+
+    let enable_extended_hooks =
+        addresses[ index_mallocx ] != 0 ||
+        addresses[ index_sdallocx ] != 0 ||
+        addresses[ index_rallocx ] != 0;
+
+    let extended_hooks_offset = names.iter().position( |name| !name.starts_with( "_rjem_" ) ).unwrap();
+
+    if enable_extended_hooks {
+        info!( "Attaching prefixed jemalloc hooks..." );
+        hook_symbols( &names, &addresses, &replacements );
+    } else {
+        info!( "Attaching unprefixed jemalloc hooks..." );
+        hook_symbols( &names[ ..extended_hooks_offset ], &addresses[ ..extended_hooks_offset ], &replacements[ ..extended_hooks_offset ] );
+
+        #[cfg(not(feature = "jemalloc"))]
+        USING_UNPREFIXED_JEMALLOC.store( true, Ordering::SeqCst );
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn hook_symbols( names: &[&str], addresses: &[usize], replacements: &[usize] ) {
     assert_eq!( names.len(), replacements.len() );
     assert_eq!( names.len(), addresses.len() );
 
-    for ((name, replacement), address) in names.iter().zip( replacements ).zip( addresses ) {
+    for ((&name, &replacement), &address) in names.iter().zip( replacements ).zip( addresses ) {
         if address == 0 {
             info!( "Symbol not found: \"{}\"", name );
             continue;
