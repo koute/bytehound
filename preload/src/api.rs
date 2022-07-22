@@ -52,6 +52,8 @@ extern "C" {
 }
 
 extern "C" {
+    #[link_name = "_rjem_mp_malloc"]
+    fn jem_malloc_real( size: size_t ) -> *mut c_void;
     #[link_name = "_rjem_mp_mallocx"]
     fn jem_mallocx_real( size: size_t, flags: c_int ) -> *mut c_void;
     #[link_name = "_rjem_mp_calloc"]
@@ -379,11 +381,12 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_malloc( requested_size: size_t ) -> *mut c_void {
-    _rjem_mallocx( requested_size, 0 )
+    jemalloc_allocate( requested_size, JeAllocationKind::Malloc )
 }
 
 enum JeAllocationKind {
-    Malloc( c_int ),
+    Malloc,
+    MallocX( c_int ),
     Calloc,
     Aligned( size_t )
 }
@@ -407,7 +410,8 @@ unsafe fn jemalloc_allocate( requested_size: usize, kind: JeAllocationKind ) -> 
 
     let mut thread = StrongThreadHandle::acquire();
     let (pointer, flags) = match kind {
-        JeAllocationKind::Malloc( flags ) => (jem_mallocx_real( effective_size, flags ), translate_jemalloc_flags( flags )),
+        JeAllocationKind::Malloc => (jem_malloc_real( effective_size ), event::ALLOC_FLAG_JEMALLOC),
+        JeAllocationKind::MallocX( flags ) => (jem_mallocx_real( effective_size, flags ), translate_jemalloc_flags( flags )),
         JeAllocationKind::Calloc => (jem_calloc_real( 1, effective_size ), event::ALLOC_FLAG_JEMALLOC | event::ALLOC_FLAG_CALLOC),
         JeAllocationKind::Aligned( alignment ) => (jem_memalign_real( alignment, effective_size as size_t ), event::ALLOC_FLAG_JEMALLOC),
     };
@@ -451,7 +455,7 @@ unsafe fn jemalloc_allocate( requested_size: usize, kind: JeAllocationKind ) -> 
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_void {
-    jemalloc_allocate( requested_size, JeAllocationKind::Malloc( flags ) )
+    jemalloc_allocate( requested_size, JeAllocationKind::MallocX( flags ) )
 }
 
 #[cfg_attr(not(test), no_mangle)]
