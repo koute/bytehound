@@ -60,7 +60,7 @@ fn lock_thread_registry< R >( callback: impl FnOnce( &mut ThreadRegistry ) -> R 
     callback( &mut THREAD_REGISTRY.lock() )
 }
 
-static PROCESSING_THREAD_HANDLE: SpinLock< Option< std::thread::JoinHandle< () > > > = SpinLock::new( None );
+static PROCESSING_THREAD_HANDLE: SpinLock< Option< libc::pthread_t > > = SpinLock::new( None );
 
 pub static mut SYM_REGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
 pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
@@ -128,7 +128,9 @@ fn try_sync_processing_thread_destruction() {
     let state = STATE.load( Ordering::SeqCst );
     if state == STATE_STOPPING || state == STATE_DISABLED {
         if let Some( handle ) = handle.take() {
-            let _ = handle.join();
+            unsafe {
+                libc::pthread_join( handle, std::ptr::null_mut() );
+            }
         }
     }
 }
@@ -187,7 +189,7 @@ fn spawn_processing_thread() {
     let mut thread_handle = PROCESSING_THREAD_HANDLE.lock();
     assert!( !THREAD_RUNNING.load( Ordering::SeqCst ) );
 
-    let new_handle = thread::Builder::new().name( "mem-prof".into() ).spawn( move || {
+    extern "C" fn thread_main( _: *mut libc::c_void ) -> *mut libc::c_void {
         TLS.try_with( |tls| {
             unsafe {
                 *tls.is_internal.get() = true;
@@ -225,13 +227,26 @@ fn spawn_processing_thread() {
         if let Err( err ) = result {
             std::panic::resume_unwind( err );
         }
-    }).expect( "failed to start the main memory profiler thread" );
+
+        std::ptr::null_mut()
+    }
+
+    let mut thread: libc::pthread_t;
+    unsafe {
+        thread = std::mem::zeroed();
+        if libc::pthread_create( &mut thread, std::ptr::null(), thread_main, std::ptr::null_mut() ) < 0 {
+            panic!( "failed to start the main memory profiler thread: {}", std::io::Error::last_os_error() );
+        }
+        if libc::pthread_setname_np( thread, b"mem-prof".as_ptr() as *const libc::c_char ) < 0 {
+            warn!( "Failed to set the name of the processing thread: {}", std::io::Error::last_os_error() );
+        }
+    }
 
     while THREAD_RUNNING.load( Ordering::SeqCst ) == false {
         thread::yield_now();
     }
 
-    *thread_handle = Some( new_handle );
+    *thread_handle = Some( thread );
 }
 
 #[cfg(target_arch = "x86_64")]
