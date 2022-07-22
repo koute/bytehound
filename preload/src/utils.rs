@@ -61,7 +61,7 @@ impl std::fmt::Debug for Buffer {
 }
 
 impl Buffer {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         unsafe {
             Self {
                 buffer: MaybeUninit::< [MaybeUninit< u8 >; STACK_BUFFER_LEN] >::uninit().assume_init(),
