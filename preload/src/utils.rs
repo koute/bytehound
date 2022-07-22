@@ -49,6 +49,17 @@ pub struct Buffer {
     length: usize
 }
 
+impl std::fmt::Debug for Buffer {
+    fn fmt( &self, formatter: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        let slice = self.as_slice();
+        if let Ok( string ) = std::str::from_utf8( slice ) {
+            formatter.write_str( string )
+        } else {
+            self.buffer[ 0..self.length ].fmt( formatter )
+        }
+    }
+}
+
 impl Buffer {
     pub fn new() -> Self {
         unsafe {
