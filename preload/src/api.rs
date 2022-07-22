@@ -704,7 +704,7 @@ pub unsafe extern "C" fn _rjem_free( pointer: *mut c_void ) {
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_sallocx( _pointer: *const c_void, _flags: c_int ) -> size_t {
-    todo!( "_rjem_dallocx" );
+    todo!( "_rjem_sallocx" );
 }
 
 #[cfg_attr(not(test), no_mangle)]
