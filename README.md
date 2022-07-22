@@ -44,7 +44,7 @@
 
 ## Building
 
-1. Install GCC, Rust nightly and the Yarn package manager (for building the GUI)
+1. Install GCC, Rust nightly (**only 1.62 or newer is supported**) and the Yarn package manager (for building the GUI)
 2. Build it:
 
         $ cargo build --release -p bytehound-preload
