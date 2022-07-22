@@ -70,6 +70,17 @@ impl Buffer {
         }
     }
 
+    pub const fn from_fixed_slice< const N: usize >( slice: &[u8; N] ) -> Self {
+        let mut buffer = Self::new();
+        let mut nth = 0;
+        while nth < N {
+            buffer.buffer[ nth ] = MaybeUninit::new( slice[ nth ] );
+            nth += 1;
+        }
+        buffer.length = N;
+        buffer
+    }
+
     pub fn from_slice( slice: &[u8] ) -> Option< Self > {
         if slice.len() > STACK_BUFFER_LEN {
             return None;
