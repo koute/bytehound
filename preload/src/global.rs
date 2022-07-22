@@ -378,6 +378,10 @@ fn hook_jemalloc() {
             continue;
         }
 
+        if replacement == address {
+            panic!( "tried to replace a symbol with itself: symbol='{}', address=0x{:016X}", name, replacement );
+        }
+
         let page = (address as usize & !(4096 - 1)) as *mut libc::c_void;
         unsafe {
             if libc::mprotect( page, 4096, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC ) < 0 {
