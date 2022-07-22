@@ -58,6 +58,8 @@ extern "C" {
     fn jem_calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
     #[link_name = "_rjem_mp_sdallocx"]
     fn jem_sdallocx_real( pointer: *mut c_void, _size: size_t, _flags: c_int );
+    #[link_name = "_rjem_mp_realloc"]
+    fn jem_realloc_real( old_pointer: *mut c_void, size: size_t ) -> *mut c_void;
     #[link_name = "_rjem_mp_rallocx"]
     fn jem_rallocx_real( old_pointer: *mut c_void, size: size_t, _flags: c_int ) -> *mut c_void;
     #[link_name = "_rjem_mp_xallocx"]
@@ -500,14 +502,23 @@ pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: s
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_realloc( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
-    _rjem_rallocx( old_pointer, requested_size, 0 )
+    jemalloc_reallocate( old_pointer, requested_size, None )
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, flags: c_int ) -> *mut c_void {
+    jemalloc_reallocate( old_pointer, requested_size, Some( flags ) )
+}
+
+unsafe fn jemalloc_reallocate( old_pointer: *mut c_void, requested_size: size_t, flags: Option< c_int > ) -> *mut c_void {
     let old_address = match NonZeroUsize::new( old_pointer as usize ) {
         Some( old_address ) => old_address,
-        None => return _rjem_mallocx( requested_size, flags )
+        None => return
+            if let Some( flags ) = flags {
+                _rjem_mallocx( requested_size, flags )
+            } else {
+                _rjem_malloc( requested_size )
+            }
     };
 
     let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
@@ -521,7 +532,11 @@ pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size
     debug_assert!( id.is_valid() );
 
     let mut thread = StrongThreadHandle::acquire();
-    let new_pointer = jem_rallocx_real( old_pointer, effective_size, flags );
+    let (new_pointer, flags) = if let Some( flags ) = flags {
+        (jem_rallocx_real( old_pointer, effective_size, flags ), translate_jemalloc_flags( flags ))
+    } else {
+        (jem_realloc_real( old_pointer, effective_size ), translate_jemalloc_flags( 0 ))
+    };
     if id.is_untracked() && !crate::global::is_actively_running() {
         thread = None;
     }
@@ -552,7 +567,7 @@ pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size
         let allocation = InternalAllocation {
             address: new_address,
             size: requested_size as usize,
-            flags: translate_jemalloc_flags( flags ),
+            flags,
             tid: thread.system_tid(),
             extra_usable_space: 0,
             preceding_free_space: 0
