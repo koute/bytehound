@@ -8,7 +8,7 @@ use nwind::{
     LocalUnwindContext,
     UnwindControl
 };
-use parking_lot::{RwLock, RwLockWriteGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 
 use crate::global::StrongThreadHandle;
 use crate::spin_lock::SpinLock;
@@ -212,11 +212,11 @@ lazy_static! {
 }
 
 pub unsafe fn register_frame_by_pointer( fde: *const u8 ) {
-    AS.write().register_fde_from_pointer( fde )
+    AS.write().unwrap().register_fde_from_pointer( fde )
 }
 
 pub fn deregister_frame_by_pointer( fde: *const u8 ) {
-    AS.write().unregister_fde_from_pointer( fde )
+    AS.write().unwrap().unregister_fde_from_pointer( fde )
 }
 
 static mut PERF: Option< SpinLock< Perf > > = None;
@@ -254,19 +254,17 @@ pub fn prepare_to_start_unwinding() {
     }
 }
 
-fn reload() -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
-    let mut address_space = AS.write();
+fn reload() {
+    let mut address_space = AS.write().unwrap();
     info!( "Reloading address space" );
     let update = address_space.reload().unwrap();
     crate::event::send_event( crate::event::InternalEvent::AddressSpaceUpdated {
         maps: update.maps,
         new_binaries: update.new_binaries
     });
-
-    RwLockWriteGuard::downgrade( address_space )
 }
 
-fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
+fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> RwLockReadGuard< 'static, LocalAddressSpace > {
     if unsafe { perf.unsafe_as_ref().are_events_pending() } {
         let mut perf = perf.lock();
         let mut reload_address_space = false;
@@ -285,21 +283,21 @@ fn reload_if_necessary_perf_event_open( perf: &SpinLock< Perf > ) -> parking_lot
         }
 
         if reload_address_space {
-            return reload();
+            reload();
         }
     }
 
-    AS.read()
+    AS.read().unwrap()
 }
 
-fn reload_if_necessary_dl_iterate_phdr( last_state: &mut (u64, u64) ) -> parking_lot::RwLockReadGuard< 'static, LocalAddressSpace > {
+fn reload_if_necessary_dl_iterate_phdr( last_state: &mut (u64, u64) ) -> RwLockReadGuard< 'static, LocalAddressSpace > {
     let dl_state = get_dl_state();
     if *last_state != dl_state {
         *last_state = dl_state;
-        return reload();
+        reload();
     }
 
-    AS.read()
+    AS.read().unwrap()
 }
 
 fn get_dl_state() -> (u64, u64) {
@@ -444,7 +442,7 @@ pub fn grab( tls: &mut StrongThreadHandle ) -> Backtrace {
         if backtrace.frames()[ ..backtrace.frames().len() - 1 ] != expected[ ..expected.len() - 1 ] {
             info!( "/proc/self/maps:\n{}", String::from_utf8_lossy( &::std::fs::read( "/proc/self/maps" ).unwrap() ).trim() );
 
-            let address_space = AS.read();
+            let address_space = AS.read().unwrap();
             info!( "Expected: ({} frames)", expected.len() );
             for (nth, &address) in expected.iter().enumerate() {
                 info!( "({:02})    {:?}", nth, address_space.decode_symbol_once( address ) );
