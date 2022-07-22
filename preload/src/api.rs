@@ -481,7 +481,7 @@ pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: s
     };
 
     let usable_size = jem_malloc_usable_size_real( pointer );
-    debug_assert!( usable_size >= effective_size );
+    debug_assert!( usable_size >= effective_size, "tried to deallocate an allocation without space for the tracking pointer: 0x{:X}", pointer as usize );
     let tracking_pointer = tracking_pointer( pointer, usable_size );
     let id = std::ptr::read_unaligned( tracking_pointer );
     debug_assert!( id.is_valid() );
