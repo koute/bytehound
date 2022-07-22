@@ -521,6 +521,7 @@ dependencies = [
  "perf_event_open",
  "sc",
  "smallvec 1.6.1",
+ "thread-local-reentrant",
  "tikv-jemalloc-sys 0.4.2+5.2.1-patched.2",
  "tikv-jemallocator 0.4.1",
 ]
@@ -1549,7 +1550,7 @@ dependencies = [
 [[package]]
 name = "nwind"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=20e4ddc#20e4ddc2bf8895d96664ab839a64c36f416023c8"
+source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
 dependencies = [
  "addr2line",
  "byteorder",
@@ -1565,6 +1566,7 @@ dependencies = [
  "rustc-demangle",
  "scroll",
  "speedy",
+ "thread-local-reentrant",
 ]
 
 [[package]]
@@ -1681,7 +1683,7 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 [[package]]
 name = "perf_event_open"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=20e4ddc#20e4ddc2bf8895d96664ab839a64c36f416023c8"
+source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
 dependencies = [
  "byteorder",
  "libc",
@@ -1800,7 +1802,7 @@ dependencies = [
 [[package]]
 name = "proc-maps"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=20e4ddc#20e4ddc2bf8895d96664ab839a64c36f416023c8"
+source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
 
 [[package]]
 name = "quick-error"
@@ -2530,6 +2532,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
 dependencies = [
  "unicode-width",
+]
+
+[[package]]
+name = "thread-local-reentrant"
+version = "0.1.0"
+source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
