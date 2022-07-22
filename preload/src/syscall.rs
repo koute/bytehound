@@ -29,8 +29,10 @@ macro_rules! syscall {
 }
 
 pub fn open( path: &CStr, flags: libc::c_int, mode: libc::c_int ) -> libc::c_int {
-    let path = path.as_ptr();
+    open_raw_cstr( path.as_ptr(), flags, mode )
+}
 
+pub fn open_raw_cstr( path: *const libc::c_char, flags: libc::c_int, mode: libc::c_int ) -> libc::c_int {
     #[cfg(not(target_arch = "aarch64"))]
     unsafe {
         syscall!( OPEN, path, flags, mode ) as _

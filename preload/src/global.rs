@@ -241,19 +241,19 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
         use goblin::elf::section_header::{SHT_DYNSYM, SHT_SYMTAB};
         use goblin::elf::sym::sym64::Sym;
 
-        let mut path = libc::getauxval( libc::AT_EXECFN ) as *const libc::c_char;
-        let mut path_buffer: [libc::c_char; libc::PATH_MAX as usize] = [0; libc::PATH_MAX as usize];
-        if path.is_null() {
-            if libc::realpath( b"/proc/self/exe\0".as_ptr() as _, path_buffer.as_mut_ptr() ).is_null() {
-                panic!( "couldn't find path to itself: {}", std::io::Error::last_os_error() );
-            } else {
-                path = path_buffer.as_ptr();
-            }
-        }
-
-        let fd = libc::open( path, libc::O_RDONLY );
+        let self_path = b"/proc/self/exe\0".as_ptr() as _;
+        let mut fd = crate::syscall::open_raw_cstr( self_path, libc::O_RDONLY, 0 );
         if fd < 0 {
-            panic!( "failed to open {:?}: {}", std::ffi::CStr::from_ptr( path ), std::io::Error::last_os_error() );
+            warn!( "failed to open /proc/self/exe: {}", std::io::Error::from_raw_os_error( fd ) );
+            let path = libc::getauxval( libc::AT_EXECFN ) as *const libc::c_char;
+            if !path.is_null() {
+                fd = crate::syscall::open_raw_cstr( path, libc::O_RDONLY, 0 );
+                if fd < 0 {
+                    panic!( "failed to open {:?}: {}", std::ffi::CStr::from_ptr( path ), std::io::Error::from_raw_os_error( fd ) );
+                }
+            } else {
+                panic!( "couldn't open /proc/self/exe" );
+            }
         }
 
         let mut buf: libc::stat64 = std::mem::zeroed();
@@ -305,8 +305,14 @@ fn find_internal_syms< const N: usize >( names: &[&str; N] ) -> [usize; N] {
             }
         }
 
-        if syscall::munmap( executable, size ) != 0 {
-            warn!( "munmap failed: {}", std::io::Error::last_os_error() );
+        let errcode = syscall::munmap( executable, size );
+        if errcode < 0 {
+            warn!( "munmap failed: {}", std::io::Error::from_raw_os_error( errcode ) );
+        }
+
+        let errcode = syscall::close( fd );
+        if errcode < 0 {
+            warn!( "close failed: {}", std::io::Error::from_raw_os_error( errcode ) );
         }
     }
 
