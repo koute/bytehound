@@ -24,13 +24,13 @@ smallvec = { version = "1", features = ["union"] }
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"
-rev = "20e4ddc"
+rev = "18bd8d3"
 features = ["log", "local-unwinding"]
 default-features = false
 
 [dependencies.perf_event_open]
 git = "https://github.com/koute/not-perf.git"
-rev = "20e4ddc"
+rev = "18bd8d3"
 
 [dependencies.common]
 path = "../common"
