@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-use std::env;
-use std::ffi::OsStr;
+use crate::utils::Buffer;
 
 pub struct Opts {
     is_initialized: bool,
@@ -12,8 +10,8 @@ pub struct Opts {
     pub enable_server: bool,
     pub enable_shadow_stack: bool,
     pub grab_backtraces_on_free: bool,
-    pub include_file: Option< String >,
-    pub output_path_pattern: Cow< 'static, str >,
+    pub include_file: Option< Buffer >,
+    pub output_path_pattern: Buffer,
     pub register_sigusr1: bool,
     pub register_sigusr2: bool,
     pub use_perf_event_open: bool,
@@ -38,7 +36,7 @@ static mut OPTS: Opts = Opts {
     enable_shadow_stack: true,
     grab_backtraces_on_free: true,
     include_file: None,
-    output_path_pattern: Cow::Borrowed( "memory-profiling_%e_%t_%p.dat" ),
+    output_path_pattern: Buffer::from_fixed_slice( b"memory-profiling_%e_%t_%p.dat" ),
     register_sigusr1: true,
     register_sigusr2: true,
     use_perf_event_open: true,
@@ -53,54 +51,47 @@ static mut OPTS: Opts = Opts {
 };
 
 trait ParseVar: Sized {
-    fn parse_var( value: &OsStr ) -> Option< Self >;
+    fn parse_var( value: Buffer ) -> Option< Self >;
 }
 
 impl ParseVar for bool {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
-        Some( value == "1" || value == "true" )
+    fn parse_var( value: Buffer ) -> Option< Self > {
+        Some( value.as_slice() == b"1" || value.as_slice() == b"true" )
     }
 }
 
 impl ParseVar for u16 {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
+    fn parse_var( value: Buffer ) -> Option< Self > {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for u32 {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
+    fn parse_var( value: Buffer ) -> Option< Self > {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for u64 {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
+    fn parse_var( value: Buffer ) -> Option< Self > {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for usize {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
+    fn parse_var( value: Buffer ) -> Option< Self > {
         value.to_str()?.parse().ok()
     }
 }
 
-impl ParseVar for String {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
-        value.to_str().map( |value| value.into() )
-    }
-}
-
-impl< 'a > ParseVar for Cow< 'a, str > {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
-        let value = String::parse_var( value )?;
-        Some( value.into() )
+impl ParseVar for Buffer {
+    fn parse_var( value: Buffer ) -> Option< Self > {
+        value.to_str().and_then( |value| Buffer::from_slice( value.as_bytes() ) )
     }
 }
 
 impl< T > ParseVar for Option< T > where T: ParseVar {
-    fn parse_var( value: &OsStr ) -> Option< Self > {
+    fn parse_var( value: Buffer ) -> Option< Self > {
         if let Some( value ) = T::parse_var( value ) {
             Some( Some( value ) )
         } else {
@@ -114,9 +105,9 @@ macro_rules! opts {
         $(
             let var = $var;
             let name = $name;
-            *var = env::var_os( $name )
-                .and_then( |value| ParseVar::parse_var( &value ) )
-                .unwrap_or( (*var).clone() );
+            if let Some( new_value ) = crate::syscall::getenv( $name.as_bytes() ).and_then( ParseVar::parse_var ) {
+                *var = new_value;
+            }
 
             info!( "    {:40} = {:?}", name, *var );
         )+
@@ -178,8 +169,8 @@ pub fn emit_partial_backtraces() -> bool {
 
     lazy_static! {
         static ref VALUE: bool = {
-            let value = env::var_os( "MEMORY_PROFILER_EMIT_PARTIAL_BACKTRACES" )
-                .map( |value| value == "1" )
+            let value = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_EMIT_PARTIAL_BACKTRACES" ) }
+                .map( |value| value.as_slice() == b"1" )
                 .unwrap_or( true );
 
             if value {

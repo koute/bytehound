@@ -184,7 +184,7 @@ fn write_included_files< U: Write >( serializer: &mut U ) -> io::Result< () > {
     };
 
     info!( "Will write any files matching the pattern: {:?}", pattern );
-    match glob::glob( &pattern ) {
+    match glob::glob( pattern.to_str().unwrap() ) {
         Ok( paths ) => {
             let mut any = false;
             for path in paths {

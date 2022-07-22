@@ -371,7 +371,7 @@ fn send_broadcast( id: DataId, initial_timestamp: Timestamp, listener_port: u16 
 fn initialize_output_file() -> Option< (File, PathBuf) > {
     static COUNTER: AtomicUsize = AtomicUsize::new( 0 );
 
-    let output_path = generate_filename( opt::get().output_path_pattern.as_bytes(), Some( &COUNTER ) );
+    let output_path = generate_filename( opt::get().output_path_pattern.as_slice(), Some( &COUNTER ) );
     let output_path = output_path.to_str().unwrap();
     if output_path == "" {
         return None;
