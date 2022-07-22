@@ -31,11 +31,14 @@ impl ThreadRegistry {
 }
 
 const STATE_UNINITIALIZED: usize = 0;
-const STATE_DISABLED: usize = 1;
-const STATE_STARTING: usize = 2;
-const STATE_ENABLED: usize = 3;
-const STATE_STOPPING: usize = 4;
-const STATE_PERMANENTLY_DISABLED: usize = 5;
+const STATE_INITIALIZING_STAGE_1: usize = 1;
+const STATE_PARTIALLY_INITIALIZED: usize = 2;
+const STATE_INITIALIZING_STAGE_2: usize = 3;
+const STATE_DISABLED: usize = 4;
+const STATE_STARTING: usize = 5;
+const STATE_ENABLED: usize = 6;
+const STATE_STOPPING: usize = 7;
+const STATE_PERMANENTLY_DISABLED: usize = 8;
 static STATE: AtomicUsize = AtomicUsize::new( STATE_UNINITIALIZED );
 
 static THREAD_RUNNING: AtomicBool = AtomicBool::new( false );
@@ -424,12 +427,70 @@ fn resolve_original_syms() {
     }
 }
 
+fn initialize_stage_1() {
+    crate::init::initialize_logger();
+    info!( "Version: {}", env!( "CARGO_PKG_VERSION" ) );
+
+    unsafe {
+        crate::opt::initialize();
+    }
+
+    if !crate::opt::get().disabled_by_default {
+        toggle();
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    hook_jemalloc();
+
+    info!( "Stage 1 initialization finished" );
+}
+
+fn initialize_stage_2() {
+    info!( "Initializing stage 2..." );
+
+    crate::init::initialize_atexit_hook();
+    crate::init::initialize_signal_handlers();
+
+    std::env::remove_var( "LD_PRELOAD" );
+
+    info!( "Stage 2 initialization finished" );
+}
+
+static ALLOW_STAGE_2: AtomicBool = AtomicBool::new( false );
+
+#[used]
+#[link_section = ".init_array.00099"]
+static INIT_ARRAY: unsafe extern "C" fn( libc::c_int, *mut *mut u8, *mut *mut u8 ) = {
+    unsafe extern "C" fn function( _argc: libc::c_int, _argv: *mut *mut u8, _envp: *mut *mut u8 ) {
+        ALLOW_STAGE_2.store( true, Ordering::SeqCst );
+    }
+    function
+};
+
 #[cold]
 #[inline(never)]
-fn try_enable( state: usize ) -> bool {
+fn try_enable( mut state: usize ) -> bool {
     if state == STATE_UNINITIALIZED {
-        STATE.store( STATE_DISABLED, Ordering::SeqCst );
-        crate::init::startup();
+        if STATE.compare_exchange( STATE_UNINITIALIZED, STATE_INITIALIZING_STAGE_1, Ordering::SeqCst, Ordering::SeqCst ).is_ok() {
+            initialize_stage_1();
+            STATE.store( STATE_PARTIALLY_INITIALIZED, Ordering::SeqCst );
+            state = STATE_PARTIALLY_INITIALIZED;
+        } else {
+            return false;
+        }
+    }
+
+    if state == STATE_PARTIALLY_INITIALIZED {
+        if !ALLOW_STAGE_2.load( Ordering::SeqCst ) {
+            return false;
+        }
+
+        if STATE.compare_exchange( STATE_PARTIALLY_INITIALIZED, STATE_INITIALIZING_STAGE_2, Ordering::SeqCst, Ordering::SeqCst ).is_ok() {
+            initialize_stage_2();
+            STATE.store( STATE_DISABLED, Ordering::SeqCst );
+        } else {
+            return false;
+        }
     }
 
     if DESIRED_STATE.load( Ordering::SeqCst ) == DESIRED_STATE_DISABLED {
@@ -468,9 +529,6 @@ fn try_enable( state: usize ) -> bool {
     });
 
     resolve_original_syms();
-
-    #[cfg(target_arch = "x86_64")]
-    hook_jemalloc();
 
     crate::allocation_tracker::initialize();
 

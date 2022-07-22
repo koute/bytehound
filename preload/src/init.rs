@@ -1,11 +1,9 @@
-use std::env;
-
 use crate::global::on_exit;
 use crate::logger;
 use crate::opt;
 use crate::utils::generate_filename;
 
-fn initialize_logger() {
+pub fn initialize_logger() {
     static mut SYSCALL_LOGGER: logger::SyscallLogger = logger::SyscallLogger::empty();
     static mut FILE_LOGGER: logger::FileLogger = logger::FileLogger::empty();
     let log_level = if let Some( value ) = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_LOG" ) } {
@@ -42,7 +40,7 @@ fn initialize_logger() {
     log::set_max_level( log_level );
 }
 
-fn initialize_atexit_hook() {
+pub fn initialize_atexit_hook() {
     info!( "Setting atexit hook..." );
     unsafe {
         let result = libc::atexit( on_exit );
@@ -52,7 +50,7 @@ fn initialize_atexit_hook() {
     }
 }
 
-fn initialize_signal_handlers() {
+pub fn initialize_signal_handlers() {
     extern "C" fn sigusr_handler( signal: libc::c_int ) {
         let signal_name = match signal {
             libc::SIGUSR1 => "SIGUSR1",
@@ -77,23 +75,4 @@ fn initialize_signal_handlers() {
             libc::signal( libc::SIGUSR2, sigusr_handler as libc::sighandler_t );
         }
     }
-}
-
-pub fn startup() {
-    initialize_logger();
-    info!( "Version: {}", env!( "CARGO_PKG_VERSION" ) );
-
-    unsafe {
-        opt::initialize();
-    }
-
-    initialize_atexit_hook();
-    if !opt::get().disabled_by_default {
-        crate::global::toggle();
-    }
-
-    initialize_signal_handlers();
-
-    env::remove_var( "LD_PRELOAD" );
-    info!( "Startup initialization finished" );
 }
