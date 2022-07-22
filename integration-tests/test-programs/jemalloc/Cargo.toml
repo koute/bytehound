@@ -1,0 +1,2 @@
+[workspace]
+members = ["jemalloc-common", "jemalloc-v05", "jemalloc-v05-unprefixed"]

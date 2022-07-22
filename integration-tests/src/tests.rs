@@ -573,13 +573,18 @@ fn run_jemalloc_test( name: &str ) {
 }
 
 #[test]
-fn test_jemalloc_v03() {
+fn test_jemalloc_v03_prefixed() {
     run_jemalloc_test( "jemalloc-v03" );
 }
 
 #[test]
-fn test_jemalloc_v05() {
+fn test_jemalloc_v05_prefixed() {
     run_jemalloc_test( "jemalloc-v05" );
+}
+
+#[test]
+fn test_jemalloc_v05_unprefixed() {
+    run_jemalloc_test( "jemalloc-v05-unprefixed" );
 }
 
 #[test]

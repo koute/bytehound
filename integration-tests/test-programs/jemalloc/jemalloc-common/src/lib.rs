@@ -25,6 +25,8 @@ unsafe fn free( pointer: *mut u8, size: usize ) {
 
 #[inline(never)]
 pub unsafe fn run_test() {
+    assert_eq!( CONSTRUCTOR_RAN, true );
+
     alloc( 10 );
     let a1 = alloc( 100 );
     let a2 = alloc( 1000 );
@@ -39,3 +41,39 @@ pub unsafe fn run_test() {
     write_volatile( a5, 1 );
     libc::free( a5 as _ );
 }
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct Elf_auxv_t {
+    a_type: usize,
+    a_val: *const (),
+}
+
+const AT_NULL: u32 = 0;
+static mut CONSTRUCTOR_RAN: bool = false;
+
+#[used]
+#[link_section = ".init_array.00099"]
+static INIT_ARRAY: unsafe extern "C" fn( libc::c_int, *mut *mut u8, *mut *mut u8 ) = {
+    unsafe extern "C" fn function( _argc: libc::c_int, _argv: *mut *mut u8, mut envp: *mut *mut u8 ) {
+        while !(*envp).is_null() {
+            envp = envp.add( 1 );
+        }
+
+        let mut auxp: *const Elf_auxv_t = envp.add(1).cast();
+        let mut count = 0;
+        loop {
+            let Elf_auxv_t { a_type, a_val } = *auxp;
+            match a_type as _ {
+                AT_NULL => break,
+                _ => (),
+            }
+            auxp = auxp.add(1);
+            count += 1;
+        }
+
+        assert_ne!( count, 0 );
+        CONSTRUCTOR_RAN = true;
+    }
+    function
+};
