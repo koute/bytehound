@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 name = "bytehound"
 
 [dependencies]
-parking_lot = { version = "0.11" }
+parking_lot = { version = "0.12" }
 libc = "0.2"
 sc = { version = "0.2", optional = true }
 lazy_static = "1"
