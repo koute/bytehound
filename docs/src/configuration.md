@@ -73,6 +73,12 @@ cleared and all of the allocations contained within will be written to disk, reg
 
 Only makes sense when `MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS` is turned on.
 
+### `MEMORY_PROFILER_GRAB_BACKTRACES_ON_FREE`
+
+*Default: `1`*
+
+When set to `1` the backtraces will be also be gathered when the memory is freed.
+
 ### `MEMORY_PROFILER_DISABLE_BY_DEFAULT`
 
 *Default: `0`*
