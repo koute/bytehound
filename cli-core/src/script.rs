@@ -1821,6 +1821,28 @@ impl Engine {
             }))
         });
 
+        engine.register_result_fn( "only_matching_deallocation_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
+            let mut set = HashSet::new();
+            gather_backtrace_ids( &mut set, ids )?;
+
+            Ok( list.add_filter( |filter| {
+                if let Some( ref mut existing ) = filter.only_matching_deallocation_backtraces {
+                    *existing = existing.intersection( &set ).copied().collect();
+                } else {
+                    filter.only_matching_deallocation_backtraces = Some( set );
+                }
+            }))
+        });
+
+        engine.register_result_fn( "only_not_matching_deallocation_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
+            let mut set = HashSet::new();
+            gather_backtrace_ids( &mut set, ids )?;
+
+            Ok( list.add_filter( |filter| {
+                filter.only_not_matching_deallocation_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
+            }))
+        });
+
         macro_rules! register_filter {
             ($setter:ident, $name:ident, $src_ty:ty => $dst_ty:ty) => {
                 engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $src_ty|
@@ -1873,6 +1895,8 @@ impl Engine {
         register_filter!( set_min, only_chain_length_at_most, i64 => u32 );
         register_filter!( set_max, only_chain_alive_for_at_least, Duration );
         register_filter!( set_min, only_chain_alive_for_at_most, Duration );
+        register_filter!( set_max, only_position_in_chain_at_least, i64 => u32 );
+        register_filter!( set_min, only_position_in_chain_at_most, i64 => u32 );
 
         register_filter!( set_max, only_group_allocations_at_least, i64 => usize );
         register_filter!( set_min, only_group_allocations_at_most, i64 => usize );
@@ -1903,6 +1927,7 @@ impl Engine {
         });
 
         register_filter!( only_leaked, bool );
+        register_filter!( only_chain_leaked, bool );
         register_filter!( only_temporary, bool );
         register_filter!( only_ptmalloc_mmaped, bool );
         register_filter!( only_ptmalloc_not_mmaped, bool );
@@ -2520,6 +2545,8 @@ impl ToCode for BasicFilter {
             only_chain_length_at_most
             only_chain_alive_for_at_least
             only_chain_alive_for_at_most
+            only_position_in_chain_at_least
+            only_position_in_chain_at_most
 
             only_group_allocations_at_least
             only_group_allocations_at_most
@@ -2535,6 +2562,7 @@ impl ToCode for BasicFilter {
 
         out_bool! {
             only_leaked
+            only_chain_leaked
             only_temporary
             only_ptmalloc_mmaped
             only_ptmalloc_not_mmaped
