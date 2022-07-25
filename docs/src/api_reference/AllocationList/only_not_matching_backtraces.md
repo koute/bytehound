@@ -14,4 +14,4 @@ fn only_not_matching_backtraces(
 ) -> AllocationList
 ```
 
-Returns a new `AllocationList` with only the allocations that come from one of the given `backtrace_ids`.
+Returns a new `AllocationList` with only the allocations that do not come from one of the given `backtrace_ids`.
