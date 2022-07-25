@@ -281,8 +281,6 @@ pub enum LifetimeFilter {
     OnlyDeallocatedInCurrentRange,
     #[serde(rename = "only_temporary")]
     OnlyTemporary,
-    #[serde(rename = "only_chain_temporary")]
-    OnlyChainTemporary,
     #[serde(rename = "only_whole_group_leaked")]
     OnlyWholeGroupLeaked
 }

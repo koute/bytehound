@@ -369,7 +369,6 @@ const FIELDS = {
             only_not_deallocated_in_current_range: "Only not deallocated in current time range",
             only_deallocated_in_current_range: "Only deallocated in current time range",
             only_temporary: "Only temporary",
-            only_chain_temporary: "Only chain temporary",
             only_whole_group_leaked: "Only whole group leaked"
         },
         badge: {
@@ -378,7 +377,6 @@ const FIELDS = {
             only_not_deallocated_in_current_range: "Only not deallocated in current range",
             only_deallocated_in_current_range: "Only deallocated in current range",
             only_temporary: "Only temporary",
-            only_chain_temporary: "Only chain temporary",
             only_whole_group_leaked: "Only whole group leaked"
         }
     },

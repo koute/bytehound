@@ -78,7 +78,6 @@ pub struct BasicFilter {
     pub only_leaked: bool,
     pub only_chain_leaked: bool,
     pub only_temporary: bool,
-    pub only_chain_temporary: bool,
     pub only_ptmalloc_mmaped: bool,
     pub only_ptmalloc_not_mmaped: bool,
     pub only_ptmalloc_from_main_arena: bool,
@@ -423,23 +422,14 @@ impl BasicFilter {
             self.only_chain_alive_for_at_most.is_some() ||
             self.only_position_in_chain_at_least.is_some() ||
             self.only_position_in_chain_at_most.is_some() ||
-            self.only_chain_leaked ||
-            self.only_chain_temporary;
+            self.only_chain_leaked;
 
         let mut only_chain_leaked_or_deallocated_after = data.initial_timestamp;
         if self.only_chain_leaked {
             only_chain_leaked_or_deallocated_after = data.last_timestamp;
         }
 
-        let mut only_chain_deallocated_between_inclusive = None;
-        if self.only_chain_temporary {
-            if let Some( (ref mut min, ref mut max) ) = only_chain_deallocated_between_inclusive {
-                *min = std::cmp::max( *min, data.initial_timestamp );
-                *max = std::cmp::min( *max, data.last_timestamp );
-            } else {
-                only_chain_deallocated_between_inclusive = Some( (data.initial_timestamp, data.last_timestamp) );
-            }
-        }
+        let only_chain_deallocated_between_inclusive = None;
 
         let enable_group_filter =
             self.only_group_allocations_at_least.is_some() ||
