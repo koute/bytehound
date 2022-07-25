@@ -63,7 +63,7 @@ static INIT_ARRAY: unsafe extern "C" fn( libc::c_int, *mut *mut u8, *mut *mut u8
         let mut auxp: *const Elf_auxv_t = envp.add(1).cast();
         let mut count = 0;
         loop {
-            let Elf_auxv_t { a_type, a_val } = *auxp;
+            let Elf_auxv_t { a_type, .. } = *auxp;
             match a_type as _ {
                 AT_NULL => break,
                 _ => (),
