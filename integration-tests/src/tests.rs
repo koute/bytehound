@@ -331,13 +331,14 @@ fn compile_with_cargo( source: &str ) -> PathBuf {
     let source_path = repository_root().join( "integration-tests" ).join( "test-programs" ).join( source );
     let args: Vec< &str > = vec![ "build" ];
     let target_dir = build_root().join( "test-programs" );
-    run(
+    run_with_timeout(
         &source_path,
         "cargo",
         &args,
         &[
             ("CARGO_TARGET_DIR", target_dir.clone())
-        ]
+        ],
+        Duration::from_secs( 180 )
     ).assert_success();
 
     target_dir.join( "debug" )

@@ -100,10 +100,14 @@ pub struct ChildHandle {
 }
 
 impl ChildHandle {
-    pub fn wait( mut self ) -> CommandResult {
+    pub fn wait( self ) -> CommandResult {
+        self.wait_for( Duration::from_secs( 60 ) )
+    }
+
+    pub fn wait_for( mut self, duration: Duration ) -> CommandResult {
         let start = Instant::now();
         let mut status = None;
-        while start.elapsed() < Duration::from_secs( 60 ) {
+        while start.elapsed() < duration {
             status = self.child.try_wait().unwrap();
             if status.is_some() {
                 break;
@@ -187,6 +191,16 @@ pub fn run< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: &[(P, Q)] 
           Q: AsRef< OsStr >
 {
     run_in_the_background( cwd, executable, args, envs ).wait()
+}
+
+pub fn run_with_timeout< C, E, S, P, Q >( cwd: C, executable: E, args: &[S], envs: &[(P, Q)], timeout: Duration ) -> CommandResult
+    where C: AsRef< Path >,
+          E: AsRef< OsStr >,
+          S: AsRef< OsStr >,
+          P: AsRef< OsStr >,
+          Q: AsRef< OsStr >
+{
+    run_in_the_background( cwd, executable, args, envs ).wait_for( timeout )
 }
 
 pub fn assert_file_exists< P: AsRef< Path > >( path: P ) {
