@@ -139,6 +139,7 @@ def process root, section
                                 output_preprocessed << obj
                             when "runtime_error", "syntax_error"
                                 STDERR.puts "Error while running '#{chapter["path"]}': #{obj["message"]}"
+                                STDERR.puts "Script:\n```\n#{chunk.strip}\n```"
                                 exit 1
                             when "idle"
                                 break
