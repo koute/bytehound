@@ -2,7 +2,7 @@ FROM ubuntu:focal
 MAINTAINER Jan Bujak (j@exia.io)
 
 RUN apt-get update && \
-    DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends ca-certificates file gcc g++ git locales make qemu-user curl yarnpkg
+    DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends ca-certificates file gcc g++ git locales make qemu-user curl
 
 RUN locale-gen en_US.UTF-8 && \
     update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
@@ -49,6 +49,11 @@ RUN [ $USE_HOST_RUSTC -eq 1 ] || ./rustup-init --profile minimal --default-toolc
 RUN [ $USE_HOST_RUSTC -eq 1 ] || run-if-enabled aarch64-unknown-linux-gnu "rustup target add aarch64-unknown-linux-gnu"
 RUN [ $USE_HOST_RUSTC -eq 1 ] || run-if-enabled armv7-unknown-linux-gnueabihf "rustup target add armv7-unknown-linux-gnueabihf"
 RUN [ $USE_HOST_RUSTC -eq 1 ] || run-if-enabled mips64-unknown-linux-gnuabi64 "rustup target add mips64-unknown-linux-gnuabi64"
+
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
+RUN bash -c '. /home/user/.nvm/nvm.sh; nvm install 17.7.1'
+RUN bash -c '. /home/user/.nvm/nvm.sh; npm install --global yarn'
+ENV PATH=$PATH:/home/user/.nvm/versions/node/v17.7.1/bin
 
 ARG CARGO_TARGET_DIR=/home/user/cwd/target-docker
 ENV CARGO_TARGET_DIR=$CARGO_TARGET_DIR
