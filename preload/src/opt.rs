@@ -22,7 +22,8 @@ pub struct Opts {
     pub backtrace_cache_size_level_2: usize,
     pub cull_temporary_allocations: bool,
     pub temporary_allocation_lifetime_threshold: u64,
-    pub temporary_allocation_pending_threshold: Option< usize >
+    pub temporary_allocation_pending_threshold: Option< usize >,
+    pub track_child_processes: bool
 }
 
 static mut OPTS: Opts = Opts {
@@ -48,6 +49,7 @@ static mut OPTS: Opts = Opts {
     cull_temporary_allocations: false,
     temporary_allocation_lifetime_threshold: 10000,
     temporary_allocation_pending_threshold: None,
+    track_child_processes: false
 };
 
 trait ParseVar: Sized {
@@ -143,7 +145,9 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD"
             => &mut opts.temporary_allocation_lifetime_threshold,
         "MEMORY_PROFILER_TEMPORARY_ALLOCATION_PENDING_THRESHOLD"
-            => &mut opts.temporary_allocation_pending_threshold
+            => &mut opts.temporary_allocation_pending_threshold,
+        "MEMORY_PROFILER_TRACK_CHILD_PROCESSES"
+            => &mut opts.track_child_processes
     }
 
     opts.is_initialized = true;

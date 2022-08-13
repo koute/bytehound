@@ -1278,3 +1278,32 @@ fn test_cross_thread_alloc_non_culled() {
 
     assert!( iter.next().is_none() );
 }
+
+#[test]
+fn test_track_spawned_children() {
+    let cwd = workdir();
+
+    compile_with_flags( "spawn-child.c", &["-o", "spawn-child"] );
+
+    run_on_target(
+        &cwd,
+        "./spawn-child",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_TRACK_CHILD_PROCESSES", "1".into())
+        ]
+    ).assert_success();
+
+    eprintln!("cwd: {}", cwd.display());
+
+    for entry in std::fs::read_dir(cwd).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_name().to_str().unwrap().starts_with("memory-profiling_ls") {
+            return;
+        }
+    }
+
+    panic!("Memory profiling file for spawned process not found");
+}
