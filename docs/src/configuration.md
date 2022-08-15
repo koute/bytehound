@@ -185,4 +185,9 @@ is provided only for debugging purposes.
 *Default: `0`*
 
 If set to `1`, bytehound will also track the memory allocations of child processes spawned by the
-profiled process.
+profiled process. This only applies to child processes spawned by the common `fork()` + `exec()`
+combination.
+
+Note that if you enable this, you should use a value with appropriates placeholders (like PID)
+in `MEMORY_PROFILER_OUTPUT`, so that the output filenames for the parent and child processes are
+different. Otherwise, they would overwrite each other's data.
