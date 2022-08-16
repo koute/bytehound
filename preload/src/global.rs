@@ -7,7 +7,7 @@ use std::thread;
 use crate::arc_lite::ArcLite;
 use crate::event::{InternalAllocationId, InternalEvent, send_event};
 use crate::spin_lock::{SpinLock, SpinLockGuard};
-use crate::syscall;
+use crate::{opt, syscall};
 use crate::unwind::{ThreadUnwindState, prepare_to_start_unwinding};
 use crate::timestamp::Timestamp;
 use crate::allocation_tracker::AllocationTracker;
@@ -553,7 +553,9 @@ fn initialize_stage_2() {
     crate::init::initialize_atexit_hook();
     crate::init::initialize_signal_handlers();
 
-    std::env::remove_var( "LD_PRELOAD" );
+    if !opt::get().track_child_processes {
+        std::env::remove_var( "LD_PRELOAD" );
+    }
 
     info!( "Stage 2 initialization finished" );
 }

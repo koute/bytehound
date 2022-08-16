@@ -469,47 +469,7 @@ fn test_basic() {
         ]
     ).assert_success();
 
-    let analysis = analyze( "basic", cwd.join( "memory-profiling-basic.dat" ) );
-    let mut iter = analysis.allocations_from_source( "basic.c" );
-
-    let a0 = iter.next().unwrap(); // malloc, leaked
-    let a1 = iter.next().unwrap(); // malloc, freed
-    let a2 = iter.next().unwrap(); // malloc, freed through realloc
-    let a3 = iter.next().unwrap(); // realloc
-    let a4 = iter.next().unwrap(); // calloc, freed
-    let a5 = iter.next().unwrap(); // posix_memalign, leaked
-
-    assert!( a0.deallocation.is_none() );
-    assert!( a1.deallocation.is_some() );
-    assert!( a2.deallocation.is_some() );
-    assert!( a3.deallocation.is_none() );
-    assert!( a4.deallocation.is_none() );
-    assert!( a5.deallocation.is_none() );
-
-    assert_eq!( a5.address % 65536, 0 );
-
-    assert!( a0.size < a1.size );
-    assert!( a1.size < a2.size );
-    assert!( a2.size < a3.size );
-    assert!( a3.size < a4.size );
-    assert!( a4.size < a5.size );
-
-    assert_eq!( a0.thread, a1.thread );
-    assert_eq!( a1.thread, a2.thread );
-    assert_eq!( a2.thread, a3.thread );
-    assert_eq!( a3.thread, a4.thread );
-    assert_eq!( a4.thread, a5.thread );
-
-    assert_eq!( a0.backtrace.last().unwrap().line.unwrap() + 1, a1.backtrace.last().unwrap().line.unwrap() );
-
-    assert_eq!( a0.chain_length, 1 );
-    assert_eq!( a1.chain_length, 1 );
-    assert_eq!( a2.chain_length, 2 );
-    assert_eq!( a3.chain_length, 2 );
-    assert_eq!( a4.chain_length, 1 );
-    assert_eq!( a5.chain_length, 1 );
-
-    assert_eq!( iter.next(), None );
+    check_allocations_basic_program(&cwd.join( "memory-profiling-basic.dat" ));
 }
 
 #[cfg(test)]
@@ -1277,4 +1237,79 @@ fn test_cross_thread_alloc_non_culled() {
     assert_eq!( a2.size, 1236 );
 
     assert!( iter.next().is_none() );
+}
+
+#[test]
+fn test_track_spawned_children() {
+    let cwd = workdir();
+
+    compile_with_flags( "basic.c", &["-o", "basic"] );
+    compile_with_flags( "spawn-child.c", &["-o", "spawn-child"] );
+
+    run_on_target(
+        &cwd,
+        "./spawn-child",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_TRACK_CHILD_PROCESSES", "1".into()),
+            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-%e.dat".into())
+        ]
+    ).assert_success();
+
+    check_allocations_basic_program(&cwd.join( "memory-profiling-basic.dat" ));
+
+    let analysis = analyze( "spawn-child", cwd.join( "memory-profiling-spawn-child.dat" ));
+    let mut iter = analysis.allocations_from_source( "spawn-child.c" );
+
+    let a0 = iter.next().unwrap();
+    assert_eq!(a0.size, 10001);
+
+    let a1 = iter.next().unwrap();
+    assert_eq!(a1.size, 10003);
+}
+
+fn check_allocations_basic_program(path: &Path) {
+    let analysis = analyze( "basic", path );
+    let mut iter = analysis.allocations_from_source( "basic.c" );
+
+    let a0 = iter.next().unwrap(); // malloc, leaked
+    let a1 = iter.next().unwrap(); // malloc, freed
+    let a2 = iter.next().unwrap(); // malloc, freed through realloc
+    let a3 = iter.next().unwrap(); // realloc
+    let a4 = iter.next().unwrap(); // calloc, freed
+    let a5 = iter.next().unwrap(); // posix_memalign, leaked
+
+    assert!( a0.deallocation.is_none() );
+    assert!( a1.deallocation.is_some() );
+    assert!( a2.deallocation.is_some() );
+    assert!( a3.deallocation.is_none() );
+    assert!( a4.deallocation.is_none() );
+    assert!( a5.deallocation.is_none() );
+
+    assert_eq!( a5.address % 65536, 0 );
+
+    assert!( a0.size < a1.size );
+    assert!( a1.size < a2.size );
+    assert!( a2.size < a3.size );
+    assert!( a3.size < a4.size );
+    assert!( a4.size < a5.size );
+
+    assert_eq!( a0.thread, a1.thread );
+    assert_eq!( a1.thread, a2.thread );
+    assert_eq!( a2.thread, a3.thread );
+    assert_eq!( a3.thread, a4.thread );
+    assert_eq!( a4.thread, a5.thread );
+
+    assert_eq!( a0.backtrace.last().unwrap().line.unwrap() + 1, a1.backtrace.last().unwrap().line.unwrap() );
+
+    assert_eq!( a0.chain_length, 1 );
+    assert_eq!( a1.chain_length, 1 );
+    assert_eq!( a2.chain_length, 2 );
+    assert_eq!( a3.chain_length, 2 );
+    assert_eq!( a4.chain_length, 1 );
+    assert_eq!( a5.chain_length, 1 );
+
+    assert_eq!( iter.next(), None );
 }
