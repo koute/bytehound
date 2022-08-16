@@ -18,17 +18,6 @@ impl< T > Channel< T > {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn recv_all( &self, output: &mut Vec< T > ) {
-        output.clear();
-        let mut guard = self.queue.lock().unwrap();
-        if guard.is_empty() {
-            guard = self.condvar.wait( guard ).unwrap();
-        }
-
-        mem::swap( &mut *guard, output );
-    }
-
     pub fn timed_recv_all( &self, output: &mut Vec< T >, duration: Duration ) {
         output.clear();
 
