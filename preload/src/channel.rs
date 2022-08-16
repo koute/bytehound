@@ -1,10 +1,7 @@
 use std::time::Duration;
 use std::mem;
 
-use parking_lot::{
-    Mutex,
-    Condvar
-};
+use std::sync::{Mutex, Condvar};
 
 pub struct Channel< T > {
     queue: Mutex< Vec< T > >,
@@ -14,7 +11,7 @@ pub struct Channel< T > {
 impl< T > Channel< T > {
     pub const fn new() -> Self {
         Channel {
-            queue: parking_lot::const_mutex( Vec::new() ),
+            queue: Mutex::new( Vec::new() ),
             condvar: Condvar::new()
         }
     }
@@ -22,9 +19,9 @@ impl< T > Channel< T > {
     #[allow(dead_code)]
     pub fn recv_all( &self, output: &mut Vec< T > ) {
         output.clear();
-        let mut guard = self.queue.lock();
+        let mut guard = self.queue.lock().unwrap();
         if guard.is_empty() {
-            self.condvar.wait( &mut guard );
+            guard = self.condvar.wait( guard ).unwrap();
         }
 
         mem::swap( &mut *guard, output );
@@ -33,9 +30,9 @@ impl< T > Channel< T > {
     pub fn timed_recv_all( &self, output: &mut Vec< T >, duration: Duration ) {
         output.clear();
 
-        let mut guard = self.queue.lock();
+        let mut guard = self.queue.lock().unwrap();
         if guard.is_empty() {
-            self.condvar.wait_for( &mut guard, duration );
+            guard = self.condvar.wait_timeout( guard, duration ).unwrap().0;
         }
 
         mem::swap( &mut *guard, output );
@@ -46,7 +43,7 @@ impl< T > Channel< T > {
     }
 
     pub fn send_with< F: FnOnce() -> T >( &self, callback: F ) -> usize {
-        let mut guard = self.queue.lock();
+        let mut guard = self.queue.lock().unwrap();
         self.condvar.notify_all();
         guard.reserve( 1 );
         guard.push( callback() );
@@ -54,7 +51,7 @@ impl< T > Channel< T > {
     }
 
     pub fn chunked_send_with< F: FnOnce() -> T >( &self, chunk_size: usize, callback: F ) -> usize {
-        let mut guard = self.queue.lock();
+        let mut guard = self.queue.lock().unwrap();
         let length = guard.len() + 1;
         if length % chunk_size == 0 {
             self.condvar.notify_all();
@@ -71,6 +68,6 @@ impl< T > Channel< T > {
 
     #[allow(dead_code)]
     pub fn len( &self ) -> usize {
-        self.queue.lock().len()
+        self.queue.lock().unwrap().len()
     }
 }
