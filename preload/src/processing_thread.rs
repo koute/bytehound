@@ -548,7 +548,7 @@ pub(crate) fn thread_main() {
         }
     }
 
-    let mut events = Vec::new();
+    let mut events = Default::default();
     let mut last_flush_timestamp = get_timestamp();
     let mut coarse_timestamp = get_timestamp();
     let mut running = true;
@@ -610,7 +610,7 @@ pub(crate) fn thread_main() {
 
         let serializer = &mut output_writer;
         let skip = serializer.inner().is_none();
-        for event in events.drain(..) {
+        for event in events.drain() {
             match event {
                 InternalEvent::Alloc {
                     id,

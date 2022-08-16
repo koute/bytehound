@@ -983,7 +983,7 @@ pub struct ThreadGarbageCollector {
 }
 
 impl ThreadGarbageCollector {
-    pub(crate) fn run( &mut self, now: Timestamp, events: &mut Vec< InternalEvent > ) {
+    pub(crate) fn run( &mut self, now: Timestamp, events: &mut crate::channel::ChannelBuffer< InternalEvent > ) {
         use std::collections::hash_map::Entry;
 
         lock_thread_registry( |thread_registry| {

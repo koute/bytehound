@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use common::Timestamp;
 use common::event::AllocationId;
 
-use crate::channel::Channel;
+use crate::channel::{Channel, ChannelBuffer};
 use crate::global::WeakThreadHandle;
 use crate::unwind::Backtrace;
 
@@ -147,11 +147,16 @@ pub(crate) fn send_event( event: InternalEvent ) {
 
 #[inline(always)]
 pub(crate) fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F ) {
-    EVENT_CHANNEL.chunked_send_with( 64, callback );
+    EVENT_CHANNEL.chunked_send_with( callback );
 }
 
-pub(crate) fn timed_recv_all_events( output: &mut Vec< InternalEvent >, duration: Duration ) {
-    EVENT_CHANNEL.timed_recv_all( output, duration )
+#[inline(always)]
+pub(crate) fn send_event_throttled_sharded< F: FnOnce() -> InternalEvent >( address: usize, callback: F ) {
+    EVENT_CHANNEL.sharded_chunked_send_with( address, callback );
+}
+
+pub(crate) fn timed_recv_all_events( buffer: &mut ChannelBuffer< InternalEvent >, duration: Duration ) {
+    EVENT_CHANNEL.timed_recv_all( buffer, duration )
 }
 
 pub(crate) fn flush() {

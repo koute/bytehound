@@ -46,6 +46,10 @@ struct AllocationTrackerState {
     buckets: crate::ordered_map::OrderedMap< u64, AllocationBucket, crate::nohash::NoHash >,
 }
 
+fn get_shard_key( id: AllocationId ) -> usize {
+    id.thread as usize
+}
+
 #[repr(transparent)]
 pub struct AllocationTracker( Arc< Mutex< AllocationTrackerState > > );
 
@@ -111,7 +115,7 @@ pub fn on_exit() {
 
     info!( "Flushing {} bucket(s) on exit", buckets.len() );
     for bucket in buckets {
-        crate::event::send_event_throttled( move || {
+        crate::event::send_event_throttled_sharded( get_shard_key( bucket.id ), move || {
             InternalEvent::AllocationBucket( bucket )
         });
     }
@@ -129,7 +133,7 @@ fn flush_pending< K >(
 
         if should_flush {
             let bucket = allocations.remove( &key ).unwrap();
-            crate::event::send_event_throttled( move || {
+            crate::event::send_event_throttled_sharded( get_shard_key( bucket.id ), move || {
                 InternalEvent::AllocationBucket( bucket )
             });
         } else {
@@ -178,7 +182,7 @@ pub fn on_allocation(
         return;
     }
 
-    crate::event::send_event_throttled( move || {
+    crate::event::send_event_throttled_sharded( get_shard_key( id ), move || {
         InternalEvent::Alloc {
             id,
             timestamp,
@@ -263,7 +267,7 @@ pub fn on_reallocation(
         }
     }
 
-    crate::event::send_event_throttled( move || {
+    crate::event::send_event_throttled_sharded( get_shard_key( id ), move || {
         InternalEvent::Realloc {
             id,
             timestamp,
@@ -324,7 +328,7 @@ pub fn on_free(
 
         if let Some( bucket ) = bucket {
             if bucket.is_long_lived( timestamp ) {
-                crate::event::send_event_throttled( move || {
+                crate::event::send_event_throttled_sharded( get_shard_key( bucket.id ), move || {
                     InternalEvent::AllocationBucket( bucket )
                 });
             } else {
@@ -333,7 +337,7 @@ pub fn on_free(
         }
     }
 
-    crate::event::send_event_throttled( move || {
+    crate::event::send_event_throttled_sharded( get_shard_key( id ), move || {
         InternalEvent::Free {
             timestamp,
             id,
