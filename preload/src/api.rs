@@ -123,7 +123,6 @@ pub unsafe extern "C" fn malloc_usable_size( ptr: *mut c_void ) -> size_t {
 #[derive(Debug)]
 struct Metadata {
     flags: u32,
-    preceding_free_space: usize,
     usable_size: usize
 }
 
@@ -131,7 +130,6 @@ fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
     if crate::global::using_unprefixed_jemalloc() {
         return Metadata {
             flags: 0,
-            preceding_free_space: 0,
             usable_size: unsafe { jem_malloc_usable_size_real( ptr ) }
         }
     } else {
@@ -139,19 +137,11 @@ fn get_allocation_metadata( ptr: *mut c_void ) -> Metadata {
         let flags = raw_chunk_size & 0b111;
         let chunk_size = raw_chunk_size & !0b111;
 
-        let is_prev_in_use = flags & 1 != 0;
-        let preceding_free_space = if !is_prev_in_use {
-            unsafe { *(ptr as *mut usize).offset( -2 ) }
-        } else {
-            0
-        };
-
         let is_mmapped = flags & 2 != 0;
         let usable_size = chunk_size - mem::size_of::< usize >() * if is_mmapped { 2 } else { 1 };
 
         Metadata {
             flags: flags as u32,
-            preceding_free_space,
             usable_size
         }
     }
@@ -245,7 +235,6 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
         flags: metadata.flags,
         tid: thread.system_tid(),
         extra_usable_space: (metadata.usable_size - requested_size) as u32,
-        preceding_free_space: metadata.preceding_free_space as u64,
     };
 
     on_allocation( id, allocation, backtrace, thread );
@@ -326,7 +315,6 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
             flags: new_metadata.flags,
             tid: thread.system_tid(),
             extra_usable_space: (new_metadata.usable_size - requested_size) as u32,
-            preceding_free_space: new_metadata.preceding_free_space as u64,
         };
 
         on_reallocation( id, old_address, allocation, backtrace, thread );
@@ -455,7 +443,6 @@ unsafe fn jemalloc_allocate( requested_size: usize, kind: JeAllocationKind ) -> 
         flags,
         tid: thread.system_tid(),
         extra_usable_space: 0,
-        preceding_free_space: 0
     };
 
     on_allocation( id, allocation, backtrace, thread );
@@ -583,7 +570,6 @@ unsafe fn jemalloc_reallocate( old_pointer: *mut c_void, requested_size: size_t,
             flags,
             tid: thread.system_tid(),
             extra_usable_space: 0,
-            preceding_free_space: 0
         };
 
         on_reallocation( id, old_address, allocation, backtrace, thread );
@@ -642,7 +628,6 @@ pub unsafe extern "C" fn _rjem_xallocx( pointer: *mut c_void, requested_size: si
         flags: translate_jemalloc_flags( flags ),
         tid: thread.system_tid(),
         extra_usable_space: 0,
-        preceding_free_space: 0
     };
 
     on_reallocation( id, address, allocation, backtrace, thread );

@@ -245,7 +245,6 @@ pub struct Allocation {
     pub flags: AllocationFlags,
     pub extra_usable_space: u32,
     pub marker: u32,
-    pub preceding_free_space: u32
 }
 
 #[derive(Debug)]

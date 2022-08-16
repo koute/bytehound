@@ -337,7 +337,6 @@ impl Loader {
         thread: ThreadId,
         flags: u32,
         extra_usable_space: u32,
-        preceding_free_space: u64
     ) {
         self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
 
@@ -356,7 +355,6 @@ impl Loader {
             position_in_chain: 0,
             flags,
             extra_usable_space,
-            preceding_free_space: preceding_free_space as u32,
             marker: self.marker
         };
 
@@ -439,7 +437,6 @@ impl Loader {
         thread: ThreadId,
         flags: u32,
         extra_usable_space: u32,
-        preceding_free_space: u64
     ) {
         self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
 
@@ -476,7 +473,6 @@ impl Loader {
             position_in_chain: 0,
             flags,
             extra_usable_space,
-            preceding_free_space: preceding_free_space as u32,
             marker: self.marker
         };
 
@@ -854,25 +850,25 @@ impl Loader {
                 self.backtraces.push( backtrace_storage_ref );
                 self.handle_backtrace( id, true );
             },
-            Event::Alloc { timestamp, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
+            Event::Alloc { timestamp, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space: _ } } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace ).unwrap();
-                self.handle_alloc( event::AllocationId::UNTRACKED, timestamp, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+                self.handle_alloc( event::AllocationId::UNTRACKED, timestamp, pointer, size, backtrace, thread, flags, extra_usable_space );
             },
-            Event::AllocEx { id, timestamp, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
+            Event::AllocEx { id, timestamp, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space: _ } } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace ).unwrap();
-                self.handle_alloc( id, timestamp, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+                self.handle_alloc( id, timestamp, pointer, size, backtrace, thread, flags, extra_usable_space );
             },
-            Event::Realloc { timestamp, old_pointer, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
+            Event::Realloc { timestamp, old_pointer, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space: _ } } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace ).unwrap();
-                self.handle_realloc( event::AllocationId::UNTRACKED, timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+                self.handle_realloc( event::AllocationId::UNTRACKED, timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space );
             },
-            Event::ReallocEx { id, timestamp, old_pointer, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space } } => {
+            Event::ReallocEx { id, timestamp, old_pointer, allocation: AllocBody { pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space: _ } } => {
                 let timestamp = self.shift_timestamp( timestamp );
                 let backtrace = self.lookup_backtrace( backtrace ).unwrap();
-                self.handle_realloc( id, timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space, preceding_free_space );
+                self.handle_realloc( id, timestamp, old_pointer, pointer, size, backtrace, thread, flags, extra_usable_space );
             },
             Event::Free { timestamp, pointer, backtrace, thread } => {
                 let timestamp = self.shift_timestamp( timestamp );

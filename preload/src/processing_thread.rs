@@ -639,7 +639,7 @@ pub(crate) fn thread_main() {
                                 thread: allocation.tid,
                                 flags: allocation.flags,
                                 extra_usable_space: allocation.extra_usable_space,
-                                preceding_free_space: allocation.preceding_free_space
+                                preceding_free_space: 0
                             }
                         }.write_to_stream( &mut *serializer );
                     }
@@ -673,7 +673,7 @@ pub(crate) fn thread_main() {
                                 thread: allocation.tid,
                                 flags: allocation.flags,
                                 extra_usable_space: allocation.extra_usable_space,
-                                preceding_free_space: allocation.preceding_free_space
+                                preceding_free_space: 0
                             }
                         };
                         let _ = event.write_to_stream( &mut *serializer );

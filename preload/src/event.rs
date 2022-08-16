@@ -74,7 +74,6 @@ pub struct InternalAllocation {
     pub flags: u32,
     pub tid: u32,
     pub extra_usable_space: u32,
-    pub preceding_free_space: u64,
 }
 
 pub(crate) enum InternalEvent {
