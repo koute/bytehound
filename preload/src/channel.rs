@@ -2,17 +2,19 @@ use std::time::Duration;
 use std::mem;
 
 use std::sync::{Mutex, Condvar};
+use crate::utils::CacheAligned;
 
+#[repr(C)]
 pub struct Channel< T > {
-    queue: Mutex< Vec< T > >,
-    condvar: Condvar
+    queue: CacheAligned< Mutex< Vec< T > > >,
+    condvar: CacheAligned< Condvar >
 }
 
 impl< T > Channel< T > {
     pub const fn new() -> Self {
         Channel {
-            queue: Mutex::new( Vec::new() ),
-            condvar: Condvar::new()
+            queue: CacheAligned( Mutex::new( Vec::new() ) ),
+            condvar: CacheAligned( Condvar::new() )
         }
     }
 
