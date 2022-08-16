@@ -239,3 +239,22 @@ pub fn generate_filename( pattern: &[u8], counter: Option< &AtomicUsize > ) -> B
 
     output
 }
+
+#[repr(align(64))]
+pub struct CacheAligned< T >( pub T );
+
+impl< T > std::ops::Deref for CacheAligned< T > {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref( &self ) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl< T > std::ops::DerefMut for CacheAligned< T > {
+    #[inline(always)]
+    fn deref_mut( &mut self ) -> &mut Self::Target {
+        &mut self.0
+    }
+}
