@@ -155,3 +155,13 @@ fn test_getenv() {
     std::env::set_var( "GETENV_TEST_VAR", "1234" );
     assert_eq!( unsafe { getenv( b"GETENV_TEST_VAR" ) }.unwrap().to_str().unwrap(), "1234" );
 }
+
+pub unsafe fn pr_set_vma_anon_name( addr: *mut libc::c_void, name: &[u8] ) {
+    libc::prctl(
+        libc::PR_SET_VMA,
+        libc::PR_SET_VMA_ANON_NAME,
+        addr,
+        name.len(),
+        name.as_ptr()
+    );
+}

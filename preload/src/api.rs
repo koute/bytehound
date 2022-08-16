@@ -74,7 +74,12 @@ extern "C" {
 
 #[no_mangle]
 pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    syscall::mmap( addr, length, prot, flags, fildes, off )
+    let pointer = syscall::mmap( addr, length, prot, flags, fildes, off );
+    if pointer != libc::MAP_FAILED {
+        crate::syscall::pr_set_vma_anon_name( pointer, b"bytehound:jemalloc\0" );
+    }
+
+    pointer
 }
 
 #[no_mangle]
