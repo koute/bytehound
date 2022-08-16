@@ -64,10 +64,6 @@ export default class PageDataOverview extends React.Component {
         fetch( (this.props.sourceUrl || "") + "/data/" + this.props.id + "/timeline_leaked" )
             .then( rsp => rsp.json() )
             .then( json => this.setState( {timeline_leaked: json} ) );
-
-        fetch( (this.props.sourceUrl || "") + "/data/" + this.props.id + "/fragmentation_timeline" )
-            .then( rsp => rsp.json() )
-            .then( json => this.setState( {fragmentation_timeline: json} ) );
     }
 
     render() {
@@ -233,26 +229,6 @@ export default class PageDataOverview extends React.Component {
                     </Switcher>
                 );
             }
-        }
-
-        if( this.state.fragmentation_timeline ) {
-            inner.push(
-                <Switcher key="s2">
-                    <Graph
-                        key="fragmentation"
-                        title="Memory lost to fragmentation"
-                        data={this.state.fragmentation_timeline}
-                        y_accessor="fragmentation"
-                        y_label=""
-                        onZoom={this.onZoom.bind(this)}
-                        onRightClick={this.onRightClick.bind(this)}
-                        x0={this.state.x0}
-                        x1={this.state.x1}
-                        fill={true}
-                        xUnit="unix_timestamp_ms"
-                    />
-                </Switcher>
-            );
         }
 
         const prefix = (this.props.sourceUrl || "") + "/data/" + this.props.id;

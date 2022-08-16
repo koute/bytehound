@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::error::Error;
 use std::sync::Arc;
-use std::ops::Bound::{self, Unbounded};
 use std::fmt::{self, Write};
 use std::thread;
 use std::io;
@@ -46,7 +45,6 @@ use cli_core::{
     Data,
     DataId,
     BacktraceId,
-    Operation,
     OperationId,
     Frame,
     Allocation,
@@ -372,192 +370,6 @@ fn handler_list( req: HttpRequest ) -> HttpResponse {
     }).collect();
 
     HttpResponse::Ok().json( list )
-}
-
-fn get_fragmentation_timeline( data: &Data ) -> protocol::ResponseFragmentationTimeline {
-    #[inline(always)]
-    fn is_matched( allocation: &Allocation ) -> bool {
-        allocation.in_main_arena() && !allocation.is_mmaped() && !allocation.is_jemalloc()
-    }
-
-    let maximum_len = (data.last_timestamp().as_secs() - data.initial_timestamp().as_secs()) as usize;
-    let mut xs = Vec::with_capacity( maximum_len );
-    let mut x = (-1_i32) as u64;
-
-    let mut current_used_address_space = 0;
-    let mut fragmentation = Vec::with_capacity( maximum_len );
-    let mut address_map: BTreeMap< u64, i64 > = BTreeMap::new();
-    let mut current_address_min = std::u64::MAX;
-    let mut current_address_max = 0;
-
-    fn trim_front( address_map: &mut BTreeMap< u64, i64 > ) {
-        while let Some( (&address, &count) ) = address_map.range( (Unbounded as Bound< u64 >, Unbounded) ).next() {
-            if count == 0 {
-                address_map.remove( &address );
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn trim_back( address_map: &mut BTreeMap< u64, i64 > ) {
-        while let Some( (&address, &count) ) = address_map.range( (Unbounded as Bound< u64 >, Unbounded) ).rev().next() {
-            if count == 0 {
-                address_map.remove( &address );
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn min( address_map: &BTreeMap< u64, i64 > ) -> u64 {
-        for (&address, &count) in address_map.range( (Unbounded as Bound< u64 >, Unbounded) ) {
-            if count == 0 {
-                continue;
-            }
-
-            return address;
-        }
-
-        std::u64::MAX
-    }
-
-    fn max( address_map: &BTreeMap< u64, i64 > ) -> u64 {
-        for (&address, &count) in address_map.range( (Unbounded as Bound< u64 >, Unbounded) ).rev() {
-            if count == 0 {
-                continue;
-            }
-
-            return address;
-        }
-
-        0
-    }
-
-    for op in data.operations() {
-        let timestamp = match op {
-            Operation::Allocation { allocation, .. } => {
-                if !is_matched( allocation ) {
-                    continue;
-                }
-
-                let range = allocation.actual_range( &data );
-                *address_map.entry( range.start ).or_insert( 0 ) += 1;
-                *address_map.entry( range.end ).or_insert( 0 ) += 1;
-                current_used_address_space += range.end - range.start;
-
-                if range.start < current_address_min {
-                    current_address_min = range.start;
-                }
-
-                if range.end > current_address_max {
-                    current_address_max = range.end;
-                }
-
-                allocation.timestamp
-            },
-            Operation::Deallocation { allocation, deallocation, .. } => {
-                if !is_matched( allocation ) {
-                    continue;
-                }
-
-                let range = allocation.actual_range( &data );
-                *address_map.entry( range.start ).or_insert( 0 ) -= 1;
-                *address_map.entry( range.end ).or_insert( 0 ) -= 1;
-                current_used_address_space -= range.end - range.start;
-
-                if range.start == current_address_min {
-                    trim_front( &mut address_map );
-                    current_address_min = min( &address_map );
-                }
-
-                if range.end == current_address_max {
-                    trim_back( &mut address_map );
-                    current_address_max = max( &address_map );
-                }
-
-                deallocation.timestamp
-            },
-            Operation::Reallocation { new_allocation, old_allocation, .. } => {
-                if !is_matched( new_allocation ) && !is_matched( old_allocation ) {
-                    continue;
-                }
-
-                if is_matched( old_allocation ) {
-                    let old_range = old_allocation.actual_range( &data );
-                    *address_map.entry( old_range.start ).or_insert( 0 ) -= 1;
-                    *address_map.entry( old_range.end ).or_insert( 0 ) -= 1;
-
-                    current_used_address_space -= old_range.end - old_range.start;
-
-                    if old_range.start == current_address_min {
-                        trim_front( &mut address_map );
-                        current_address_min = min( &address_map );
-                    }
-
-                    if old_range.end == current_address_max {
-                        trim_back( &mut address_map );
-                        current_address_max = max( &address_map );
-                    }
-                }
-
-                if is_matched( new_allocation ) {
-                    let new_range = new_allocation.actual_range( &data );
-                    *address_map.entry( new_range.start ).or_insert( 0 ) += 1;
-                    *address_map.entry( new_range.end ).or_insert( 0 ) += 1;
-                    current_used_address_space += new_range.end - new_range.start;
-
-                    if new_range.start < current_address_min {
-                        current_address_min = new_range.start;
-                    }
-
-                    if new_range.end > current_address_max {
-                        current_address_max = new_range.end;
-                    }
-                }
-
-                new_allocation.timestamp
-            }
-        };
-
-        let timestamp = timestamp.as_secs();
-        if timestamp != x {
-            if x != (-1_i32 as u64) && x + 1 != timestamp {
-                let last_fragmentation = fragmentation.last().cloned().unwrap();
-
-                xs.push( (x + 1) * 1000 );
-                fragmentation.push( last_fragmentation );
-
-                if x + 2 != timestamp {
-                    xs.push( (timestamp - 1) * 1000 );
-                    fragmentation.push( last_fragmentation );
-                }
-            }
-
-            x = timestamp;
-            xs.push( x * 1000 );
-            fragmentation.push( 0 );
-        }
-
-        let range = if current_address_max == 0 {
-            0
-        } else {
-            current_address_max - current_address_min
-        };
-
-        *fragmentation.last_mut().unwrap() = range - current_used_address_space;
-    }
-
-    protocol::ResponseFragmentationTimeline {
-        xs,
-        fragmentation
-    }
-}
-
-fn handler_fragmentation_timeline( req: HttpRequest ) -> Result< HttpResponse > {
-    let data = get_data( &req )?;
-    let response = get_fragmentation_timeline( data );
-    Ok( HttpResponse::Ok().json( response ) )
 }
 
 fn build_timeline( data: &Data, ops: &[OperationId] ) -> protocol::ResponseTimeline {
@@ -1796,7 +1608,6 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
                     .service( web::resource( "/list" ).route( web::get().to( handler_list ) ) )
                     .service( web::resource( "/data/{id}/timeline" ).route( web::get().to( handler_timeline ) ) )
                     .service( web::resource( "/data/{id}/timeline_leaked" ).route( web::get().to( handler_timeline_leaked ) ) )
-                    .service( web::resource( "/data/{id}/fragmentation_timeline" ).route( web::get().to( handler_fragmentation_timeline ) ) )
                     .service( web::resource( "/data/{id}/allocations" ).route( web::get().to( handler_allocations ) ) )
                     .service( web::resource( "/data/{id}/allocation_groups" ).route( web::get().to( handler_allocation_groups ) ) )
                     .service( web::resource( "/data/{id}/backtraces" ).route( web::get().to( handler_backtraces ) ) )

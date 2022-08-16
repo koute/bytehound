@@ -88,12 +88,6 @@ pub struct ResponseTimeline {
 }
 
 #[derive(Serialize)]
-pub struct ResponseFragmentationTimeline {
-    pub xs: Vec< u64 >,
-    pub fragmentation: Vec< u64 >
-}
-
-#[derive(Serialize)]
 pub struct Frame< 'a > {
     pub address: u64,
     pub address_s: String,
