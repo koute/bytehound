@@ -88,6 +88,7 @@ pub struct Loader {
     interner: RefCell< StringInterner >,
     address_space: Box< dyn IAddressSpace >,
     address_space_needs_reloading: bool,
+    pending_maps: Vec< Region >,
     debug_info_index: DebugInfoIndex,
     binaries: HashMap< String, Arc< BinaryData > >,
     maps: RangeMap< Region >,
@@ -215,6 +216,7 @@ impl Loader {
             interner: RefCell::new( StringInterner::new() ),
             address_space,
             address_space_needs_reloading: true,
+            pending_maps: Default::default(),
             debug_info_index,
             binaries: Default::default(),
             maps: RangeMap::new(),
@@ -552,6 +554,33 @@ impl Loader {
         }
 
         self.address_space_needs_reloading = false;
+
+        let mut maps = Vec::new();
+
+        self.frame_skip_ranges.clear();
+        for region in std::mem::take( &mut self.pending_maps ) {
+            if region.name.contains( "libmemory_profiler" ) || region.name.contains( "libbytehound" ) {
+                if self.frame_skip_ranges.last().map( |last_range| last_range.end == region.start ).unwrap_or( false ) {
+                    let mut last_range = self.frame_skip_ranges.last_mut().unwrap();
+                    last_range.end = region.end;
+                } else {
+                    self.frame_skip_ranges.push( region.start..region.end );
+                }
+            }
+
+            maps.push( (region.start..region.end, region) );
+        }
+
+        for range in &self.frame_skip_ranges {
+            debug!( "Skip range: 0x{:016X}-0x{:016X}", range.start, range.end );
+        }
+
+        self.maps = RangeMap::from_vec( maps );
+        let binaries: Vec< _ > = self.binaries.values().cloned().collect();
+        for binary_data in binaries {
+            self.scan_for_symbols( &binary_data );
+        }
+
         let binaries = &self.binaries;
         let debug_info_index = &mut self.debug_info_index;
         let regions: Vec< Region > = self.maps.values().cloned().collect();
@@ -766,32 +795,7 @@ impl Loader {
                 let contents = String::from_utf8_lossy( &contents );
                 trace!( "/proc/self/maps:\n{}", contents );
 
-                let mut maps = Vec::new();
-
-                self.frame_skip_ranges.clear();
-                for region in parse_maps( &contents ) {
-                    if region.name.contains( "libmemory_profiler" ) || region.name.contains( "libbytehound" ) {
-                        if self.frame_skip_ranges.last().map( |last_range| last_range.end == region.start ).unwrap_or( false ) {
-                            let mut last_range = self.frame_skip_ranges.last_mut().unwrap();
-                            last_range.end = region.end;
-                        } else {
-                            self.frame_skip_ranges.push( region.start..region.end );
-                        }
-                    }
-
-                    maps.push( (region.start..region.end, region) );
-                }
-
-                for range in &self.frame_skip_ranges {
-                    debug!( "Skip range: 0x{:016X}-0x{:016X}", range.start, range.end );
-                }
-
-                self.maps = RangeMap::from_vec( maps );
-                let binaries: Vec< _ > = self.binaries.values().cloned().collect();
-                for binary_data in binaries {
-                    self.scan_for_symbols( &binary_data );
-                }
-
+                self.pending_maps = parse_maps( &contents );
                 self.address_space_needs_reloading = true;
             },
             Event::File { ref path, ref contents, .. } | Event::File64 { ref path, ref contents, .. } => {
