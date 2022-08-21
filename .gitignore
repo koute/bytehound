@@ -1,9 +1,11 @@
 target
 target-docker
 **/*.rs.bk
+**/*~
 webui/.cache
 webui/.parcel-cache
 webui/dist
 webui/node_modules
 replay/replay
 replay/generated.inc
+integration-tests/test-programs/jemalloc/jemalloc-*/Cargo.lock
