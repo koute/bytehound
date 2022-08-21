@@ -51,6 +51,8 @@ extern "C" {
     fn jem_rallocx_real( old_pointer: *mut c_void, size: size_t, _flags: c_int ) -> *mut c_void;
     #[link_name = "_rjem_mp_xallocx"]
     fn jem_xallocx_real( pointer: *mut c_void, size: size_t, extra: size_t, _flags: c_int ) -> size_t;
+    #[link_name = "_rjem_mp_sallocx"]
+    fn jem_sallocx_real( pointer: *const c_void, _flags: c_int ) -> size_t;
     #[link_name = "_rjem_mp_nallocx"]
     fn jem_nallocx_real( size: size_t, _flags: c_int ) -> size_t;
     #[link_name = "_rjem_mp_malloc_usable_size"]
@@ -739,8 +741,9 @@ pub unsafe extern "C" fn _rjem_free( pointer: *mut c_void ) {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn _rjem_sallocx( _pointer: *const c_void, _flags: c_int ) -> size_t {
-    todo!( "_rjem_sallocx" );
+pub unsafe extern "C" fn _rjem_sallocx( pointer: *const c_void, flags: c_int ) -> size_t {
+    debug_assert!( !pointer.is_null() );
+    jem_sallocx_real( pointer, flags ).checked_sub( mem::size_of::< InternalAllocationId >() ).expect("_rjem_sallocx: underflow")
 }
 
 #[cfg_attr(not(test), no_mangle)]
