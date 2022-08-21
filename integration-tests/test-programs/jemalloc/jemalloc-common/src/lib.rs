@@ -1,7 +1,7 @@
 use std::alloc::Layout;
 use std::ptr::write_volatile;
 
-unsafe fn alloc( size: usize ) -> *mut u8 {
+pub unsafe fn alloc( size: usize ) -> *mut u8 {
     let pointer = std::alloc::alloc( Layout::from_size_align( size, 1 ).unwrap() );
     write_volatile( pointer, 1 );
     pointer

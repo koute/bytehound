@@ -544,6 +544,11 @@ fn test_jemalloc_v05_prefixed() {
 }
 
 #[test]
+fn test_jemalloc_v05_sallocx() {
+    run_jemalloc_test( "jemalloc-v05-sallocx" );
+}
+
+#[test]
 fn test_jemalloc_v05_unprefixed() {
     run_jemalloc_test( "jemalloc-v05-unprefixed" );
 }
