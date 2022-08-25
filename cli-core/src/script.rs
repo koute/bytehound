@@ -12,7 +12,7 @@ use regex::Regex;
 use crate::{AllocationId, BacktraceId, Data, Loader};
 use crate::data::OperationId;
 use crate::exporter_flamegraph_pl::dump_collation_from_iter;
-use crate::filter::{BasicFilter, Duration, Filter, NumberOrFractionOfTotal};
+use crate::filter::{AllocationFilter, RawAllocationFilter, Duration, Filter, NumberOrFractionOfTotal, Compile, TryMatch};
 use crate::timeline::build_timeline;
 
 pub use rhai;
@@ -262,7 +262,7 @@ impl std::fmt::Debug for Allocation {
 pub struct AllocationList {
     data: DataRef,
     allocation_ids: Option< Arc< Vec< AllocationId > > >,
-    filter: Option< Filter >
+    filter: Option< AllocationFilter >
 }
 
 impl std::fmt::Debug for AllocationList {
@@ -383,17 +383,17 @@ impl AllocationList {
         self.unfiltered_allocation_ids()
     }
 
-    fn add_filter_once( &self, is_filled: impl FnOnce( &BasicFilter ) -> bool, callback: impl FnOnce( &mut BasicFilter ) ) -> Self {
+    fn add_filter_once( &self, is_filled: impl FnOnce( &RawAllocationFilter ) -> bool, callback: impl FnOnce( &mut RawAllocationFilter ) ) -> Self {
         let filter = match self.filter.as_ref() {
             None => {
-                let mut new_filter = BasicFilter::default();
+                let mut new_filter = RawAllocationFilter::default();
                 callback( &mut new_filter );
 
                 Filter::Basic( new_filter )
             },
             Some( Filter::Basic( ref old_filter ) ) => {
                 if is_filled( old_filter ) {
-                    let mut new_filter = BasicFilter::default();
+                    let mut new_filter = RawAllocationFilter::default();
                     callback( &mut new_filter );
 
                     Filter::And( Box::new( Filter::Basic( old_filter.clone() ) ), Box::new( Filter::Basic( new_filter ) ) )
@@ -416,7 +416,7 @@ impl AllocationList {
                 }
             },
             Some( old_filter ) => {
-                let mut new_filter = BasicFilter::default();
+                let mut new_filter = RawAllocationFilter::default();
                 callback( &mut new_filter );
 
                 Filter::And( Box::new( old_filter.clone() ), Box::new( Filter::Basic( new_filter ) ) )
@@ -430,7 +430,7 @@ impl AllocationList {
         }
     }
 
-    fn add_filter( &self, callback: impl FnOnce( &mut BasicFilter ) ) -> Self {
+    fn add_filter( &self, callback: impl FnOnce( &mut RawAllocationFilter ) ) -> Self {
         self.add_filter_once( |_| false, callback )
     }
 
@@ -1733,26 +1733,26 @@ impl Engine {
 
         engine.register_result_fn( "only_passing_through_function", |list: &mut AllocationList, regex: String| {
             let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.only_passing_through_function.is_some(), |filter|
-                filter.only_passing_through_function = Some( regex )
+            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_passing_through_function.is_some(), |filter|
+                filter.backtrace_filter.only_passing_through_function = Some( regex )
             ))
         });
         engine.register_result_fn( "only_not_passing_through_function", |list: &mut AllocationList, regex: String| {
             let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.only_not_passing_through_function.is_some(), |filter|
-                filter.only_not_passing_through_function = Some( regex )
+            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_not_passing_through_function.is_some(), |filter|
+                filter.backtrace_filter.only_not_passing_through_function = Some( regex )
             ))
         });
         engine.register_result_fn( "only_passing_through_source", |list: &mut AllocationList, regex: String| {
             let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.only_passing_through_source.is_some(), |filter|
-                filter.only_passing_through_source = Some( regex )
+            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_passing_through_source.is_some(), |filter|
+                filter.backtrace_filter.only_passing_through_source = Some( regex )
             ))
         });
         engine.register_result_fn( "only_not_passing_through_source", |list: &mut AllocationList, regex: String| {
             let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.only_not_passing_through_source.is_some(), |filter|
-                filter.only_not_passing_through_source = Some( regex )
+            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_not_passing_through_source.is_some(), |filter|
+                filter.backtrace_filter.only_not_passing_through_source = Some( regex )
             ))
         });
 
@@ -1804,10 +1804,10 @@ impl Engine {
             }
 
             Ok( list.add_filter( |filter| {
-                if let Some( ref mut existing ) = filter.only_matching_backtraces {
+                if let Some( ref mut existing ) = filter.backtrace_filter.only_matching_backtraces {
                     *existing = existing.intersection( &set ).copied().collect();
                 } else {
-                    filter.only_matching_backtraces = Some( set );
+                    filter.backtrace_filter.only_matching_backtraces = Some( set );
                 }
             }) )
         });
@@ -1817,7 +1817,7 @@ impl Engine {
             gather_backtrace_ids( &mut set, ids )?;
 
             Ok( list.add_filter( |filter| {
-                filter.only_not_matching_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
+                filter.backtrace_filter.only_not_matching_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
             }))
         });
 
@@ -1826,10 +1826,10 @@ impl Engine {
             gather_backtrace_ids( &mut set, ids )?;
 
             Ok( list.add_filter( |filter| {
-                if let Some( ref mut existing ) = filter.only_matching_deallocation_backtraces {
+                if let Some( ref mut existing ) = filter.backtrace_filter.only_matching_deallocation_backtraces {
                     *existing = existing.intersection( &set ).copied().collect();
                 } else {
-                    filter.only_matching_deallocation_backtraces = Some( set );
+                    filter.backtrace_filter.only_matching_deallocation_backtraces = Some( set );
                 }
             }))
         });
@@ -1839,20 +1839,38 @@ impl Engine {
             gather_backtrace_ids( &mut set, ids )?;
 
             Ok( list.add_filter( |filter| {
-                filter.only_not_matching_deallocation_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
+                filter.backtrace_filter.only_not_matching_deallocation_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
             }))
         });
 
         macro_rules! register_filter {
+            ($setter:ident, $field:ident.$name:ident, $src_ty:ty => $dst_ty:ty) => {
+                engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $src_ty|
+                    list.add_filter( |filter| $setter( &mut filter.$field.$name, value as $dst_ty ) )
+                );
+            };
+
             ($setter:ident, $name:ident, $src_ty:ty => $dst_ty:ty) => {
                 engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $src_ty|
                     list.add_filter( |filter| $setter( &mut filter.$name, value as $dst_ty ) )
                 );
             };
 
+            ($field:ident.$name:ident, bool) => {
+                engine.register_fn( stringify!( $name ), |list: &mut AllocationList|
+                    list.add_filter( |filter| filter.$field.$name = true )
+                );
+            };
+
             ($name:ident, bool) => {
                 engine.register_fn( stringify!( $name ), |list: &mut AllocationList|
                     list.add_filter( |filter| filter.$name = true )
+                );
+            };
+
+            ($setter:ident, $field:ident.$name:ident, $ty:ty) => {
+                engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $ty|
+                    list.add_filter( |filter| $setter( &mut filter.$field.$name, value as $ty ) )
                 );
             };
 
@@ -1863,25 +1881,25 @@ impl Engine {
             };
         }
 
-        register_filter!( set_max, only_backtrace_length_at_least, i64 => usize );
-        register_filter!( set_min, only_backtrace_length_at_most, i64 => usize );
-        register_filter!( set_max, only_larger_or_equal, i64 => u64 );
-        register_filter!( set_min, only_smaller_or_equal, i64 => u64 );
-        register_filter!( set_max, only_larger, i64 => u64 );
-        register_filter!( set_min, only_smaller, i64 => u64 );
-        register_filter!( set_max, only_address_at_least, i64 => u64 );
-        register_filter!( set_min, only_address_at_most, i64 => u64 );
+        register_filter!( set_max, backtrace_filter.only_backtrace_length_at_least, i64 => usize );
+        register_filter!( set_min, backtrace_filter.only_backtrace_length_at_most, i64 => usize );
+        register_filter!( set_max, common_filter.only_larger_or_equal, i64 => u64 );
+        register_filter!( set_min, common_filter.only_smaller_or_equal, i64 => u64 );
+        register_filter!( set_max, common_filter.only_larger, i64 => u64 );
+        register_filter!( set_min, common_filter.only_smaller, i64 => u64 );
+        register_filter!( set_max, common_filter.only_address_at_least, i64 => u64 );
+        register_filter!( set_min, common_filter.only_address_at_most, i64 => u64 );
 
-        register_filter!( set_max, only_allocated_after_at_least, Duration );
-        register_filter!( set_min, only_allocated_until_at_most, Duration );
-        register_filter!( set_max, only_deallocated_after_at_least, Duration );
-        register_filter!( set_min, only_deallocated_until_at_most, Duration );
-        register_filter!( set_max, only_not_deallocated_after_at_least, Duration );
-        register_filter!( set_min, only_not_deallocated_until_at_most, Duration );
-        register_filter!( set_max, only_alive_for_at_least, Duration );
-        register_filter!( set_min, only_alive_for_at_most, Duration );
+        register_filter!( set_max, common_filter.only_allocated_after_at_least, Duration );
+        register_filter!( set_min, common_filter.only_allocated_until_at_most, Duration );
+        register_filter!( set_max, common_filter.only_deallocated_after_at_least, Duration );
+        register_filter!( set_min, common_filter.only_deallocated_until_at_most, Duration );
+        register_filter!( set_max, common_filter.only_not_deallocated_after_at_least, Duration );
+        register_filter!( set_min, common_filter.only_not_deallocated_until_at_most, Duration );
+        register_filter!( set_max, common_filter.only_alive_for_at_least, Duration );
+        register_filter!( set_min, common_filter.only_alive_for_at_most, Duration );
 
-        register_filter!( set_max, only_leaked_or_deallocated_after, Duration );
+        register_filter!( set_max, common_filter.only_leaked_or_deallocated_after, Duration );
 
         register_filter!( set_max, only_first_size_larger_or_equal, i64 => u64 );
         register_filter!( set_min, only_first_size_smaller_or_equal, i64 => u64 );
@@ -1926,9 +1944,9 @@ impl Engine {
             )
         });
 
-        register_filter!( only_leaked, bool );
+        register_filter!( common_filter.only_leaked, bool );
         register_filter!( only_chain_leaked, bool );
-        register_filter!( only_temporary, bool );
+        register_filter!( common_filter.only_temporary, bool );
         register_filter!( only_ptmalloc_mmaped, bool );
         register_filter!( only_ptmalloc_not_mmaped, bool );
         register_filter!( only_ptmalloc_from_main_arena, bool );
@@ -2340,7 +2358,7 @@ struct ToCodeContext {
     output: String
 }
 
-impl Filter {
+impl AllocationFilter {
     pub fn to_code( &self, allocation_source: Option< String > ) -> String {
         let mut ctx = ToCodeContext {
             allocation_source: allocation_source.unwrap_or_else( || "allocations()".into() ),
@@ -2357,7 +2375,7 @@ trait ToCode {
     fn to_code_impl( &self, ctx: &mut ToCodeContext );
 }
 
-impl ToCode for Filter {
+impl< T > ToCode for Filter< T > where T: ToCode {
     fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
         match *self {
             Filter::Basic( ref filter ) => filter.to_code_impl( ctx ),
@@ -2483,24 +2501,24 @@ impl ToCode for HashSet< BacktraceId > {
     }
 }
 
-impl ToCode for BasicFilter {
+impl ToCode for RawAllocationFilter {
     fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
         macro_rules! out {
-            ($($name:ident)+) => {
+            ($($field:ident.$name:ident)+) => {
                 $(
-                    if let Some( ref value ) = self.$name {
+                    if let Some( ref value ) = $field.$name {
                         write!( &mut ctx.output, "  .{}(", stringify!( $name ) ).unwrap();
                         value.to_code_impl( ctx );
                         writeln!( &mut ctx.output, ")" ).unwrap();
                     }
                 )+
-            }
+            };
         }
 
         macro_rules! out_bool {
-            ($($name:ident)+) => {
+            ($($field:ident.$name:ident)+) => {
                 $(
-                    if self.$name {
+                    if $field.$name {
                         writeln!( &mut ctx.output, "  .{}()", stringify!( $name ) ).unwrap();
                     }
                 )+
@@ -2509,67 +2527,73 @@ impl ToCode for BasicFilter {
 
         writeln!( &mut ctx.output, "{}", ctx.allocation_source ).unwrap();
 
+        let backtrace_filter = &self.backtrace_filter;
+        let common_filter = &self.common_filter;
+
         out! {
-            only_passing_through_function
-            only_not_passing_through_function
-            only_passing_through_source
-            only_not_passing_through_source
-            only_matching_backtraces
-            only_not_matching_backtraces
-            only_backtrace_length_at_least
-            only_backtrace_length_at_most
-            only_larger_or_equal
-            only_larger
-            only_smaller_or_equal
-            only_smaller
-            only_address_at_least
-            only_address_at_most
-            only_allocated_after_at_least
-            only_allocated_until_at_most
-            only_deallocated_after_at_least
-            only_deallocated_until_at_most
-            only_not_deallocated_after_at_least
-            only_not_deallocated_until_at_most
-            only_alive_for_at_least
-            only_alive_for_at_most
-            only_leaked_or_deallocated_after
-            only_first_size_larger_or_equal
-            only_first_size_larger
-            only_first_size_smaller_or_equal
-            only_first_size_smaller
-            only_last_size_larger_or_equal
-            only_last_size_larger
-            only_last_size_smaller_or_equal
-            only_last_size_smaller
-            only_chain_length_at_least
-            only_chain_length_at_most
-            only_chain_alive_for_at_least
-            only_chain_alive_for_at_most
-            only_position_in_chain_at_least
-            only_position_in_chain_at_most
+            backtrace_filter.only_passing_through_function
+            backtrace_filter.only_not_passing_through_function
+            backtrace_filter.only_passing_through_source
+            backtrace_filter.only_not_passing_through_source
+            backtrace_filter.only_matching_backtraces
+            backtrace_filter.only_not_matching_backtraces
+            backtrace_filter.only_backtrace_length_at_least
+            backtrace_filter.only_backtrace_length_at_most
+            common_filter.only_larger_or_equal
+            common_filter.only_larger
+            common_filter.only_smaller_or_equal
+            common_filter.only_smaller
+            common_filter.only_address_at_least
+            common_filter.only_address_at_most
+            common_filter.only_allocated_after_at_least
+            common_filter.only_allocated_until_at_most
+            common_filter.only_deallocated_after_at_least
+            common_filter.only_deallocated_until_at_most
+            common_filter.only_not_deallocated_after_at_least
+            common_filter.only_not_deallocated_until_at_most
+            common_filter.only_alive_for_at_least
+            common_filter.only_alive_for_at_most
+            common_filter.only_leaked_or_deallocated_after
+        }
 
-            only_group_allocations_at_least
-            only_group_allocations_at_most
-            only_group_interval_at_least
-            only_group_interval_at_most
-            only_group_max_total_usage_first_seen_at_least
-            only_group_max_total_usage_first_seen_at_most
-            only_group_leaked_allocations_at_least
-            only_group_leaked_allocations_at_most
+        out! {
+            self.only_first_size_larger_or_equal
+            self.only_first_size_larger
+            self.only_first_size_smaller_or_equal
+            self.only_first_size_smaller
+            self.only_last_size_larger_or_equal
+            self.only_last_size_larger
+            self.only_last_size_smaller_or_equal
+            self.only_last_size_smaller
+            self.only_chain_length_at_least
+            self.only_chain_length_at_most
+            self.only_chain_alive_for_at_least
+            self.only_chain_alive_for_at_most
+            self.only_position_in_chain_at_least
+            self.only_position_in_chain_at_most
 
-            only_with_marker
+            self.only_group_allocations_at_least
+            self.only_group_allocations_at_most
+            self.only_group_interval_at_least
+            self.only_group_interval_at_most
+            self.only_group_max_total_usage_first_seen_at_least
+            self.only_group_max_total_usage_first_seen_at_most
+            self.only_group_leaked_allocations_at_least
+            self.only_group_leaked_allocations_at_most
+
+            self.only_with_marker
         }
 
         out_bool! {
-            only_leaked
-            only_chain_leaked
-            only_temporary
-            only_ptmalloc_mmaped
-            only_ptmalloc_not_mmaped
-            only_ptmalloc_from_main_arena
-            only_ptmalloc_not_from_main_arena
-            only_jemalloc
-            only_not_jemalloc
+            common_filter.only_leaked
+            self.only_chain_leaked
+            common_filter.only_temporary
+            self.only_ptmalloc_mmaped
+            self.only_ptmalloc_not_mmaped
+            self.only_ptmalloc_from_main_arena
+            self.only_ptmalloc_not_from_main_arena
+            self.only_jemalloc
+            self.only_not_jemalloc
         }
     }
 }

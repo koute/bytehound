@@ -10,7 +10,9 @@ use cli_core::{
     AllocationId,
     BacktraceId,
     Data,
-    Timestamp
+    Timestamp,
+    Compile,
+    TryMatch,
 };
 
 use crate::protocol;
@@ -72,7 +74,7 @@ fn run_custom_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter
 
 #[derive(Clone)]
 pub struct AllocationFilter {
-    filter: cli_core::CompiledFilter,
+    filter: cli_core::CompiledAllocationFilter,
     custom_filter: Option< Arc< HashSet< AllocationId > > >
 }
 
@@ -103,34 +105,34 @@ pub fn prepare_filter(
     Ok( AllocationFilter { filter, custom_filter } )
 }
 
-pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::Filter, PrepareFilterError > {
+pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::AllocationFilter, PrepareFilterError > {
     use cli_core::Duration;
 
-    let mut output = cli_core::BasicFilter::default();
+    let mut output = cli_core::RawAllocationFilter::default();
 
-    output.only_allocated_after_at_least = filter.from.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
-    output.only_allocated_until_at_most = filter.to.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
-    output.only_address_at_least = filter.address_min;
-    output.only_address_at_most = filter.address_max;
-    output.only_larger_or_equal = filter.size_min;
-    output.only_smaller_or_equal = filter.size_max;
+    output.common_filter.only_allocated_after_at_least = filter.from.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.common_filter.only_allocated_until_at_most = filter.to.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.common_filter.only_address_at_least = filter.address_min;
+    output.common_filter.only_address_at_most = filter.address_max;
+    output.common_filter.only_larger_or_equal = filter.size_min;
+    output.common_filter.only_smaller_or_equal = filter.size_max;
     output.only_first_size_larger_or_equal = filter.first_size_min;
     output.only_first_size_smaller_or_equal = filter.first_size_max;
     output.only_last_size_larger_or_equal = filter.last_size_min;
     output.only_last_size_smaller_or_equal = filter.last_size_max;
 
-    output.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
-    output.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );
+    output.common_filter.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
+    output.common_filter.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );
 
-    output.only_backtrace_length_at_least = filter.backtrace_depth_min.map( |value| value as usize );
-    output.only_backtrace_length_at_most = filter.backtrace_depth_max.map( |value| value as usize );
+    output.backtrace_filter.only_backtrace_length_at_least = filter.backtrace_depth_min.map( |value| value as usize );
+    output.backtrace_filter.only_backtrace_length_at_most = filter.backtrace_depth_max.map( |value| value as usize );
 
     if let Some( id ) = filter.backtraces {
-        output.only_matching_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
+        output.backtrace_filter.only_matching_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
     }
 
     if let Some( id ) = filter.deallocation_backtraces {
-        output.only_matching_deallocation_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
+        output.backtrace_filter.only_matching_deallocation_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
     }
 
     match filter.mmaped {
@@ -152,25 +154,25 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
     }
 
     if let Some( ref pattern ) = filter.function_regex {
-        output.only_passing_through_function = Some(
+        output.backtrace_filter.only_passing_through_function = Some(
             Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "function_regex", err ) )?
         );
     }
 
     if let Some( ref pattern ) = filter.negative_function_regex {
-        output.only_not_passing_through_function = Some(
+        output.backtrace_filter.only_not_passing_through_function = Some(
             Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_function_regex", err ) )?
         );
     }
 
     if let Some( ref pattern ) = filter.source_regex {
-        output.only_passing_through_source = Some(
+        output.backtrace_filter.only_passing_through_source = Some(
             Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "source_regex", err ) )?
         );
     }
 
     if let Some( ref pattern ) = filter.negative_source_regex {
-        output.only_not_passing_through_source = Some(
+        output.backtrace_filter.only_not_passing_through_source = Some(
             Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_source_regex", err ) )?
         );
     }
@@ -196,34 +198,34 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
     match filter.lifetime.unwrap_or( protocol::LifetimeFilter::All ) {
         protocol::LifetimeFilter::All => {},
         protocol::LifetimeFilter::OnlyLeaked => {
-            output.only_leaked = true;
+            output.common_filter.only_leaked = true;
         },
         protocol::LifetimeFilter::OnlyChainLeaked => {
             output.only_chain_leaked = true;
         },
         protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
-            output.only_not_deallocated_after_at_least = output.only_allocated_after_at_least;
-            output.only_not_deallocated_until_at_most = output.only_allocated_until_at_most;
+            output.common_filter.only_not_deallocated_after_at_least = output.common_filter.only_allocated_after_at_least;
+            output.common_filter.only_not_deallocated_until_at_most = output.common_filter.only_allocated_until_at_most;
         },
         protocol::LifetimeFilter::OnlyDeallocatedInCurrentRange => {
-            let min_1 = output.only_allocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
-            let max_1 = output.only_allocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
+            let min_1 = output.common_filter.only_allocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
+            let max_1 = output.common_filter.only_allocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
 
-            let min_2 = output.only_deallocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
-            let max_2 = output.only_deallocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
+            let min_2 = output.common_filter.only_deallocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
+            let max_2 = output.common_filter.only_deallocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
 
-            output.only_deallocated_after_at_least = Some( std::cmp::max( min_1, min_2 ) );
-            output.only_deallocated_until_at_most = Some( std::cmp::min( max_1, max_2 ) );
+            output.common_filter.only_deallocated_after_at_least = Some( std::cmp::max( min_1, min_2 ) );
+            output.common_filter.only_deallocated_until_at_most = Some( std::cmp::min( max_1, max_2 ) );
         },
         protocol::LifetimeFilter::OnlyTemporary => {
-            output.only_temporary = true;
+            output.common_filter.only_temporary = true;
         },
         protocol::LifetimeFilter::OnlyWholeGroupLeaked => {
             output.only_group_leaked_allocations_at_least = Some( cli_core::NumberOrFractionOfTotal::Fraction( 1.0 ) );
         }
     }
 
-    let output: cli_core::Filter = output.into();
+    let output: cli_core::AllocationFilter = output.into();
     Ok( output )
 }
 

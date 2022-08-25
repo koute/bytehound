@@ -1,7 +1,17 @@
 use regex::Regex;
 use ahash::AHashMap as HashMap;
 use ahash::AHashSet as HashSet;
-use crate::{Allocation, BacktraceId, Data, Timestamp};
+use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer};
+
+pub trait TryMatch {
+    type Item;
+    fn try_match( &self, data: &Data, item: &Self::Item ) -> bool;
+}
+
+pub trait Compile {
+    type Compiled;
+    fn compile( &self, data: &Data ) -> Self::Compiled;
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Duration( pub common::Timestamp );
@@ -21,7 +31,7 @@ impl Duration {
 }
 
 #[derive(Clone, Default)]
-pub struct BasicFilter {
+pub struct RawBacktraceFilter {
     pub only_passing_through_function: Option< Regex >,
     pub only_not_passing_through_function: Option< Regex >,
     pub only_passing_through_source: Option< Regex >,
@@ -33,7 +43,10 @@ pub struct BasicFilter {
 
     pub only_matching_deallocation_backtraces: Option< HashSet< BacktraceId > >,
     pub only_not_matching_deallocation_backtraces: Option< HashSet< BacktraceId > >,
+}
 
+#[derive(Clone, Default)]
+pub struct RawCommonFilter {
     pub only_larger_or_equal: Option< u64 >,
     pub only_larger: Option< u64 >,
     pub only_smaller_or_equal: Option< u64 >,
@@ -50,6 +63,15 @@ pub struct BasicFilter {
     pub only_alive_for_at_least: Option< Duration >,
     pub only_alive_for_at_most: Option< Duration >,
     pub only_leaked_or_deallocated_after: Option< Duration >,
+
+    pub only_leaked: bool,
+    pub only_temporary: bool,
+}
+
+#[derive(Clone, Default)]
+pub struct RawAllocationFilter {
+    pub backtrace_filter: RawBacktraceFilter,
+    pub common_filter: RawCommonFilter,
 
     pub only_first_size_larger_or_equal: Option< u64 >,
     pub only_first_size_larger: Option< u64 >,
@@ -75,9 +97,7 @@ pub struct BasicFilter {
     pub only_group_leaked_allocations_at_least: Option< NumberOrFractionOfTotal >,
     pub only_group_leaked_allocations_at_most: Option< NumberOrFractionOfTotal >,
 
-    pub only_leaked: bool,
     pub only_chain_leaked: bool,
-    pub only_temporary: bool,
     pub only_ptmalloc_mmaped: bool,
     pub only_ptmalloc_not_mmaped: bool,
     pub only_ptmalloc_from_main_arena: bool,
@@ -103,14 +123,17 @@ impl NumberOrFractionOfTotal {
 }
 
 #[derive(Clone)]
-pub struct CompiledBasicFilter {
-    is_impossible: bool,
-
+pub struct RawCompiledBacktraceFilter {
     only_backtraces: Option< HashSet< BacktraceId > >,
     only_not_matching_backtraces: Option< HashSet< BacktraceId > >,
 
     only_deallocation_backtraces: Option< HashSet< BacktraceId > >,
     only_not_matching_deallocation_backtraces: Option< HashSet< BacktraceId > >,
+}
+
+#[derive(Clone)]
+pub struct RawCompiledCommonFilter {
+    is_impossible: bool,
 
     only_larger_or_equal: u64,
     only_smaller_or_equal: u64,
@@ -124,6 +147,14 @@ pub struct CompiledBasicFilter {
     only_alive_for_at_least: Duration,
     only_alive_for_at_most: Option< Duration >,
     only_leaked_or_deallocated_after: Timestamp,
+}
+
+#[derive(Clone)]
+pub struct RawCompiledAllocationFilter {
+    is_impossible: bool,
+
+    backtrace_filter: RawCompiledBacktraceFilter,
+    common_filter: RawCompiledCommonFilter,
 
     enable_chain_filter: bool,
     only_first_size_larger_or_equal: u64,
@@ -155,29 +186,21 @@ pub struct CompiledBasicFilter {
     only_with_marker: Option< u32 >
 }
 
-impl From< BasicFilter > for Filter {
-    fn from( filter: BasicFilter ) -> Self {
+impl< T > From< T > for Filter< T > {
+    fn from( filter: T ) -> Self {
         Filter::Basic( filter )
     }
 }
 
 #[derive(Clone)]
-pub enum Filter {
-    Basic( BasicFilter ),
-    And( Box< Filter >, Box< Filter > ),
-    Or( Box< Filter >, Box< Filter > ),
-    Not( Box< Filter > ),
+pub enum Filter< T > {
+    Basic( T ),
+    And( Box< Filter< T > >, Box< Filter< T > > ),
+    Or( Box< Filter< T > >, Box< Filter< T > > ),
+    Not( Box< Filter< T > > ),
 }
 
-#[derive(Clone)]
-pub enum CompiledFilter {
-    Basic( CompiledBasicFilter ),
-    And( Box< CompiledFilter >, Box< CompiledFilter > ),
-    Or( Box< CompiledFilter >, Box< CompiledFilter > ),
-    Not( Box< CompiledFilter > ),
-}
-
-fn compile_backtrace_filter( data: &Data, filter: &BasicFilter ) -> Option< HashSet< BacktraceId > > {
+fn compile_backtrace_filter( data: &Data, filter: &RawBacktraceFilter ) -> Option< HashSet< BacktraceId > > {
     let is_none =
         filter.only_passing_through_function.is_none() &&
         filter.only_not_passing_through_function.is_none() &&
@@ -309,10 +332,10 @@ fn compile_backtrace_filter( data: &Data, filter: &BasicFilter ) -> Option< Hash
     Some( matched_backtraces )
 }
 
-impl BasicFilter {
-    fn compile( &self, data: &Data ) -> CompiledBasicFilter {
+impl Compile for RawCommonFilter {
+    type Compiled = RawCompiledCommonFilter;
+    fn compile( &self, data: &Data ) -> Self::Compiled {
         let mut is_impossible = false;
-        let only_backtraces = compile_backtrace_filter( data, self );
 
         let mut only_larger_or_equal = self.only_larger_or_equal.unwrap_or( 0 );
         if let Some( only_larger ) = self.only_larger {
@@ -339,6 +362,51 @@ impl BasicFilter {
                 self.only_deallocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp )
             ));
         }
+
+        let mut only_leaked_or_deallocated_after = self.only_leaked_or_deallocated_after.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp );
+
+        if self.only_leaked && self.only_temporary {
+            is_impossible = true;
+        }
+
+        if self.only_leaked {
+            only_leaked_or_deallocated_after = data.last_timestamp;
+        }
+
+        if self.only_temporary {
+            if let Some( (ref mut min, ref mut max) ) = only_deallocated_between_inclusive {
+                *min = std::cmp::max( *min, data.initial_timestamp );
+                *max = std::cmp::min( *max, data.last_timestamp );
+            } else {
+                only_deallocated_between_inclusive = Some( (data.initial_timestamp, data.last_timestamp) );
+            }
+        }
+
+        Self::Compiled {
+            is_impossible,
+            only_larger_or_equal,
+            only_smaller_or_equal,
+            only_address_at_least: self.only_address_at_least.unwrap_or( 0 ),
+            only_address_at_most: self.only_address_at_most.unwrap_or( !0 ),
+            only_allocated_after_at_least: self.only_allocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp ),
+            only_allocated_until_at_most: self.only_allocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp ),
+            only_deallocated_between_inclusive: only_deallocated_between_inclusive,
+            only_not_deallocated_after_at_least: self.only_not_deallocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ),
+            only_not_deallocated_until_at_most: self.only_not_deallocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ),
+            only_alive_for_at_least: self.only_alive_for_at_least.unwrap_or( Duration::from_secs( 0 ) ),
+            only_alive_for_at_most: self.only_alive_for_at_most,
+            only_leaked_or_deallocated_after,
+        }
+    }
+}
+
+impl Compile for RawAllocationFilter {
+    type Compiled = RawCompiledAllocationFilter;
+    fn compile( &self, data: &Data ) -> Self::Compiled {
+        let mut is_impossible = false;
+        let only_backtraces = compile_backtrace_filter( data, &self.backtrace_filter );
+        let common_filter = self.common_filter.compile( data );
+        is_impossible = is_impossible || common_filter.is_impossible;
 
         let mut only_first_size_larger_or_equal = self.only_first_size_larger_or_equal.unwrap_or( 0 );
         if let Some( only_first_size_larger ) = self.only_first_size_larger {
@@ -376,12 +444,6 @@ impl BasicFilter {
             }
         }
 
-        let mut only_leaked_or_deallocated_after = self.only_leaked_or_deallocated_after.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp );
-
-        if self.only_leaked && self.only_temporary {
-            is_impossible = true;
-        }
-
         if self.only_ptmalloc_mmaped && self.only_ptmalloc_not_mmaped {
             is_impossible = true;
         }
@@ -392,19 +454,6 @@ impl BasicFilter {
 
         if self.only_jemalloc && self.only_not_jemalloc {
             is_impossible = true;
-        }
-
-        if self.only_leaked {
-            only_leaked_or_deallocated_after = data.last_timestamp;
-        }
-
-        if self.only_temporary {
-            if let Some( (ref mut min, ref mut max) ) = only_deallocated_between_inclusive {
-                *min = std::cmp::max( *min, data.initial_timestamp );
-                *max = std::cmp::min( *max, data.last_timestamp );
-            } else {
-                only_deallocated_between_inclusive = Some( (data.initial_timestamp, data.last_timestamp) );
-            }
         }
 
         let enable_chain_filter =
@@ -441,27 +490,18 @@ impl BasicFilter {
             self.only_group_leaked_allocations_at_least.is_some() ||
             self.only_group_leaked_allocations_at_most.is_some();
 
-        CompiledBasicFilter {
+        RawCompiledAllocationFilter {
             is_impossible,
 
-            only_backtraces,
-            only_not_matching_backtraces: self.only_not_matching_backtraces.clone(),
+            backtrace_filter: RawCompiledBacktraceFilter {
+                only_backtraces,
+                only_not_matching_backtraces: self.backtrace_filter.only_not_matching_backtraces.clone(),
 
-            only_deallocation_backtraces: self.only_matching_deallocation_backtraces.clone(),
-            only_not_matching_deallocation_backtraces: self.only_not_matching_deallocation_backtraces.clone(),
+                only_deallocation_backtraces: self.backtrace_filter.only_matching_deallocation_backtraces.clone(),
+                only_not_matching_deallocation_backtraces: self.backtrace_filter.only_not_matching_deallocation_backtraces.clone(),
+            },
 
-            only_larger_or_equal,
-            only_smaller_or_equal,
-            only_address_at_least: self.only_address_at_least.unwrap_or( 0 ),
-            only_address_at_most: self.only_address_at_most.unwrap_or( !0 ),
-            only_allocated_after_at_least: self.only_allocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp ),
-            only_allocated_until_at_most: self.only_allocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp ),
-            only_deallocated_between_inclusive: only_deallocated_between_inclusive,
-            only_not_deallocated_after_at_least: self.only_not_deallocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ),
-            only_not_deallocated_until_at_most: self.only_not_deallocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ),
-            only_alive_for_at_least: self.only_alive_for_at_least.unwrap_or( Duration::from_secs( 0 ) ),
-            only_alive_for_at_most: self.only_alive_for_at_most,
-            only_leaked_or_deallocated_after,
+            common_filter,
 
             enable_chain_filter,
             only_first_size_larger_or_equal,
@@ -517,8 +557,70 @@ impl BasicFilter {
     }
 }
 
-impl CompiledBasicFilter {
-    fn try_match( &self, data: &Data, allocation: &Allocation ) -> bool {
+pub struct BacktraceFilterArgs {
+    pub backtrace: Option< BacktraceId >,
+    pub deallocation_backtrace: Option< Option< BacktraceId > >
+}
+
+impl TryMatch for RawCompiledBacktraceFilter {
+    type Item = BacktraceFilterArgs;
+    fn try_match( &self, _: &Data, args: &BacktraceFilterArgs ) -> bool {
+        if let Some( ref only_backtraces ) = self.only_backtraces {
+            if let Some( backtrace_id ) = args.backtrace {
+                if !only_backtraces.contains( &backtrace_id ) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some( ref set ) = self.only_not_matching_backtraces {
+            if let Some( backtrace_id ) = args.backtrace {
+                if set.contains( &backtrace_id ) {
+                    return false;
+                }
+            }
+        }
+
+        if let Some( ref only_deallocation_backtraces ) = self.only_deallocation_backtraces {
+            if let Some( deallocation ) = args.deallocation_backtrace {
+                if let Some( backtrace ) = deallocation {
+                    if !only_deallocation_backtraces.contains( &backtrace ) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if let Some( ref set ) = self.only_not_matching_deallocation_backtraces {
+            if let Some( deallocation ) = args.deallocation_backtrace {
+                if let Some( backtrace ) = deallocation {
+                    if set.contains( &backtrace ) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+}
+
+pub struct CommonFilterArgs {
+    pub pointer: DataPointer,
+    pub size: u64,
+    pub timestamp: Timestamp,
+    pub deallocation_timestamp: Option< Timestamp >,
+}
+
+impl TryMatch for RawCompiledCommonFilter {
+    type Item = CommonFilterArgs;
+    fn try_match( &self, data: &Data, allocation: &Self::Item ) -> bool {
         if self.is_impossible {
             return false;
         }
@@ -536,8 +638,8 @@ impl CompiledBasicFilter {
         }
 
         if let Some( (min, max) ) = self.only_deallocated_between_inclusive {
-            if let Some( ref deallocation ) = allocation.deallocation {
-                if !(deallocation.timestamp >= min && deallocation.timestamp <= max) {
+            if let Some( deallocation_timestamp ) = allocation.deallocation_timestamp {
+                if !(deallocation_timestamp >= min && deallocation_timestamp <= max) {
                     return false;
                 }
             } else {
@@ -545,7 +647,7 @@ impl CompiledBasicFilter {
             }
         }
 
-        let lifetime_end = allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
+        let lifetime_end = allocation.deallocation_timestamp.unwrap_or( data.last_timestamp() );
         let lifetime = Duration( lifetime_end - allocation.timestamp );
 
         if lifetime < self.only_alive_for_at_least {
@@ -558,58 +660,49 @@ impl CompiledBasicFilter {
             }
         }
 
-        if let Some( ref deallocation ) = allocation.deallocation {
-            if !(deallocation.timestamp > self.only_leaked_or_deallocated_after) {
+        if let Some( deallocation_timestamp ) = allocation.deallocation_timestamp {
+            if !(deallocation_timestamp > self.only_leaked_or_deallocated_after) {
                 return false;
             }
 
             if let Some( only_not_deallocated_after_at_least ) = self.only_not_deallocated_after_at_least {
-                if deallocation.timestamp >= only_not_deallocated_after_at_least {
+                if deallocation_timestamp >= only_not_deallocated_after_at_least {
                     return false;
                 }
             }
 
             if let Some( only_not_deallocated_until_at_most ) = self.only_not_deallocated_until_at_most {
-                if deallocation.timestamp <= only_not_deallocated_until_at_most {
+                if deallocation_timestamp <= only_not_deallocated_until_at_most {
                     return false;
                 }
             }
         }
 
-        if let Some( ref only_backtraces ) = self.only_backtraces {
-            if !only_backtraces.contains( &allocation.backtrace ) {
-                return false;
-            }
+        true
+    }
+}
+
+impl TryMatch for RawCompiledAllocationFilter {
+    type Item = Allocation;
+    fn try_match( &self, data: &Data, allocation: &Allocation ) -> bool {
+        if self.is_impossible {
+            return false;
         }
 
-        if let Some( ref set ) = self.only_not_matching_backtraces {
-            if set.contains( &allocation.backtrace ) {
-                return false;
-            }
+        if !self.common_filter.try_match( data, &CommonFilterArgs {
+            pointer: allocation.pointer,
+            size: allocation.size,
+            timestamp: allocation.timestamp,
+            deallocation_timestamp: allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp )
+        }) {
+            return false;
         }
 
-        if let Some( ref only_deallocation_backtraces ) = self.only_deallocation_backtraces {
-            if let Some( ref deallocation ) = allocation.deallocation {
-                if let Some( backtrace ) = deallocation.backtrace {
-                    if !only_deallocation_backtraces.contains( &backtrace ) {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-
-        if let Some( ref set ) = self.only_not_matching_deallocation_backtraces {
-            if let Some( ref deallocation ) = allocation.deallocation {
-                if let Some( backtrace ) = deallocation.backtrace {
-                    if set.contains( &backtrace ) {
-                        return false;
-                    }
-                }
-            }
+        if !self.backtrace_filter.try_match( data, &BacktraceFilterArgs {
+            backtrace: Some( allocation.backtrace ),
+            deallocation_backtrace: allocation.deallocation.as_ref().map( |deallocation| deallocation.backtrace )
+        }) {
+            return false;
         }
 
         if self.enable_chain_filter {
@@ -635,8 +728,8 @@ impl CompiledBasicFilter {
                 first_allocation_size = allocation.size;
                 last_allocation_size = allocation.size;
                 chain_length = 1;
-                chain_lifetime = lifetime;
                 chain_lifetime_end = allocation.deallocation.as_ref().map( |deallocation| deallocation.timestamp ).unwrap_or( data.last_timestamp() );
+                chain_lifetime = Duration( chain_lifetime_end - allocation.timestamp );
                 was_deallocated = allocation.deallocation.is_some();
             }
 
@@ -762,24 +855,29 @@ impl CompiledBasicFilter {
     }
 }
 
-impl CompiledFilter {
-    pub fn try_match( &self, data: &Data, allocation: &Allocation ) -> bool {
+impl< T > TryMatch for Filter< T > where T: TryMatch {
+    type Item = T::Item;
+    fn try_match( &self, data: &Data, allocation: &Self::Item ) -> bool {
         match *self {
-            CompiledFilter::Basic( ref filter ) => filter.try_match( data, allocation ),
-            CompiledFilter::And( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) && rhs.try_match( data, allocation ),
-            CompiledFilter::Or( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) || rhs.try_match( data, allocation ),
-            CompiledFilter::Not( ref filter ) => !filter.try_match( data, allocation )
+            Self::Basic( ref filter ) => filter.try_match( data, allocation ),
+            Self::And( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) && rhs.try_match( data, allocation ),
+            Self::Or( ref lhs, ref rhs ) => lhs.try_match( data, allocation ) || rhs.try_match( data, allocation ),
+            Self::Not( ref filter ) => !filter.try_match( data, allocation )
         }
     }
 }
 
-impl Filter {
-    pub fn compile( &self, data: &Data ) -> CompiledFilter {
+impl< T > Compile for Filter< T > where T: Compile {
+    type Compiled = Filter< T::Compiled >;
+    fn compile( &self, data: &Data ) -> Self::Compiled {
         match *self {
-            Filter::Basic( ref filter ) => CompiledFilter::Basic( filter.compile( data ) ),
-            Filter::And( ref lhs, ref rhs ) => CompiledFilter::And( Box::new( lhs.compile( data ) ), Box::new( rhs.compile( data ) ) ),
-            Filter::Or( ref lhs, ref rhs ) => CompiledFilter::Or( Box::new( lhs.compile( data ) ), Box::new( rhs.compile( data ) ) ),
-            Filter::Not( ref filter ) => CompiledFilter::Not( Box::new( filter.compile( data ) ) )
+            Filter::Basic( ref filter ) => Filter::Basic( filter.compile( data ) ),
+            Filter::And( ref lhs, ref rhs ) => Filter::And( Box::new( lhs.compile( data ) ), Box::new( rhs.compile( data ) ) ),
+            Filter::Or( ref lhs, ref rhs ) => Filter::Or( Box::new( lhs.compile( data ) ), Box::new( rhs.compile( data ) ) ),
+            Filter::Not( ref filter ) => Filter::Not( Box::new( filter.compile( data ) ) )
         }
     }
 }
+
+pub type AllocationFilter = Filter< RawAllocationFilter >;
+pub type CompiledAllocationFilter = Filter< RawCompiledAllocationFilter >;

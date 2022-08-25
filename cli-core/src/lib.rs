@@ -53,9 +53,13 @@ pub use crate::timeline::build_timeline;
 pub use common::event;
 
 pub use crate::filter::{
-    BasicFilter,
-    CompiledFilter,
+    AllocationFilter,
+    CompiledAllocationFilter,
+    RawAllocationFilter,
+    RawCompiledAllocationFilter,
     Duration,
     Filter,
-    NumberOrFractionOfTotal
+    NumberOrFractionOfTotal,
+    Compile,
+    TryMatch,
 };
