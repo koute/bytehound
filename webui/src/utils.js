@@ -243,6 +243,15 @@ function fmt_hex16( value ) {
     return output;
 }
 
+function fmt_duration_for_display( value ) {
+    value = value.replace( " ", "" ).toLowerCase();
+    if( value.match( /^(\d+)$/ ) ) {
+        value = value + "s";
+    }
+
+    return value;
+}
+
 function update_query( props, obj ) {
     let q = new  URLSearchParams( props.location.search );
     const keys = Object.keys( obj );
@@ -308,4 +317,4 @@ function def( value, default_value ) {
     }
 }
 
-export { fmt_uptime, fmt_uptime_timeval, fmt_size, fmt_full_size, fmt_date, fmt_date_unix, fmt_date_unix_ms, fmt_date_timeval, fmt_hex16, update_query, create_query, extract_query, format_frame, def }
+export { fmt_uptime, fmt_uptime_timeval, fmt_size, fmt_full_size, fmt_date, fmt_date_unix, fmt_date_unix_ms, fmt_date_timeval, fmt_hex16, fmt_duration_for_display, update_query, create_query, extract_query, format_frame, def }
