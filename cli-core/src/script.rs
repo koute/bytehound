@@ -377,6 +377,51 @@ fn get_timestamp( data: &Data, op: OperationId ) -> common::Timestamp {
     }
 }
 
+fn add_filter_once< RawFilter >(
+    filter: Option< &Filter< RawFilter > >,
+    is_filled: impl FnOnce( &RawFilter ) -> bool,
+    callback: impl FnOnce( &mut RawFilter )
+) -> Filter< RawFilter > where RawFilter: Clone + Default {
+    match filter {
+        None => {
+            let mut new_filter = RawFilter::default();
+            callback( &mut new_filter );
+
+            Filter::Basic( new_filter )
+        },
+        Some( Filter::Basic( ref old_filter ) ) => {
+            if is_filled( old_filter ) {
+                let mut new_filter = RawFilter::default();
+                callback( &mut new_filter );
+
+                Filter::And( Box::new( Filter::Basic( old_filter.clone() ) ), Box::new( Filter::Basic( new_filter ) ) )
+            } else {
+                let mut new_filter = old_filter.clone();
+                callback( &mut new_filter );
+
+                Filter::Basic( new_filter )
+            }
+        },
+        Some( Filter::And( ref lhs, ref rhs ) ) if matches!( **rhs, Filter::Basic( _ ) ) => {
+            match **rhs {
+                Filter::Basic( ref old_filter ) => {
+                    let mut new_filter = old_filter.clone();
+                    callback( &mut new_filter );
+
+                    Filter::And( lhs.clone(), Box::new( Filter::Basic( new_filter ) ) )
+                },
+                _ => unreachable!()
+            }
+        },
+        Some( old_filter ) => {
+            let mut new_filter = RawFilter::default();
+            callback( &mut new_filter );
+
+            Filter::And( Box::new( old_filter.clone() ), Box::new( Filter::Basic( new_filter ) ) )
+        }
+    }
+}
+
 impl AllocationList {
     pub fn allocation_ids( &mut self ) -> &[AllocationId] {
         self.apply_filter();
@@ -384,44 +429,7 @@ impl AllocationList {
     }
 
     fn add_filter_once( &self, is_filled: impl FnOnce( &RawAllocationFilter ) -> bool, callback: impl FnOnce( &mut RawAllocationFilter ) ) -> Self {
-        let filter = match self.filter.as_ref() {
-            None => {
-                let mut new_filter = RawAllocationFilter::default();
-                callback( &mut new_filter );
-
-                Filter::Basic( new_filter )
-            },
-            Some( Filter::Basic( ref old_filter ) ) => {
-                if is_filled( old_filter ) {
-                    let mut new_filter = RawAllocationFilter::default();
-                    callback( &mut new_filter );
-
-                    Filter::And( Box::new( Filter::Basic( old_filter.clone() ) ), Box::new( Filter::Basic( new_filter ) ) )
-                } else {
-                    let mut new_filter = old_filter.clone();
-                    callback( &mut new_filter );
-
-                    Filter::Basic( new_filter )
-                }
-            },
-            Some( Filter::And( ref lhs, ref rhs ) ) if matches!( **rhs, Filter::Basic( _ ) ) => {
-                match **rhs {
-                    Filter::Basic( ref old_filter ) => {
-                        let mut new_filter = old_filter.clone();
-                        callback( &mut new_filter );
-
-                        Filter::And( lhs.clone(), Box::new( Filter::Basic( new_filter ) ) )
-                    },
-                    _ => unreachable!()
-                }
-            },
-            Some( old_filter ) => {
-                let mut new_filter = RawAllocationFilter::default();
-                callback( &mut new_filter );
-
-                Filter::And( Box::new( old_filter.clone() ), Box::new( Filter::Basic( new_filter ) ) )
-            }
-        };
+        let filter = add_filter_once( self.filter.as_ref(), is_filled, callback );
 
         AllocationList {
             data: self.data.clone(),
