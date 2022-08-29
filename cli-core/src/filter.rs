@@ -563,16 +563,11 @@ impl CompiledBasicFilter {
                 return false;
             }
 
-            if let Some( only_not_deallocated_after_at_least ) = self.only_not_deallocated_after_at_least {
-                if deallocation.timestamp >= only_not_deallocated_after_at_least {
-                    return false;
-                }
-            }
-
-            if let Some( only_not_deallocated_until_at_most ) = self.only_not_deallocated_until_at_most {
-                if deallocation.timestamp <= only_not_deallocated_until_at_most {
-                    return false;
-                }
+            match (self.only_not_deallocated_after_at_least, deallocation.timestamp, self.only_not_deallocated_until_at_most) {
+                (Some( l ), d, Some( r )) if l <= d && d <= r => return false,
+                (Some( l ), d, None) if l <= d => return false,
+                (None, d, Some( r )) if d <= r => return false,
+                _ => ()
             }
         }
 
