@@ -152,7 +152,7 @@ Well, we can do that!
 
 ```rhai,%run
 let leaked_until_end = remaining
-    .only_not_deallocated_until_at_most(data().runtime() * 0.98);
+    .only_leaked_or_deallocated_after(data().runtime() * 0.98);
 
 graph().add(leaked_until_end).save();
 ```
@@ -160,7 +160,7 @@ graph().add(leaked_until_end).save();
 This indeed looks promising. But let's clean in up a little first.
 
 What's with the peak right at the end? Well, we asked for allocations which were
-*not deallocated until 98% of the runtime has elapsed*, so naturally those short
+*only leaked or deallocated after 98% of the runtime has elapsed*, so naturally those short
 lived allocations from near the end which were also deallocated after that time
 will still be included.
 
@@ -168,7 +168,7 @@ Let's get rid of them:
 
 ```rhai,%run
 let leaked_until_end = remaining
-    .only_not_deallocated_until_at_most(data().runtime() * 0.98)
+    .only_leaked_or_deallocated_after(data().runtime() * 0.98)
     .only_alive_for_at_least(data().runtime() * 0.02);
 
 graph().add(leaked_until_end).save();

@@ -2561,8 +2561,6 @@ impl Engine {
                 register_filter!( $ty_name, set_min, common_filter.only_allocated_until_at_most, Duration );
                 register_filter!( $ty_name, set_max, common_filter.only_deallocated_after_at_least, Duration );
                 register_filter!( $ty_name, set_min, common_filter.only_deallocated_until_at_most, Duration );
-                register_filter!( $ty_name, set_max, common_filter.only_not_deallocated_after_at_least, Duration );
-                register_filter!( $ty_name, set_min, common_filter.only_not_deallocated_until_at_most, Duration );
                 register_filter!( $ty_name, set_max, common_filter.only_alive_for_at_least, Duration );
                 register_filter!( $ty_name, set_min, common_filter.only_alive_for_at_most, Duration );
 
@@ -2989,8 +2987,6 @@ impl ToCode for crate::filter::RawCommonFilter {
             self.only_allocated_until_at_most
             self.only_deallocated_after_at_least
             self.only_deallocated_until_at_most
-            self.only_not_deallocated_after_at_least
-            self.only_not_deallocated_until_at_most
             self.only_alive_for_at_least
             self.only_alive_for_at_most
             self.only_leaked_or_deallocated_after

@@ -58,8 +58,6 @@ pub struct RawCommonFilter {
     pub only_allocated_until_at_most: Option< Duration >,
     pub only_deallocated_after_at_least: Option< Duration >,
     pub only_deallocated_until_at_most: Option< Duration >,
-    pub only_not_deallocated_after_at_least: Option< Duration >,
-    pub only_not_deallocated_until_at_most: Option< Duration >,
     pub only_alive_for_at_least: Option< Duration >,
     pub only_alive_for_at_most: Option< Duration >,
     pub only_leaked_or_deallocated_after: Option< Duration >,
@@ -151,8 +149,6 @@ pub struct RawCompiledCommonFilter {
     only_allocated_after_at_least: Timestamp,
     only_allocated_until_at_most: Timestamp,
     only_deallocated_between_inclusive: Option< (Timestamp, Timestamp) >,
-    only_not_deallocated_after_at_least: Option< Timestamp >,
-    only_not_deallocated_until_at_most: Option< Timestamp >,
     only_alive_for_at_least: Duration,
     only_alive_for_at_most: Option< Duration >,
     only_leaked_or_deallocated_after: Timestamp,
@@ -411,8 +407,6 @@ impl Compile for RawCommonFilter {
             only_allocated_after_at_least: self.only_allocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp ),
             only_allocated_until_at_most: self.only_allocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp ),
             only_deallocated_between_inclusive: only_deallocated_between_inclusive,
-            only_not_deallocated_after_at_least: self.only_not_deallocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ),
-            only_not_deallocated_until_at_most: self.only_not_deallocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ),
             only_alive_for_at_least: self.only_alive_for_at_least.unwrap_or( Duration::from_secs( 0 ) ),
             only_alive_for_at_most: self.only_alive_for_at_most,
             only_leaked_or_deallocated_after,
@@ -710,18 +704,6 @@ impl TryMatch for RawCompiledCommonFilter {
         if let Some( deallocation_timestamp ) = allocation.deallocation_timestamp {
             if !(deallocation_timestamp > self.only_leaked_or_deallocated_after) {
                 return false;
-            }
-
-            if let Some( only_not_deallocated_after_at_least ) = self.only_not_deallocated_after_at_least {
-                if deallocation_timestamp >= only_not_deallocated_after_at_least {
-                    return false;
-                }
-            }
-
-            if let Some( only_not_deallocated_until_at_most ) = self.only_not_deallocated_until_at_most {
-                if deallocation_timestamp <= only_not_deallocated_until_at_most {
-                    return false;
-                }
             }
         }
 

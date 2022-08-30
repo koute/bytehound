@@ -73,8 +73,6 @@
       - [`only_leaked_or_deallocated_after`](./api_reference/AllocationList/only_leaked_or_deallocated_after.md)
       - [`only_leaked`](./api_reference/AllocationList/only_leaked.md)
       - [`only_matching_backtraces`](./api_reference/AllocationList/only_matching_backtraces.md)
-      - [`only_not_deallocated_after_at_least`](./api_reference/AllocationList/only_not_deallocated_after_at_least.md)
-      - [`only_not_deallocated_until_at_most`](./api_reference/AllocationList/only_not_deallocated_until_at_most.md)
       - [`only_not_jemalloc`](./api_reference/AllocationList/only_not_jemalloc.md)
       - [`only_not_matching_backtraces`](./api_reference/AllocationList/only_not_matching_backtraces.md)
       - [`only_not_passing_through_function`](./api_reference/AllocationList/only_not_passing_through_function.md)

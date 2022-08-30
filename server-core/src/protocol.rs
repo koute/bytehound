@@ -327,10 +327,6 @@ pub enum LifetimeFilter {
     OnlyLeaked,
     #[serde(rename = "only_chain_leaked")]
     OnlyChainLeaked,
-    #[serde(rename = "only_not_deallocated_in_current_range")]
-    OnlyNotDeallocatedInCurrentRange,
-    #[serde(rename = "only_deallocated_in_current_range")]
-    OnlyDeallocatedInCurrentRange,
     #[serde(rename = "only_temporary")]
     OnlyTemporary,
     #[serde(rename = "only_whole_group_leaked")]

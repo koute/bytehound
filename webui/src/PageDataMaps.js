@@ -113,14 +113,10 @@ const FIELDS = {
         variants: {
             "": "Show all",
             only_leaked: "Only leaked",
-            only_not_deallocated_in_current_range: "Only not deallocated in current time range",
-            only_deallocated_in_current_range: "Only deallocated in current time range",
             only_temporary: "Only temporary",
         },
         badge: {
             only_leaked: "Only leaked",
-            only_not_deallocated_in_current_range: "Only not deallocated in current range",
-            only_deallocated_in_current_range: "Only deallocated in current range",
             only_temporary: "Only temporary",
         }
     }

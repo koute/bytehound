@@ -227,20 +227,6 @@ pub fn prepare_raw_allocation_filter( data: &Data, filter: &protocol::AllocFilte
         protocol::LifetimeFilter::OnlyChainLeaked => {
             output.only_chain_leaked = true;
         },
-        protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
-            output.common_filter.only_not_deallocated_after_at_least = output.common_filter.only_allocated_after_at_least;
-            output.common_filter.only_not_deallocated_until_at_most = output.common_filter.only_allocated_until_at_most;
-        },
-        protocol::LifetimeFilter::OnlyDeallocatedInCurrentRange => {
-            let min_1 = output.common_filter.only_allocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
-            let max_1 = output.common_filter.only_allocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
-
-            let min_2 = output.common_filter.only_deallocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
-            let max_2 = output.common_filter.only_deallocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
-
-            output.common_filter.only_deallocated_after_at_least = Some( std::cmp::max( min_1, min_2 ) );
-            output.common_filter.only_deallocated_until_at_most = Some( std::cmp::min( max_1, max_2 ) );
-        },
         protocol::LifetimeFilter::OnlyTemporary => {
             output.common_filter.only_temporary = true;
         },
@@ -344,20 +330,6 @@ pub fn prepare_raw_map_filter( data: &Data, filter: &protocol::MapFilter ) -> Re
         },
         protocol::LifetimeFilter::OnlyChainLeaked => {
             unimplemented!()
-        },
-        protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
-            output.common_filter.only_not_deallocated_after_at_least = output.common_filter.only_allocated_after_at_least;
-            output.common_filter.only_not_deallocated_until_at_most = output.common_filter.only_allocated_until_at_most;
-        },
-        protocol::LifetimeFilter::OnlyDeallocatedInCurrentRange => {
-            let min_1 = output.common_filter.only_allocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
-            let max_1 = output.common_filter.only_allocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
-
-            let min_2 = output.common_filter.only_deallocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
-            let max_2 = output.common_filter.only_deallocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
-
-            output.common_filter.only_deallocated_after_at_least = Some( std::cmp::max( min_1, min_2 ) );
-            output.common_filter.only_deallocated_until_at_most = Some( std::cmp::min( max_1, max_2 ) );
         },
         protocol::LifetimeFilter::OnlyTemporary => {
             output.common_filter.only_temporary = true;
