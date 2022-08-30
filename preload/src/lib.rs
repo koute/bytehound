@@ -38,6 +38,7 @@ mod global;
 mod ordered_map;
 mod nohash;
 mod allocation_tracker;
+mod smaps;
 
 use crate::event::InternalEvent;
 use crate::utils::read_file;
@@ -80,6 +81,7 @@ pub use crate::api::{
     posix_memalign,
     malloc_usable_size,
     mmap,
+    mmap64,
     munmap,
     mallopt,
     memalign,

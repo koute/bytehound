@@ -403,7 +403,10 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                 Event::WallClock { .. } => {},
                 Event::String { .. } => {},
                 Event::DecodedFrame { .. } => {},
-                Event::DecodedBacktrace { .. } => {}
+                Event::DecodedBacktrace { .. } => {},
+                Event::AddMap { .. } => {},
+                Event::RemoveMap { .. } => {},
+                Event::UpdateMapUsage { .. } => {},
             }
 
             event.write_to_stream( &mut ofp )?;

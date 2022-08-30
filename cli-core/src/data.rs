@@ -17,6 +17,7 @@ use crate::util::{ReadableSize, table_to_string};
 
 pub use common::{Timestamp};
 pub use common::event::DataId;
+pub use common::event::SMapFlags;
 
 pub type StringInterner = string_interner::StringInterner< StringId >;
 
@@ -146,7 +147,9 @@ pub struct Data {
     pub(crate) mmap_operations: Vec< MmapOperation >,
     pub(crate) maximum_backtrace_depth: u32,
     pub(crate) group_stats: Vec< GroupStatistics >,
-    pub(crate) chains: HashMap< AllocationId, AllocationChain >
+    pub(crate) chains: HashMap< AllocationId, AllocationChain >,
+    pub(crate) smaps: Vec< SMap >,
+    pub(crate) smap_ids: Vec< SMapId >,
 }
 
 pub type DataPointer = u64;
@@ -273,6 +276,61 @@ impl Default for GroupStatistics {
             max_size: 0,
             max_total_usage_first_seen_at: Timestamp::min()
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct MapSource {
+    pub backtrace: BacktraceId,
+    pub thread: ThreadId
+}
+
+#[derive(Debug)]
+pub struct MapDeallocation {
+    pub timestamp: Timestamp,
+    pub source: Option< MapSource >,
+}
+
+#[derive(Debug)]
+pub struct MapUsage {
+    pub timestamp: Timestamp,
+    pub anonymous: u64,
+    pub shared_clean: u64,
+    pub shared_dirty: u64,
+    pub private_clean: u64,
+    pub private_dirty: u64,
+    pub swap: u64,
+}
+
+impl MapUsage {
+    pub fn rss( &self ) -> u64 {
+        self.shared_clean + self.shared_dirty + self.private_clean + self.private_dirty
+    }
+}
+
+#[derive(Debug)]
+pub struct SMap {
+    pub pointer: DataPointer,
+    pub timestamp: Timestamp,
+    pub size: u64,
+    pub source: Option< MapSource >,
+    pub deallocation: Option< MapDeallocation >,
+    pub flags: SMapFlags,
+    pub usage_history: Vec< MapUsage >,
+    pub file_offset: u64,
+    pub inode: u64,
+    pub major: u32,
+    pub minor: u32,
+    pub name: Box< str >,
+    pub peak_rss: u64,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct SMapId( pub u64 );
+
+impl SMapId {
+    pub fn raw( self ) -> u64 {
+        self.0
     }
 }
 
@@ -659,6 +717,10 @@ impl Data {
         self.allocations.iter().enumerate().map( |(index, allocation)| (AllocationId::new( index as _ ), allocation) )
     }
 
+    pub fn smaps( &self ) -> &[SMap] {
+        &self.smaps
+    }
+
     pub fn operation_ids( &self ) -> &[OperationId] {
         &self.operations
     }
@@ -789,6 +851,10 @@ impl Data {
 
     pub fn get_allocation_ids_by_backtrace( &self, id: BacktraceId ) -> &[AllocationId] {
         self.allocations_by_backtrace.get( id.raw() as _ )
+    }
+
+    pub fn get_map( &self, id: SMapId ) -> &SMap {
+        &self.smaps[ id.raw() as usize ]
     }
 
     pub fn get_backtrace< 'a >( &'a self, id: BacktraceId ) -> impl SliceLikeIterator< Item = (FrameId, &'a Frame) > + Clone {

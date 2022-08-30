@@ -9,3 +9,4 @@ lz4-compress = { path = "../lz4-compress" }
 speedy = "0.8"
 byteorder = "1"
 libc = "0.2"
+bitflags = "1"

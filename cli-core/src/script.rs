@@ -9,11 +9,11 @@ use ahash::AHashSet as HashSet;
 use rayon::prelude::*;
 use parking_lot::Mutex;
 use regex::Regex;
-use crate::{AllocationId, BacktraceId, Data, Loader};
+use crate::{AllocationId, BacktraceId, Data, Loader, SMapId, Timestamp};
 use crate::data::OperationId;
 use crate::exporter_flamegraph_pl::dump_collation_from_iter;
-use crate::filter::{AllocationFilter, RawAllocationFilter, Duration, Filter, NumberOrFractionOfTotal, Compile, TryMatch};
-use crate::timeline::build_timeline;
+use crate::filter::{AllocationFilter, RawAllocationFilter, Duration, Filter, NumberOrFractionOfTotal, Compile, TryMatch, MapFilter, RawMapFilter};
+use crate::timeline::{MapDelta, build_allocation_timeline, build_map_timeline};
 
 pub use rhai;
 pub use crate::script_virtual::VirtualEnvironment;
@@ -138,6 +138,14 @@ impl DataRef {
             data: self.clone(),
             allocation_ids: None,
             filter: None
+        }
+    }
+
+    fn maps( &mut self ) -> MapList {
+        MapList {
+            data: self.clone(),
+            map_ids: None,
+            filter: None,
         }
     }
 }
@@ -271,6 +279,31 @@ impl std::fmt::Debug for AllocationList {
     }
 }
 
+#[derive(Clone)]
+pub struct Map {
+    data: DataRef,
+    id: SMapId
+}
+
+impl std::fmt::Debug for Map {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        write!( fmt, "Map" )
+    }
+}
+
+#[derive(Clone)]
+pub struct MapList {
+    data: DataRef,
+    map_ids: Option< Arc< Vec< SMapId > > >,
+    filter: Option< MapFilter >
+}
+
+impl std::fmt::Debug for MapList {
+    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+        write!( fmt, "MapList" )
+    }
+}
+
 // This was copied from the `plotters` crate.
 fn gen_keypoints( range: (u64, u64), max_points: usize ) -> Vec< u64 > {
     let mut scale: u64 = 1;
@@ -377,101 +410,348 @@ fn get_timestamp( data: &Data, op: OperationId ) -> common::Timestamp {
     }
 }
 
-fn add_filter_once< RawFilter >(
-    filter: Option< &Filter< RawFilter > >,
-    is_filled: impl FnOnce( &RawFilter ) -> bool,
-    callback: impl FnOnce( &mut RawFilter )
-) -> Filter< RawFilter > where RawFilter: Clone + Default {
-    match filter {
-        None => {
-            let mut new_filter = RawFilter::default();
-            callback( &mut new_filter );
+fn filtered_ids< 'a, T >( list: &'a T ) -> impl ParallelIterator< Item = <T as List>::Id > + 'a where T: List + Send + Sync {
+    let filter = list.filter_ref().map( |filter| filter.compile( list.data_ref() ) );
+    list.unfiltered_ids_par_iter().filter( move |&id| {
+        let allocation = list.get_native_item( id );
+        if let Some( ref filter ) = filter {
+            filter.try_match( list.data_ref(), allocation )
+        } else {
+            true
+        }
+    })
+}
 
-            Filter::Basic( new_filter )
-        },
-        Some( Filter::Basic( ref old_filter ) ) => {
-            if is_filled( old_filter ) {
-                let mut new_filter = RawFilter::default();
-                callback( &mut new_filter );
+trait List: Sized + Send + Sync {
+    type Id: Copy + Send + Sync + PartialEq + Eq + std::hash::Hash;
+    type RawFilter: Clone + Default + Compile;
+    type Item;
 
-                Filter::And( Box::new( Filter::Basic( old_filter.clone() ) ), Box::new( Filter::Basic( new_filter ) ) )
-            } else {
-                let mut new_filter = old_filter.clone();
+    fn create(
+        data: DataRef,
+        unfiltered_ids: Option< Arc< Vec< Self::Id > > >,
+        filter: Option< Filter< Self::RawFilter > >
+    ) -> Self;
+    fn create_item( &self, id: Self::Id ) -> Self::Item;
+    fn data_ref( &self ) -> &DataRef;
+    fn filter_ref( &self ) -> Option< &Filter< Self::RawFilter > >;
+    fn unfiltered_ids_ref( &self ) -> Option< &Arc< Vec< Self::Id > > >;
+    fn get_native_item( &self, id: Self::Id ) -> &<<Self::RawFilter as Compile>::Compiled as TryMatch>::Item;
+    fn default_unfiltered_ids( data: &Data ) -> &[Self::Id];
+    fn list_by_backtrace( data: &Data, backtrace: BacktraceId ) -> Vec< Self::Id >;
+
+    fn unfiltered_ids( &self ) -> &[Self::Id] {
+        self.unfiltered_ids_ref().map( |map_ids| map_ids.as_slice() ).unwrap_or_else( || Self::default_unfiltered_ids( &self.data_ref() ) )
+    }
+
+    fn unfiltered_ids_iter( &self ) -> std::iter::Copied< std::slice::Iter< Self::Id > > {
+        self.unfiltered_ids().iter().copied()
+    }
+
+    fn unfiltered_ids_par_iter( &self ) -> rayon::iter::Copied< rayon::slice::Iter< Self::Id > > {
+        self.unfiltered_ids().par_iter().copied()
+    }
+
+    fn len( &mut self ) -> i64 {
+        self.apply_filter();
+        self.unfiltered_ids().len() as i64
+    }
+
+    fn apply_filter( &mut self ) {
+        if self.filter_ref().is_none() {
+            return;
+        }
+
+        let list: Vec< _ > = filtered_ids( self ).collect();
+        *self = Self::create(
+            self.data_ref().clone(),
+            Some( Arc::new( list ) ),
+            None
+        );
+    }
+
+    fn clone_with_filter( &self, filter: Option< Filter< Self::RawFilter > > ) -> Self {
+        Self::create( self.data_ref().clone(), self.unfiltered_ids_ref().cloned(), filter )
+    }
+
+    fn uses_same_list( &self, rhs: &Self ) -> bool {
+        match (self.unfiltered_ids_ref(), rhs.unfiltered_ids_ref()) {
+            (None, None) => true,
+            (Some( lhs ), Some( rhs )) => {
+                Arc::ptr_eq( lhs, rhs )
+            },
+            _ => false
+        }
+    }
+
+    fn add_filter( &self, callback: impl FnOnce( &mut Self::RawFilter ) ) -> Self {
+        self.add_filter_once( |_| false, callback )
+    }
+
+    fn add_filter_once( &self, is_filled: impl FnOnce( &Self::RawFilter ) -> bool, callback: impl FnOnce( &mut Self::RawFilter ) ) -> Self {
+        let filter = match self.filter_ref() {
+            None => {
+                let mut new_filter = Self::RawFilter::default();
                 callback( &mut new_filter );
 
                 Filter::Basic( new_filter )
-            }
-        },
-        Some( Filter::And( ref lhs, ref rhs ) ) if matches!( **rhs, Filter::Basic( _ ) ) => {
-            match **rhs {
-                Filter::Basic( ref old_filter ) => {
+            },
+            Some( Filter::Basic( ref old_filter ) ) => {
+                if is_filled( old_filter ) {
+                    let mut new_filter = Self::RawFilter::default();
+                    callback( &mut new_filter );
+
+                    Filter::And( Box::new( Filter::Basic( old_filter.clone() ) ), Box::new( Filter::Basic( new_filter ) ) )
+                } else {
                     let mut new_filter = old_filter.clone();
                     callback( &mut new_filter );
 
-                    Filter::And( lhs.clone(), Box::new( Filter::Basic( new_filter ) ) )
-                },
-                _ => unreachable!()
-            }
-        },
-        Some( old_filter ) => {
-            let mut new_filter = RawFilter::default();
-            callback( &mut new_filter );
+                    Filter::Basic( new_filter )
+                }
+            },
+            Some( Filter::And( ref lhs, ref rhs ) ) if matches!( **rhs, Filter::Basic( _ ) ) => {
+                match **rhs {
+                    Filter::Basic( ref old_filter ) => {
+                        let mut new_filter = old_filter.clone();
+                        callback( &mut new_filter );
 
-            Filter::And( Box::new( old_filter.clone() ), Box::new( Filter::Basic( new_filter ) ) )
+                        Filter::And( lhs.clone(), Box::new( Filter::Basic( new_filter ) ) )
+                    },
+                    _ => unreachable!()
+                }
+            },
+            Some( old_filter ) => {
+                let mut new_filter = Self::RawFilter::default();
+                callback( &mut new_filter );
+
+                Filter::And( Box::new( old_filter.clone() ), Box::new( Filter::Basic( new_filter ) ) )
+            }
+        };
+
+        self.clone_with_filter( Some( filter ) )
+    }
+
+    fn rhai_merge( mut lhs: Self, mut rhs: Self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        if lhs.data_ref().id != rhs.data_ref().id {
+            return Err( Box::new( rhai::EvalAltResult::from( "lists don't come from the same data file" ) ) );
         }
+
+        if lhs.uses_same_list( &rhs ) {
+            let filter = match (lhs.filter_ref(), rhs.filter_ref()) {
+                (Some( lhs ), Some( rhs )) => Some( Filter::Or( Box::new( lhs.clone() ), Box::new( rhs.clone() ) ) ),
+                _ => None
+            };
+
+            Ok( lhs.clone_with_filter( filter ) )
+        } else {
+            lhs.apply_filter();
+            rhs.apply_filter();
+
+            let mut set: HashSet< Self::Id > = HashSet::new();
+            set.extend( lhs.unfiltered_ids_iter() );
+            set.extend( rhs.unfiltered_ids_iter() );
+
+            let ids: Vec< _ > = Self::create( lhs.data_ref().clone(), None, None ).unfiltered_ids_par_iter().filter( |id| set.contains( &id ) ).collect();
+            Ok( Self::create(
+                lhs.data_ref().clone(),
+                Some( Arc::new( ids ) ),
+                None
+            ))
+        }
+    }
+
+    fn rhai_substract( lhs: Self, mut rhs: Self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        if lhs.data_ref().id != rhs.data_ref().id {
+            return Err( Box::new( rhai::EvalAltResult::from( "lists don't come from the same data file" ) ) );
+        }
+
+        if lhs.uses_same_list( &rhs ) {
+            let filter = match (lhs.filter_ref(), rhs.filter_ref()) {
+                (_, None) => {
+                    return Ok( Self::create(
+                        lhs.data_ref().clone(),
+                        Some( Arc::new( Vec::new() ) ),
+                        None
+                    ));
+                },
+                (None, Some( rhs )) => Some(
+                    Filter::Not(
+                        Box::new( rhs.clone() )
+                    )
+                ),
+                (Some( lhs ), Some( rhs )) => Some(
+                    Filter::And(
+                        Box::new( lhs.clone() ),
+                        Box::new( Filter::Not(
+                            Box::new( rhs.clone() )
+                        ))
+                    )
+                )
+            };
+
+            Ok( lhs.clone_with_filter( filter ) )
+        } else {
+            rhs.apply_filter();
+
+            let mut set: HashSet< Self::Id > = HashSet::new();
+            set.extend( rhs.unfiltered_ids_iter() );
+
+            let ids: Vec< _ > = filtered_ids( &lhs ).filter( |id| !set.contains( id ) ).collect();
+            Ok( Self::create(
+                lhs.data_ref().clone(),
+                Some( Arc::new( ids ) ),
+                None
+            ))
+        }
+    }
+
+    fn rhai_intersect( lhs: Self, mut rhs: Self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        if lhs.data_ref().id != rhs.data_ref().id {
+            return Err( Box::new( rhai::EvalAltResult::from( "lists don't come from the same data file" ) ) );
+        }
+
+        if lhs.uses_same_list( &rhs ) {
+            let filter = match (lhs.filter_ref(), rhs.filter_ref()) {
+                (None, None) => None,
+                (Some( lhs ), None) => Some( lhs.clone() ),
+                (None, Some( rhs )) => Some( rhs.clone() ),
+                (Some( lhs ), Some( rhs )) => Some( Filter::And( Box::new( lhs.clone() ), Box::new( rhs.clone() ) ) )
+            };
+
+            Ok( lhs.clone_with_filter( filter ) )
+        } else {
+            rhs.apply_filter();
+
+            let mut set: HashSet< Self::Id > = HashSet::new();
+            set.extend( rhs.unfiltered_ids_iter() );
+
+            let ids: Vec< _ > = filtered_ids( &lhs ).filter( |id| set.contains( id ) ).collect();
+            Ok( Self::create(
+                lhs.data_ref().clone(),
+                Some( Arc::new( ids ) ),
+                None
+            ))
+        }
+    }
+
+    fn rhai_get( &mut self, index: i64 ) -> Result< Self::Item, Box< rhai::EvalAltResult > > {
+        self.apply_filter();
+        let list = self.unfiltered_ids();
+        let id = list.get( index as usize ).ok_or_else( || error( "index out of range" ) )?;
+        Ok( self.create_item( *id ) )
+    }
+}
+
+impl List for MapList {
+    type Id = SMapId;
+    type RawFilter = RawMapFilter;
+    type Item = Map;
+
+    fn create(
+        data: DataRef,
+        unfiltered_ids: Option< Arc< Vec< Self::Id > > >,
+        filter: Option< Filter< Self::RawFilter > >
+    ) -> Self {
+        MapList {
+            data,
+            map_ids: unfiltered_ids,
+            filter
+        }
+    }
+
+    fn create_item( &self, id: Self::Id ) -> Self::Item {
+        Map {
+            data: self.data.clone(),
+            id
+        }
+    }
+
+    fn data_ref( &self ) -> &DataRef {
+        &self.data
+    }
+
+    fn filter_ref( &self ) -> Option< &Filter< Self::RawFilter > > {
+        self.filter.as_ref()
+    }
+
+    fn unfiltered_ids_ref( &self ) ->  Option< &Arc< Vec< Self::Id > > > {
+        self.map_ids.as_ref()
+    }
+
+    fn get_native_item( &self, id: Self::Id ) -> &<<Self::RawFilter as Compile>::Compiled as TryMatch>::Item {
+        &self.data.smaps()[ id.0 as usize ]
+    }
+
+    fn default_unfiltered_ids( data: &Data ) -> &[Self::Id] {
+        &data.smap_ids
+    }
+
+    fn list_by_backtrace( data: &Data, backtrace: BacktraceId ) -> Vec< Self::Id > {
+        // TODO: Cache this.
+        data.smaps().iter().enumerate().filter( |(_, map)| map.source.map( |source| source.backtrace == backtrace ).unwrap_or( false ) ).map( |(index, _)| SMapId( index as u64 ) ).collect()
+    }
+}
+
+impl List for AllocationList {
+    type Id = AllocationId;
+    type RawFilter = RawAllocationFilter;
+    type Item = Allocation;
+
+    fn create(
+        data: DataRef,
+        unfiltered_ids: Option< Arc< Vec< Self::Id > > >,
+        filter: Option< Filter< Self::RawFilter > >
+    ) -> Self {
+        AllocationList {
+            data,
+            allocation_ids: unfiltered_ids,
+            filter
+        }
+    }
+
+    fn create_item( &self, id: Self::Id ) -> Self::Item {
+        Allocation {
+            data: self.data.clone(),
+            id
+        }
+    }
+
+    fn data_ref( &self ) -> &DataRef {
+        &self.data
+    }
+
+    fn filter_ref( &self ) -> Option< &Filter< Self::RawFilter > > {
+        self.filter.as_ref()
+    }
+
+    fn unfiltered_ids_ref( &self ) -> Option< &Arc< Vec< Self::Id > > > {
+        self.allocation_ids.as_ref()
+    }
+
+    fn get_native_item( &self, id: Self::Id ) -> &<<Self::RawFilter as Compile>::Compiled as TryMatch>::Item {
+        self.data.get_allocation( id )
+    }
+
+    fn default_unfiltered_ids( data: &Data ) -> &[Self::Id] {
+        &data.sorted_by_timestamp
+    }
+
+    fn list_by_backtrace( data: &Data, id: BacktraceId ) -> Vec< Self::Id > {
+        data.get_allocation_ids_by_backtrace( id ).to_owned()
     }
 }
 
 impl AllocationList {
     pub fn allocation_ids( &mut self ) -> &[AllocationId] {
         self.apply_filter();
-        self.unfiltered_allocation_ids()
-    }
-
-    fn add_filter_once( &self, is_filled: impl FnOnce( &RawAllocationFilter ) -> bool, callback: impl FnOnce( &mut RawAllocationFilter ) ) -> Self {
-        let filter = add_filter_once( self.filter.as_ref(), is_filled, callback );
-
-        AllocationList {
-            data: self.data.clone(),
-            allocation_ids: self.allocation_ids.clone(),
-            filter: Some( filter )
-        }
-    }
-
-    fn add_filter( &self, callback: impl FnOnce( &mut RawAllocationFilter ) ) -> Self {
-        self.add_filter_once( |_| false, callback )
-    }
-
-    fn unfiltered_allocation_ids( &self ) -> &[AllocationId] {
-        self.allocation_ids.as_ref().map( |allocation_ids| allocation_ids.as_slice() ).unwrap_or( &self.data.sorted_by_timestamp )
-    }
-
-    fn filtered_allocation_ids< 'a >( &'a self ) -> impl ParallelIterator< Item = AllocationId > + 'a {
-        let filter = self.filter.as_ref().map( |filter| filter.compile( &self.data ) );
-        self.unfiltered_allocation_ids().par_iter().filter( move |id| {
-            let allocation = self.data.get_allocation( **id );
-            if let Some( ref filter ) = filter {
-                filter.try_match( &self.data, allocation )
-            } else {
-                true
-            }
-        }).copied()
-    }
-
-    fn apply_filter( &mut self ) {
-        if self.filter.is_none() {
-            return;
-        }
-
-        let list: Vec< _ > = self.filtered_allocation_ids().collect();
-        self.allocation_ids = Some( Arc::new( list ) );
+        self.unfiltered_ids()
     }
 
     fn save_as_flamegraph_to_string( &mut self ) -> Result< String, Box< rhai::EvalAltResult > > {
         self.apply_filter();
 
         let mut lines = Vec::new();
-        let iter = self.unfiltered_allocation_ids().iter().map( |&allocation_id| {
+        let iter = self.unfiltered_ids_iter().map( |allocation_id| {
             (allocation_id, self.data.get_allocation( allocation_id ) )
         });
 
@@ -496,20 +776,15 @@ impl AllocationList {
     }
 
     fn save_as_graph( &self, env: &mut dyn Environment, path: String ) -> Result< Self, Box< rhai::EvalAltResult > > {
-        Graph::new().add( self.clone() ).save( env, path )?;
+        Graph::new().add( self.clone() )?.save( env, path )?;
         Ok( self.clone() )
-    }
-
-    fn len( &mut self ) -> i64 {
-        self.apply_filter();
-        self.unfiltered_allocation_ids().len() as i64
     }
 
     fn filtered_ops( &mut self, mut callback: impl FnMut( AllocationId ) -> OpFilter ) -> Vec< OperationId > {
         self.apply_filter();
-        let ids = self.unfiltered_allocation_ids();
+        let ids = self.unfiltered_ids_iter();
         let mut ops = Vec::with_capacity( ids.len() );
-        for &id in ids {
+        for id in ids {
             let filter = callback( id );
             if filter == OpFilter::None {
                 continue;
@@ -536,7 +811,7 @@ impl AllocationList {
 
         self.apply_filter();
         let mut groups = HashMap::new();
-        for &id in self.unfiltered_allocation_ids() {
+        for id in self.unfiltered_ids_iter() {
             let allocation = self.data.get_allocation( id );
             let group = groups.entry( allocation.backtrace ).or_insert_with( || Group::default() );
             group.size += allocation.size;
@@ -553,15 +828,12 @@ impl AllocationList {
             }).collect() )
         }
     }
+}
 
-    fn get( &mut self, index: i64 ) -> Result< Allocation, Box< rhai::EvalAltResult > > {
+impl MapList {
+    pub fn map_ids( &mut self ) -> &[SMapId] {
         self.apply_filter();
-        let list = self.unfiltered_allocation_ids();
-        let id = *list.get( index as usize ).ok_or_else( || error( "index out of range" ) )?;
-        Ok( Allocation {
-            data: self.data.clone(),
-            id
-        })
+        self.unfiltered_ids()
     }
 }
 
@@ -705,11 +977,32 @@ impl AllocationGroupList {
 }
 
 #[derive(Copy, Clone)]
-enum GraphKind {
+enum AllocationGraphKind {
     MemoryUsage,
     LiveAllocations,
     NewAllocations,
     Deallocations
+}
+
+#[derive(Copy, Clone)]
+enum MapGraphKind {
+    RSS
+}
+
+#[derive(Copy, Clone)]
+enum GraphKind {
+    Allocation( AllocationGraphKind ),
+    Map( MapGraphKind )
+}
+
+impl GraphKind {
+    fn is_for_allocations( &self ) -> bool {
+        matches!( self, GraphKind::Allocation( .. ) )
+    }
+
+    fn is_for_maps( &self ) -> bool {
+        matches!( self, GraphKind::Map( .. ) )
+    }
 }
 
 #[derive(Clone)]
@@ -722,42 +1015,16 @@ struct Graph {
     trim_right: bool,
     extend_until: Option< Duration >,
     truncate_until: Option< Duration >,
-    lists: Vec< AllocationList >,
+    allocation_lists: Vec< AllocationList >,
+    map_lists: Vec< MapList >,
     labels: Vec< Option< String > >,
     gradient: Option< Arc< colorgrad::Gradient > >,
-    kind: GraphKind,
+    kind: Option< GraphKind >,
 
     cached_datapoints: Option< Arc< (Vec< u64 >, Vec< Vec< (u64, u64) > >) > >
 }
 
-fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >], kind: GraphKind ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
-    let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |op| get_timestamp( &data, *op ) ).min().unwrap_or( common::Timestamp::min() );
-    let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |op| get_timestamp( &data, *op ) ).max().unwrap_or( common::Timestamp::min() );
-
-    let mut xs = HashSet::new();
-    let mut datapoints_for_ops = Vec::new();
-    for ops in ops_for_list {
-        if ops.is_empty() {
-            datapoints_for_ops.push( Vec::new() );
-            continue;
-        }
-
-        let datapoints: Vec< _ > = build_timeline( &data, timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
-            xs.insert( point.timestamp );
-            let x = point.timestamp;
-            let y = match kind {
-                GraphKind::MemoryUsage => point.memory_usage,
-                GraphKind::LiveAllocations => point.allocations,
-                GraphKind::NewAllocations => point.allocations_per_time,
-                GraphKind::Deallocations => point.deallocations_per_time
-            };
-            (x, y)
-        }).collect();
-
-        datapoints_for_ops.push( datapoints );
-    }
-
-    let mut xs: Vec< _ > = xs.into_iter().collect();
+fn finalize_datapoints( mut xs: Vec< u64 >, mut datapoints_for_ops: Vec< Vec< (u64, u64) > > ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
     xs.sort_unstable();
 
     for datapoints in &mut datapoints_for_ops {
@@ -782,6 +1049,63 @@ fn prepare_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >], k
     (xs, datapoints_for_ops)
 }
 
+fn prepare_allocation_graph_datapoints( data: &Data, ops_for_list: &[Vec< OperationId >], kind: AllocationGraphKind ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
+    let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |op| get_timestamp( &data, *op ) ).min().unwrap_or( common::Timestamp::min() );
+    let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |op| get_timestamp( &data, *op ) ).max().unwrap_or( common::Timestamp::min() );
+
+    let mut xs = HashSet::new();
+    let mut datapoints_for_ops = Vec::new();
+    for ops in ops_for_list {
+        if ops.is_empty() {
+            datapoints_for_ops.push( Vec::new() );
+            continue;
+        }
+
+        let datapoints: Vec< _ > = build_allocation_timeline( &data, timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
+            xs.insert( point.timestamp );
+            let x = point.timestamp;
+            let y = match kind {
+                AllocationGraphKind::MemoryUsage => point.memory_usage,
+                AllocationGraphKind::LiveAllocations => point.allocations,
+                AllocationGraphKind::NewAllocations => point.positive_change.allocations,
+                AllocationGraphKind::Deallocations => point.negative_change.allocations
+            } as u64;
+            (x, y)
+        }).collect();
+
+        datapoints_for_ops.push( datapoints );
+    }
+
+    finalize_datapoints( xs.into_iter().collect(), datapoints_for_ops )
+}
+
+fn prepare_map_graph_datapoints( ops_for_list: &[Vec< (Timestamp, MapDelta) >], kind: MapGraphKind ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
+    let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |(timestamp, _)| *timestamp ).min().unwrap_or( common::Timestamp::min() );
+    let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |(timestamp, _)| *timestamp ).max().unwrap_or( common::Timestamp::min() );
+
+    let mut xs = HashSet::new();
+    let mut datapoints_for_ops = Vec::new();
+    for ops in ops_for_list {
+        if ops.is_empty() {
+            datapoints_for_ops.push( Vec::new() );
+            continue;
+        }
+
+        let datapoints: Vec< _ > = build_map_timeline( timestamp_min, timestamp_max, ops ).into_iter().map( |point| {
+            xs.insert( point.timestamp );
+            let x = point.timestamp;
+            let y = match kind {
+                MapGraphKind::RSS => point.rss
+            } as u64;
+            (x, y)
+        }).collect();
+
+        datapoints_for_ops.push( datapoints );
+    }
+
+    finalize_datapoints( xs.into_iter().collect(), datapoints_for_ops )
+}
+
 impl Graph {
     fn new() -> Self {
         Graph {
@@ -793,39 +1117,61 @@ impl Graph {
             trim_right: false,
             extend_until: None,
             truncate_until: None,
-            lists: Vec::new(),
+            allocation_lists: Vec::new(),
+            map_lists: Vec::new(),
             labels: Vec::new(),
             gradient: None,
-            kind: GraphKind::MemoryUsage,
+            kind: None,
 
             cached_datapoints: None
         }
     }
 
-    fn add_with_label( &mut self, label: String, list: AllocationList ) -> Self {
+    fn add_with_label( &mut self, label: String, list: AllocationList ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
         let mut cloned = self.clone();
-        cloned.lists.push( list );
+        cloned.allocation_lists.push( list );
         cloned.labels.push( Some( label ) );
         cloned.cached_datapoints = None;
-        cloned
+        Ok( cloned )
     }
 
-    fn add_group( &mut self, group: AllocationGroupList ) -> Self {
+    fn add_group( &mut self, group: AllocationGroupList ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
         let mut cloned = self.clone();
         for list in group {
-            cloned.lists.push( list );
+            cloned.allocation_lists.push( list );
             cloned.labels.push( None );
         }
         cloned.cached_datapoints = None;
-        cloned
+        Ok( cloned )
     }
 
-    fn add( &mut self, list: AllocationList ) -> Self {
+    fn add( &mut self, list: AllocationList ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
         let mut cloned = self.clone();
-        cloned.lists.push( list );
+        cloned.allocation_lists.push( list );
         cloned.labels.push( None );
         cloned.cached_datapoints = None;
-        cloned
+        Ok( cloned )
+    }
+
+    fn add_maps_with_label( &mut self, label: String, list: MapList ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_map_graph()?;
+        let mut cloned = self.clone();
+        cloned.map_lists.push( list );
+        cloned.labels.push( Some( label ) );
+        cloned.cached_datapoints = None;
+        Ok( cloned )
+    }
+
+    fn add_maps( &mut self, list: MapList ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_map_graph()?;
+        let mut cloned = self.clone();
+        cloned.map_lists.push( list );
+        cloned.labels.push( None );
+        cloned.cached_datapoints = None;
+        Ok( cloned )
     }
 
     fn only_non_empty_series( &mut self ) -> Self {
@@ -883,43 +1229,70 @@ impl Graph {
         cloned
     }
 
-    fn show_memory_usage( &mut self ) -> Self {
-        let mut cloned = self.clone();
-        cloned.kind = GraphKind::MemoryUsage;
-        cloned.cached_datapoints = None;
-        cloned
+    fn bail_unless_allocation_graph( &self ) -> Result< (), Box< rhai::EvalAltResult > > {
+        if !self.graph_kind().map( |kind| kind.is_for_allocations() ).unwrap_or( true ) {
+            return Err( error( "not an allocation graph" ) );
+        }
+        Ok(())
     }
 
-    fn show_live_allocations( &mut self ) -> Self {
-        let mut cloned = self.clone();
-        cloned.kind = GraphKind::LiveAllocations;
-        cloned.cached_datapoints = None;
-        cloned
+    fn bail_unless_map_graph( &self ) -> Result< (), Box< rhai::EvalAltResult > > {
+        if !self.graph_kind().map( |kind| kind.is_for_maps() ).unwrap_or( true ) {
+            return Err( error( "not a map graph" ) );
+        }
+        Ok(())
     }
 
-    fn show_new_allocations( &mut self ) -> Self {
+    fn show_memory_usage( &mut self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
         let mut cloned = self.clone();
-        cloned.kind = GraphKind::NewAllocations;
+        cloned.kind = Some( GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) );
         cloned.cached_datapoints = None;
-        cloned
+        Ok( cloned )
     }
 
-    fn show_deallocations( &mut self ) -> Self {
+    fn show_live_allocations( &mut self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
         let mut cloned = self.clone();
-        cloned.kind = GraphKind::Deallocations;
+        cloned.kind = Some( GraphKind::Allocation( AllocationGraphKind::LiveAllocations ) );
         cloned.cached_datapoints = None;
-        cloned
+        Ok( cloned )
     }
 
-    fn generate_ops( &mut self ) -> Result< Vec< Vec< OperationId > >, String > {
-        let lists = &mut self.lists;
+    fn show_new_allocations( &mut self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
+        let mut cloned = self.clone();
+        cloned.kind = Some( GraphKind::Allocation( AllocationGraphKind::NewAllocations ) );
+        cloned.cached_datapoints = None;
+        Ok( cloned )
+    }
+
+    fn show_deallocations( &mut self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
+        let mut cloned = self.clone();
+        cloned.kind = Some( GraphKind::Allocation( AllocationGraphKind::Deallocations ) );
+        cloned.cached_datapoints = None;
+        Ok( cloned )
+    }
+
+    fn show_rss( &mut self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_map_graph()?;
+        let mut cloned = self.clone();
+        cloned.kind = Some( GraphKind::Map( MapGraphKind::RSS ) );
+        cloned.cached_datapoints = None;
+        Ok( cloned )
+    }
+
+    fn generate_allocation_ops( &mut self ) -> Result< Vec< Vec< OperationId > >, Box< rhai::EvalAltResult > > {
+        self.bail_unless_allocation_graph()?;
+        let lists = &mut self.allocation_lists;
         if lists.is_empty() {
-            return Err( format!( "no allocation lists given" ) );
+            return Err( error( "no allocation lists given" ) );
         }
 
         let data = lists[ 0 ].data.clone();
         if !lists.iter().all( |list| list.data.id() == data.id() ) {
-            return Err( format!( "not every allocation list given is from the same data file" ) );
+            return Err( error( "not every allocation list given is from the same data file" ) );
         }
 
         let threshold = self.truncate_until.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp );
@@ -949,6 +1322,36 @@ impl Graph {
         Ok( ops_for_list )
     }
 
+    fn generate_map_ops( &mut self ) -> Result< Vec< Vec< (Timestamp, MapDelta) > >, Box< rhai::EvalAltResult > > {
+        self.bail_unless_map_graph()?;
+        let lists = &mut self.map_lists;
+        if lists.is_empty() {
+            return Err( error( "no allocation lists given" ) );
+        }
+
+        let data = lists[ 0 ].data.clone();
+        if !lists.iter().all( |list| list.data.id() == data.id() ) {
+            return Err( error( "not every map list given is from the same data file" ) );
+        }
+
+        for list in lists.iter_mut() {
+            list.apply_filter();
+        }
+
+        let ops_for_list: Vec< _ > = lists.par_iter().map( |list| {
+            let ids = list.unfiltered_ids_iter();
+            let mut ops = Vec::with_capacity( ids.len() );
+            for map_id in ids {
+                data.get_map( map_id ).emit_ops( &mut ops );
+            }
+
+            ops.par_sort_by_key( |(timestamp, _)| *timestamp );
+            ops
+        }).collect();
+
+        Ok( ops_for_list )
+    }
+
     fn with_gradient_color_scheme( &mut self, start: String, end: String ) -> Result< Self, Box< rhai::EvalAltResult > > {
         let mut cloned = self.clone();
         cloned.gradient = Some( Arc::new(
@@ -962,8 +1365,27 @@ impl Graph {
         return Ok( cloned );
     }
 
+    fn graph_kind( &self ) -> Option< GraphKind > {
+        self.kind.or_else( || {
+            if !self.allocation_lists.is_empty() {
+                Some( GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) )
+            } else if !self.map_lists.is_empty() {
+                Some( GraphKind::Map( MapGraphKind::RSS ) )
+            } else {
+                None
+            }
+        })
+    }
+
+    fn data( &self ) -> Option< DataRef > {
+        match self.graph_kind()? {
+            GraphKind::Allocation( .. ) => Some( self.allocation_lists[ 0 ].data.clone() ),
+            GraphKind::Map( .. ) => Some( self.map_lists[ 0 ].data.clone() )
+        }
+    }
+
     fn save_to_string_impl( &self, xs: &[u64], datapoints_for_ops: &[Vec< (u64, u64) >], labels: &[Option< String >] ) -> Result< String, String > {
-        let data = self.lists[ 0 ].data.clone();
+        let data = self.data().ok_or_else( || "empty graph".to_owned() )?;
 
         let mut max_usage = 0;
         for datapoints in datapoints_for_ops {
@@ -992,7 +1414,7 @@ impl Graph {
         thread_local! {
             static SCALE_X: Cell< (u64, u64) > = Cell::new( (0, 0) );
             static SCALE_Y: Cell< (u64, u64) > = Cell::new( (0, 0) );
-            static KIND: Cell< GraphKind > = Cell::new( GraphKind::MemoryUsage );
+            static KIND: Cell< GraphKind > = Cell::new( GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) );
         }
 
         macro_rules! impl_ranged {
@@ -1039,7 +1461,7 @@ impl Graph {
                         format!( "{}", value )
                     } else {
                         match KIND.with( |cell| cell.get() ) {
-                            GraphKind::MemoryUsage => {
+                            GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) | GraphKind::Map( _ ) => {
                                 let (unit, multiplier) = {
                                     if max < 1024 * 1024 {
                                         ("KB", 1024)
@@ -1056,7 +1478,7 @@ impl Graph {
                                     format!( "{} {}", value / multiplier, unit )
                                 }
                             },
-                            GraphKind::LiveAllocations | GraphKind::NewAllocations | GraphKind::Deallocations => {
+                            GraphKind::Allocation( AllocationGraphKind::LiveAllocations | AllocationGraphKind::NewAllocations | AllocationGraphKind::Deallocations ) => {
                                 let (unit, multiplier) = {
                                     if max < 1000 * 1000 {
                                         ("K", 1000)
@@ -1139,9 +1561,11 @@ impl Graph {
 
         impl_ranged!( TimeRangeOffset );
 
+        let graph_kind = self.graph_kind().unwrap_or( GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) );
+
         SCALE_X.with( |cell| cell.set( (x_min, x_max + 1) ) );
         SCALE_Y.with( |cell| cell.set( (0, (max_usage + 1) as u64) ) );
-        KIND.with( |cell| cell.set( self.kind ) );
+        KIND.with( |cell| cell.set( graph_kind ) );
 
         let mut output = String::new();
         use plotters::prelude::*;
@@ -1212,11 +1636,12 @@ impl Graph {
         let mut mesh = chart.configure_mesh();
         let mut mesh = &mut mesh;
         if !self.without_axes {
-            let label = match self.kind {
-                GraphKind::MemoryUsage => "Memory usage",
-                GraphKind::LiveAllocations => "Live allocations",
-                GraphKind::NewAllocations => "New allocations",
-                GraphKind::Deallocations => "Deallocations"
+            let label = match graph_kind {
+                GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) => "Memory usage",
+                GraphKind::Allocation( AllocationGraphKind::LiveAllocations ) => "Live allocations",
+                GraphKind::Allocation( AllocationGraphKind::NewAllocations ) => "New allocations",
+                GraphKind::Allocation( AllocationGraphKind::Deallocations ) => "Deallocations",
+                GraphKind::Map( MapGraphKind::RSS ) => "RSS",
             };
             mesh = mesh.x_desc( "Time" ).y_desc( label );
         }
@@ -1254,8 +1679,18 @@ impl Graph {
     fn save_to_string( &mut self ) -> Result< String, Box< rhai::EvalAltResult > > {
         (|| {
             if self.cached_datapoints.is_none() {
-                let ops_for_list = self.generate_ops()?;
-                let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &ops_for_list, self.kind );
+                let (xs, datapoints_for_ops) = match self.graph_kind() {
+                    Some( GraphKind::Allocation( kind ) ) => {
+                        let ops_for_list = self.generate_allocation_ops()?;
+                        prepare_allocation_graph_datapoints( &self.allocation_lists[ 0 ].data, &ops_for_list, kind )
+                    },
+                    Some( GraphKind::Map( kind ) ) => {
+                        let ops_for_list = self.generate_map_ops()?;
+                        prepare_map_graph_datapoints( &ops_for_list, kind )
+                    },
+                    None => Default::default()
+                };
+
                 self.cached_datapoints = Some( Arc::new( (xs, datapoints_for_ops) ) );
             }
 
@@ -1280,25 +1715,50 @@ impl Graph {
             path.push( '/' );
         }
 
-        let ops_for_list = self.generate_ops()?;
-        for (index, (ops, label)) in ops_for_list.into_iter().zip( self.labels.iter() ).enumerate() {
-            let (xs, datapoints_for_ops) = prepare_graph_datapoints( &self.lists[ 0 ].data, &[ops], self.kind );
-            let data = self.save_to_string_impl( &xs, &datapoints_for_ops, &[label.clone()] )?;
+        match self.graph_kind() {
+            Some( GraphKind::Allocation( kind ) ) => {
+                let ops_for_list = self.generate_allocation_ops()?;
+                for (index, (ops, label)) in ops_for_list.into_iter().zip( self.labels.iter() ).enumerate() {
+                    let (xs, datapoints_for_ops) = prepare_allocation_graph_datapoints( &self.allocation_lists[ 0 ].data, &[ops], kind );
+                    let data = self.save_to_string_impl( &xs, &datapoints_for_ops, &[label.clone()] )?;
 
-            let file_path =
-                if let Some( label ) = label {
-                    format!( "{}{}.svg", path, label )
-                } else {
-                    format!( "{}Series #{}.svg", path, index )
-                };
+                    let file_path =
+                        if let Some( label ) = label {
+                            format!( "{}{}.svg", path, label )
+                        } else {
+                            format!( "{}Series #{}.svg", path, index )
+                        };
 
-            env.file_write( &file_path, FileKind::Svg, data.as_bytes() )?;
-        }
+                    env.file_write( &file_path, FileKind::Svg, data.as_bytes() )?;
+                }
+            },
+            Some( GraphKind::Map( kind ) ) => {
+                let ops_for_list = self.generate_map_ops()?;
+                for (index, (ops, label)) in ops_for_list.into_iter().zip( self.labels.iter() ).enumerate() {
+                    let (xs, datapoints_for_ops) = prepare_map_graph_datapoints( &[ops], kind );
+                    let data = self.save_to_string_impl( &xs, &datapoints_for_ops, &[label.clone()] )?;
+
+                    let file_path =
+                        if let Some( label ) = label {
+                            format!( "{}{}.svg", path, label )
+                        } else {
+                            format!( "{}Series #{}.svg", path, index )
+                        };
+
+                    env.file_write( &file_path, FileKind::Svg, data.as_bytes() )?;
+                }
+            },
+            None => {}
+        };
 
         Ok( self.clone() )
     }
 
     fn save_each_series_as_flamegraph( &mut self, env: &mut dyn Environment, mut path: String ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        if !self.graph_kind().map( |kind| kind.is_for_allocations() ).unwrap_or( true ) {
+            return Err( error( "only allocation graphs can be saved as a flamegraph" ) );
+        }
+
         env.mkdir_p( &path )?;
         if path == "." {
             path = "".into();
@@ -1306,8 +1766,8 @@ impl Graph {
             path.push( '/' );
         }
 
-        let ops_for_list = self.generate_ops()?;
-        for (index, ((list, ops), label)) in self.lists.iter().zip( ops_for_list ).zip( self.labels.iter() ).enumerate() {
+        let ops_for_list = self.generate_allocation_ops()?;
+        for (index, ((list, ops), label)) in self.allocation_lists.iter().zip( ops_for_list ).zip( self.labels.iter() ).enumerate() {
             let ids: HashSet< _ > = ops.into_iter().map( |op| op.id() ).collect();
             let mut list = AllocationList {
                 data: list.data.clone(),
@@ -1342,131 +1802,6 @@ fn load( path: String ) -> Result< Arc< Data >, Box< rhai::EvalAltResult > > {
     Ok( Arc::new( data ) )
 }
 
-fn uses_same_list( lhs: &AllocationList, rhs: &AllocationList ) -> bool {
-    match (lhs.allocation_ids.as_ref(), rhs.allocation_ids.as_ref()) {
-        (None, None) => true,
-        (Some( lhs ), Some( rhs )) => {
-            Arc::ptr_eq( lhs, rhs )
-        },
-        _ => false
-    }
-}
-
-fn merge_allocations( mut lhs: AllocationList, mut rhs: AllocationList ) -> Result< AllocationList, Box< rhai::EvalAltResult > > {
-    if lhs.data.id != rhs.data.id {
-        return Err( Box::new( rhai::EvalAltResult::from( "allocation list don't come from the same data file" ) ) );
-    }
-
-    if uses_same_list( &lhs, &rhs ) {
-        let filter = match (lhs.filter.as_ref(), rhs.filter.as_ref()) {
-            (Some( lhs ), Some( rhs )) => Some( Filter::Or( Box::new( lhs.clone() ), Box::new( rhs.clone() ) ) ),
-            _ => None
-        };
-
-        Ok( AllocationList {
-            data: lhs.data.clone(),
-            allocation_ids: lhs.allocation_ids.clone(),
-            filter
-        })
-    } else {
-        lhs.apply_filter();
-        rhs.apply_filter();
-
-        let mut set: HashSet< AllocationId > = HashSet::new();
-        set.extend( lhs.unfiltered_allocation_ids() );
-        set.extend( rhs.unfiltered_allocation_ids() );
-
-        let ids: Vec< _ > = lhs.data.sorted_by_timestamp.par_iter().copied().filter( |id| set.contains( &id ) ).collect();
-        Ok( AllocationList {
-            data: lhs.data.clone(),
-            allocation_ids: Some( Arc::new( ids ) ),
-            filter: None
-        })
-    }
-}
-
-fn substract_allocations( lhs: AllocationList, mut rhs: AllocationList ) -> Result< AllocationList, Box< rhai::EvalAltResult > > {
-    if lhs.data.id != rhs.data.id {
-        return Err( Box::new( rhai::EvalAltResult::from( "allocation list don't come from the same data file" ) ) );
-    }
-
-    if uses_same_list( &lhs, &rhs ) {
-        let filter = match (lhs.filter.as_ref(), rhs.filter.as_ref()) {
-            (_, None) => {
-                return Ok( AllocationList {
-                    data: lhs.data.clone(),
-                    allocation_ids: Some( Arc::new( Vec::new() ) ),
-                    filter: None
-                });
-            },
-            (None, Some( rhs )) => Some(
-                Filter::Not(
-                    Box::new( rhs.clone() )
-                )
-            ),
-            (Some( lhs ), Some( rhs )) => Some(
-                Filter::And(
-                    Box::new( lhs.clone() ),
-                    Box::new( Filter::Not(
-                        Box::new( rhs.clone() )
-                    ))
-                )
-            )
-        };
-
-        Ok( AllocationList {
-            data: lhs.data.clone(),
-            allocation_ids: lhs.allocation_ids.clone(),
-            filter
-        })
-    } else {
-        rhs.apply_filter();
-
-        let mut set: HashSet< AllocationId > = HashSet::new();
-        set.extend( rhs.unfiltered_allocation_ids() );
-
-        let ids: Vec< _ > = lhs.filtered_allocation_ids().filter( |id| !set.contains( id ) ).collect();
-        Ok( AllocationList {
-            data: lhs.data.clone(),
-            allocation_ids: Some( Arc::new( ids ) ),
-            filter: None
-        })
-    }
-}
-
-fn intersect_allocations( lhs: AllocationList, mut rhs: AllocationList ) -> Result< AllocationList, Box< rhai::EvalAltResult > > {
-    if lhs.data.id != rhs.data.id {
-        return Err( Box::new( rhai::EvalAltResult::from( "allocation list don't come from the same data file" ) ) );
-    }
-
-    if uses_same_list( &lhs, &rhs ) {
-        let filter = match (lhs.filter.as_ref(), rhs.filter.as_ref()) {
-            (None, None) => None,
-            (Some( lhs ), None) => Some( lhs.clone() ),
-            (None, Some( rhs )) => Some( rhs.clone() ),
-            (Some( lhs ), Some( rhs )) => Some( Filter::And( Box::new( lhs.clone() ), Box::new( rhs.clone() ) ) )
-        };
-
-        Ok( AllocationList {
-            data: lhs.data.clone(),
-            allocation_ids: lhs.allocation_ids.clone(),
-            filter
-        })
-    } else {
-        rhs.apply_filter();
-
-        let mut set: HashSet< AllocationId > = HashSet::new();
-        set.extend( rhs.unfiltered_allocation_ids() );
-
-        let ids: Vec< _ > = lhs.filtered_allocation_ids().filter( |id| set.contains( id ) ).collect();
-        Ok( AllocationList {
-            data: lhs.data.clone(),
-            allocation_ids: Some( Arc::new( ids ) ),
-            filter: None
-        })
-    }
-}
-
 pub fn error( message: impl Into< String > ) -> Box< rhai::EvalAltResult > {
     Box::new( rhai::EvalAltResult::from( message.into() ) )
 }
@@ -1484,7 +1819,8 @@ pub struct Engine {
 pub struct EngineArgs {
     pub argv: Vec< String >,
     pub data: Option< Arc< Data > >,
-    pub allocation_ids: Option< Arc< Vec< AllocationId > > >
+    pub allocation_ids: Option< Arc< Vec< AllocationId > > >,
+    pub map_ids: Option< Arc< Vec< SMapId > > >
 }
 
 pub trait Environment {
@@ -1559,6 +1895,9 @@ fn to_string( value: rhai::plugin::Dynamic ) -> String {
     } else if value.is::< AllocationList >() {
         let mut value = value.cast::< AllocationList >();
         format!( "{} allocation(s)", value.len() )
+    } else if value.is::< MapList >() {
+        let mut value = value.cast::< MapList >();
+        format!( "{} map(s)", value.len() )
     } else if value.is::< Backtrace >() {
         value.cast::< Backtrace >().to_string()
     } else {
@@ -1683,15 +2022,16 @@ impl Engine {
         engine.register_type::< Allocation >();
         engine.register_type::< AllocationList >();
         engine.register_type::< AllocationGroupList >();
+        engine.register_type::< Map >();
+        engine.register_type::< MapList >();
         engine.register_type::< Backtrace >();
         engine.register_type::< Graph >();
-        engine.register_result_fn( "+", merge_allocations );
-        engine.register_result_fn( "-", substract_allocations );
-        engine.register_result_fn( "&", intersect_allocations );
         engine.register_fn( "graph", Graph::new );
-        engine.register_fn( "add", Graph::add );
-        engine.register_fn( "add", Graph::add_with_label );
-        engine.register_fn( "add", Graph::add_group );
+        engine.register_result_fn( "add", Graph::add );
+        engine.register_result_fn( "add", Graph::add_with_label );
+        engine.register_result_fn( "add", Graph::add_group );
+        engine.register_result_fn( "add", Graph::add_maps );
+        engine.register_result_fn( "add", Graph::add_maps_with_label );
         engine.register_fn( "trim_left", Graph::trim_left );
         engine.register_fn( "trim_right", Graph::trim_right );
         engine.register_fn( "trim", Graph::trim );
@@ -1701,13 +2041,15 @@ impl Engine {
         engine.register_fn( "without_legend", Graph::without_legend );
         engine.register_fn( "without_axes", Graph::without_axes );
         engine.register_fn( "without_grid", Graph::without_grid );
-        engine.register_fn( "show_memory_usage", Graph::show_memory_usage );
-        engine.register_fn( "show_live_allocations", Graph::show_live_allocations );
-        engine.register_fn( "show_new_allocations", Graph::show_new_allocations );
-        engine.register_fn( "show_deallocations", Graph::show_deallocations );
+        engine.register_result_fn( "show_memory_usage", Graph::show_memory_usage );
+        engine.register_result_fn( "show_live_allocations", Graph::show_live_allocations );
+        engine.register_result_fn( "show_new_allocations", Graph::show_new_allocations );
+        engine.register_result_fn( "show_deallocations", Graph::show_deallocations );
+        engine.register_result_fn( "show_rss", Graph::show_rss );
 
         engine.register_result_fn( "with_gradient_color_scheme", Graph::with_gradient_color_scheme );
         engine.register_fn( "allocations", DataRef::allocations );
+        engine.register_fn( "maps", DataRef::maps );
         engine.register_fn( "runtime", |data: &mut DataRef| Duration( data.0.last_timestamp - data.0.initial_timestamp ) );
 
         engine.register_fn( "strip", |backtrace: &mut Backtrace| {
@@ -1736,34 +2078,6 @@ impl Engine {
             }
         }
 
-        engine.register_fn( "len", AllocationList::len );
-        engine.register_indexer_get_result( AllocationList::get );
-
-        engine.register_result_fn( "only_passing_through_function", |list: &mut AllocationList, regex: String| {
-            let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_passing_through_function.is_some(), |filter|
-                filter.backtrace_filter.only_passing_through_function = Some( regex )
-            ))
-        });
-        engine.register_result_fn( "only_not_passing_through_function", |list: &mut AllocationList, regex: String| {
-            let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_not_passing_through_function.is_some(), |filter|
-                filter.backtrace_filter.only_not_passing_through_function = Some( regex )
-            ))
-        });
-        engine.register_result_fn( "only_passing_through_source", |list: &mut AllocationList, regex: String| {
-            let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_passing_through_source.is_some(), |filter|
-                filter.backtrace_filter.only_passing_through_source = Some( regex )
-            ))
-        });
-        engine.register_result_fn( "only_not_passing_through_source", |list: &mut AllocationList, regex: String| {
-            let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
-            Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_not_passing_through_source.is_some(), |filter|
-                filter.backtrace_filter.only_not_passing_through_source = Some( regex )
-            ))
-        });
-
         fn gather_backtrace_ids(
             set: &mut HashSet< BacktraceId >,
             arg: rhai::Dynamic
@@ -1774,10 +2088,18 @@ impl Engine {
                 set.insert( obj.id );
             } else if let Some( mut obj ) = arg.clone().try_cast::< AllocationList >() {
                 let data = obj.data.clone();
-                for allocation_id in obj.allocation_ids() {
-                    let allocation = data.get_allocation( *allocation_id );
-                    set.insert( allocation.backtrace );
-                }
+                obj.apply_filter();
+                set.par_extend( obj.unfiltered_ids_par_iter().map( |allocation_id| {
+                    let allocation = data.get_allocation( allocation_id );
+                    allocation.backtrace
+                }));
+            } else if let Some( mut obj ) = arg.clone().try_cast::< MapList >() {
+                let data = obj.data.clone();
+                obj.apply_filter();
+                set.par_extend( obj.unfiltered_ids_par_iter().flat_map( |id| {
+                    let map = data.get_map( id );
+                    map.source.map( |source| source.backtrace )
+                }));
             } else if let Some( obj ) = arg.clone().try_cast::< AllocationGroupList >() {
                 let data = obj.data.clone();
                 for group in obj.groups.iter() {
@@ -1791,145 +2113,72 @@ impl Engine {
                     gather_backtrace_ids( set, subobj )?;
                 }
             } else {
-                let error = error( format!( "expected a raw backtrace ID, 'Backtrace' object, 'AllocationList' object, or an array of any of them, got {}", arg.type_name() ) );
+                let error = error( format!( "expected a raw backtrace ID, 'Backtrace' object, 'AllocationList' object, 'MapList' object, or an array of any of them, got {}", arg.type_name() ) );
                 return Err( error );
             }
 
             Ok(())
         }
 
-        engine.register_result_fn( "only_matching_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
-            let mut set = HashSet::new();
-            gather_backtrace_ids( &mut set, ids )?;
-
-            if set.len() == 1 && list.allocation_ids.is_none() {
-                let id = set.into_iter().next().unwrap();
-                return Ok( AllocationList {
-                    data: list.data.clone(),
-                    allocation_ids: Some( Arc::new( list.data.get_allocation_ids_by_backtrace( id ).to_owned() ) ),
-                    filter: list.filter.clone()
-                });
-            }
-
-            Ok( list.add_filter( |filter| {
-                if let Some( ref mut existing ) = filter.backtrace_filter.only_matching_backtraces {
-                    *existing = existing.intersection( &set ).copied().collect();
-                } else {
-                    filter.backtrace_filter.only_matching_backtraces = Some( set );
-                }
-            }) )
-        });
-
-        engine.register_result_fn( "only_not_matching_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
-            let mut set = HashSet::new();
-            gather_backtrace_ids( &mut set, ids )?;
-
-            Ok( list.add_filter( |filter| {
-                filter.backtrace_filter.only_not_matching_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
-            }))
-        });
-
-        engine.register_result_fn( "only_matching_deallocation_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
-            let mut set = HashSet::new();
-            gather_backtrace_ids( &mut set, ids )?;
-
-            Ok( list.add_filter( |filter| {
-                if let Some( ref mut existing ) = filter.backtrace_filter.only_matching_deallocation_backtraces {
-                    *existing = existing.intersection( &set ).copied().collect();
-                } else {
-                    filter.backtrace_filter.only_matching_deallocation_backtraces = Some( set );
-                }
-            }))
-        });
-
-        engine.register_result_fn( "only_not_matching_deallocation_backtraces", |list: &mut AllocationList, ids: rhai::Dynamic| {
-            let mut set = HashSet::new();
-            gather_backtrace_ids( &mut set, ids )?;
-
-            Ok( list.add_filter( |filter| {
-                filter.backtrace_filter.only_not_matching_deallocation_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
-            }))
-        });
-
         macro_rules! register_filter {
-            ($setter:ident, $field:ident.$name:ident, $src_ty:ty => $dst_ty:ty) => {
-                engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $src_ty|
+            ($ty_name:ident, $setter:ident, $field:ident.$name:ident, $src_ty:ty => $dst_ty:ty) => {
+                engine.register_fn( stringify!( $name ), |list: &mut $ty_name, value: $src_ty|
                     list.add_filter( |filter| $setter( &mut filter.$field.$name, value as $dst_ty ) )
                 );
             };
 
-            ($setter:ident, $name:ident, $src_ty:ty => $dst_ty:ty) => {
-                engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $src_ty|
+            ($ty_name:ident, $setter:ident, $name:ident, $src_ty:ty => $dst_ty:ty) => {
+                engine.register_fn( stringify!( $name ), |list: &mut $ty_name, value: $src_ty|
                     list.add_filter( |filter| $setter( &mut filter.$name, value as $dst_ty ) )
                 );
             };
 
-            ($field:ident.$name:ident, bool) => {
-                engine.register_fn( stringify!( $name ), |list: &mut AllocationList|
+            ($ty_name:ident, $field:ident.$name:ident, bool) => {
+                engine.register_fn( stringify!( $name ), |list: &mut $ty_name|
                     list.add_filter( |filter| filter.$field.$name = true )
                 );
             };
 
-            ($name:ident, bool) => {
-                engine.register_fn( stringify!( $name ), |list: &mut AllocationList|
+            ($ty_name:ident, $name:ident, bool) => {
+                engine.register_fn( stringify!( $name ), |list: &mut $ty_name|
                     list.add_filter( |filter| filter.$name = true )
                 );
             };
 
-            ($setter:ident, $field:ident.$name:ident, $ty:ty) => {
-                engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $ty|
+            ($ty_name:ident, $setter:ident, $field:ident.$name:ident, $ty:ty) => {
+                engine.register_fn( stringify!( $name ), |list: &mut $ty_name, value: $ty|
                     list.add_filter( |filter| $setter( &mut filter.$field.$name, value as $ty ) )
                 );
             };
 
-            ($setter:ident, $name:ident, $ty:ty) => {
-                engine.register_fn( stringify!( $name ), |list: &mut AllocationList, value: $ty|
+            ($ty_name:ident, $setter:ident, $name:ident, $ty:ty) => {
+                engine.register_fn( stringify!( $name ), |list: &mut $ty_name, value: $ty|
                     list.add_filter( |filter| $setter( &mut filter.$name, value as $ty ) )
                 );
             };
         }
 
-        register_filter!( set_max, backtrace_filter.only_backtrace_length_at_least, i64 => usize );
-        register_filter!( set_min, backtrace_filter.only_backtrace_length_at_most, i64 => usize );
-        register_filter!( set_max, common_filter.only_larger_or_equal, i64 => u64 );
-        register_filter!( set_min, common_filter.only_smaller_or_equal, i64 => u64 );
-        register_filter!( set_max, common_filter.only_larger, i64 => u64 );
-        register_filter!( set_min, common_filter.only_smaller, i64 => u64 );
-        register_filter!( set_max, common_filter.only_address_at_least, i64 => u64 );
-        register_filter!( set_min, common_filter.only_address_at_most, i64 => u64 );
+        register_filter!( AllocationList, set_max, only_first_size_larger_or_equal, i64 => u64 );
+        register_filter!( AllocationList, set_min, only_first_size_smaller_or_equal, i64 => u64 );
+        register_filter!( AllocationList, set_max, only_first_size_larger, i64 => u64 );
+        register_filter!( AllocationList, set_min, only_first_size_smaller, i64 => u64 );
+        register_filter!( AllocationList, set_max, only_last_size_larger_or_equal, i64 => u64 );
+        register_filter!( AllocationList, set_min, only_last_size_smaller_or_equal, i64 => u64 );
+        register_filter!( AllocationList, set_max, only_last_size_larger, i64 => u64 );
+        register_filter!( AllocationList, set_min, only_last_size_smaller, i64 => u64 );
+        register_filter!( AllocationList, set_max, only_chain_length_at_least, i64 => u32 );
+        register_filter!( AllocationList, set_min, only_chain_length_at_most, i64 => u32 );
+        register_filter!( AllocationList, set_max, only_chain_alive_for_at_least, Duration );
+        register_filter!( AllocationList, set_min, only_chain_alive_for_at_most, Duration );
+        register_filter!( AllocationList, set_max, only_position_in_chain_at_least, i64 => u32 );
+        register_filter!( AllocationList, set_min, only_position_in_chain_at_most, i64 => u32 );
 
-        register_filter!( set_max, common_filter.only_allocated_after_at_least, Duration );
-        register_filter!( set_min, common_filter.only_allocated_until_at_most, Duration );
-        register_filter!( set_max, common_filter.only_deallocated_after_at_least, Duration );
-        register_filter!( set_min, common_filter.only_deallocated_until_at_most, Duration );
-        register_filter!( set_max, common_filter.only_not_deallocated_after_at_least, Duration );
-        register_filter!( set_min, common_filter.only_not_deallocated_until_at_most, Duration );
-        register_filter!( set_max, common_filter.only_alive_for_at_least, Duration );
-        register_filter!( set_min, common_filter.only_alive_for_at_most, Duration );
-
-        register_filter!( set_max, common_filter.only_leaked_or_deallocated_after, Duration );
-
-        register_filter!( set_max, only_first_size_larger_or_equal, i64 => u64 );
-        register_filter!( set_min, only_first_size_smaller_or_equal, i64 => u64 );
-        register_filter!( set_max, only_first_size_larger, i64 => u64 );
-        register_filter!( set_min, only_first_size_smaller, i64 => u64 );
-        register_filter!( set_max, only_last_size_larger_or_equal, i64 => u64 );
-        register_filter!( set_min, only_last_size_smaller_or_equal, i64 => u64 );
-        register_filter!( set_max, only_last_size_larger, i64 => u64 );
-        register_filter!( set_min, only_last_size_smaller, i64 => u64 );
-        register_filter!( set_max, only_chain_length_at_least, i64 => u32 );
-        register_filter!( set_min, only_chain_length_at_most, i64 => u32 );
-        register_filter!( set_max, only_chain_alive_for_at_least, Duration );
-        register_filter!( set_min, only_chain_alive_for_at_most, Duration );
-        register_filter!( set_max, only_position_in_chain_at_least, i64 => u32 );
-        register_filter!( set_min, only_position_in_chain_at_most, i64 => u32 );
-
-        register_filter!( set_max, only_group_allocations_at_least, i64 => usize );
-        register_filter!( set_min, only_group_allocations_at_most, i64 => usize );
-        register_filter!( set_max, only_group_interval_at_least, Duration );
-        register_filter!( set_min, only_group_interval_at_most, Duration );
-        register_filter!( set_max, only_group_max_total_usage_first_seen_at_least, Duration );
-        register_filter!( set_min, only_group_max_total_usage_first_seen_at_most, Duration );
+        register_filter!( AllocationList, set_max, only_group_allocations_at_least, i64 => usize );
+        register_filter!( AllocationList, set_min, only_group_allocations_at_most, i64 => usize );
+        register_filter!( AllocationList, set_max, only_group_interval_at_least, Duration );
+        register_filter!( AllocationList, set_min, only_group_interval_at_most, Duration );
+        register_filter!( AllocationList, set_max, only_group_max_total_usage_first_seen_at_least, Duration );
+        register_filter!( AllocationList, set_min, only_group_max_total_usage_first_seen_at_most, Duration );
 
         engine.register_fn( "only_group_leaked_allocations_at_least", |list: &mut AllocationList, value: f64| {
             list.add_filter_once( |filter| filter.only_group_leaked_allocations_at_least.is_some(), |filter|
@@ -1952,15 +2201,13 @@ impl Engine {
             )
         });
 
-        register_filter!( common_filter.only_leaked, bool );
-        register_filter!( only_chain_leaked, bool );
-        register_filter!( common_filter.only_temporary, bool );
-        register_filter!( only_ptmalloc_mmaped, bool );
-        register_filter!( only_ptmalloc_not_mmaped, bool );
-        register_filter!( only_ptmalloc_from_main_arena, bool );
-        register_filter!( only_ptmalloc_not_from_main_arena, bool );
-        register_filter!( only_jemalloc, bool );
-        register_filter!( only_not_jemalloc, bool );
+        register_filter!( AllocationList, only_chain_leaked, bool );
+        register_filter!( AllocationList, only_ptmalloc_mmaped, bool );
+        register_filter!( AllocationList, only_ptmalloc_not_mmaped, bool );
+        register_filter!( AllocationList, only_ptmalloc_from_main_arena, bool );
+        register_filter!( AllocationList, only_ptmalloc_not_from_main_arena, bool );
+        register_filter!( AllocationList, only_jemalloc, bool );
+        register_filter!( AllocationList, only_not_jemalloc, bool );
 
         engine.register_fn( "only_with_marker", |list: &mut AllocationList, value: i64| {
             list.add_filter_once( |filter| filter.only_with_marker.is_some(), |filter|
@@ -1992,13 +2239,34 @@ impl Engine {
             }
         });
 
+        engine.register_fn( "backtrace", |map: &mut Map| {
+            map.data.get_map( map.id ).source.map( |source| {
+                Backtrace {
+                    data: map.data.clone(),
+                    id: source.backtrace,
+                    strip: false
+                }
+            })
+        });
+
         engine.register_fn( "allocated_at", |allocation: &mut Allocation| {
             Duration( allocation.data.get_allocation( allocation.id ).timestamp - allocation.data.initial_timestamp )
+        });
+
+        engine.register_fn( "allocated_at", |map: &mut Map| {
+            Duration( map.data.get_map( map.id ).timestamp - map.data.initial_timestamp )
         });
 
         engine.register_fn( "deallocated_at", |allocation: &mut Allocation| {
             Some( Duration( allocation.data.get_allocation( allocation.id ).deallocation.as_ref()?.timestamp - allocation.data.initial_timestamp ) )
         });
+
+        engine.register_fn( "deallocated_at", |map: &mut Map| {
+            Some( Duration( map.data.get_map( map.id ).deallocation.as_ref()?.timestamp - map.data.initial_timestamp ) )
+        });
+
+        register_filter!( MapList, set_max, only_peak_rss_at_least, i64 => u64 );
+        register_filter!( MapList, set_min, only_peak_rss_at_most, i64 => u64 );
 
         let graph_counter = Arc::new( AtomicUsize::new( 1 ) );
         let flamegraph_counter = Arc::new( AtomicUsize::new( 1 ) );
@@ -2030,6 +2298,22 @@ impl Engine {
                     })
                 } else {
                     Err( error( "no globally loaded allocations" ) )
+                }
+            });
+        }
+
+        {
+            let data = args.data.clone();
+            let map_ids = args.map_ids.clone();
+            engine.register_result_fn( "maps", move || {
+                if let Some( ref data ) = data {
+                    Ok( MapList {
+                        data: DataRef( data.clone() ),
+                        map_ids: map_ids.clone(),
+                        filter: None
+                    })
+                } else {
+                    Err( error( "no globally loaded maps" ) )
                 }
             });
         }
@@ -2178,16 +2462,132 @@ impl Engine {
             );
         }
 
+        macro_rules! register_list {
+            ($ty_name:ident) => {{
+                engine.register_result_fn( "+", $ty_name::rhai_merge );
+                engine.register_result_fn( "-", $ty_name::rhai_substract );
+                engine.register_result_fn( "&", $ty_name::rhai_intersect );
+                engine.register_fn( "len", $ty_name::len );
+                engine.register_indexer_get_result( $ty_name::rhai_get );
+
+                engine.register_result_fn( "only_passing_through_function", |list: &mut $ty_name, regex: String| {
+                    let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
+                    Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_passing_through_function.is_some(), |filter|
+                        filter.backtrace_filter.only_passing_through_function = Some( regex )
+                    ))
+                });
+                engine.register_result_fn( "only_not_passing_through_function", |list: &mut $ty_name, regex: String| {
+                    let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
+                    Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_not_passing_through_function.is_some(), |filter|
+                        filter.backtrace_filter.only_not_passing_through_function = Some( regex )
+                    ))
+                });
+                engine.register_result_fn( "only_passing_through_source", |list: &mut $ty_name, regex: String| {
+                    let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
+                    Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_passing_through_source.is_some(), |filter|
+                        filter.backtrace_filter.only_passing_through_source = Some( regex )
+                    ))
+                });
+                engine.register_result_fn( "only_not_passing_through_source", |list: &mut $ty_name, regex: String| {
+                    let regex = regex::Regex::new( &regex ).map_err( |error| Box::new( rhai::EvalAltResult::from( format!( "failed to compile regex: {}", error ) ) ) )?;
+                    Ok( list.add_filter_once( |filter| filter.backtrace_filter.only_not_passing_through_source.is_some(), |filter|
+                        filter.backtrace_filter.only_not_passing_through_source = Some( regex )
+                    ))
+                });
+
+                engine.register_result_fn( "only_matching_backtraces", |list: &mut $ty_name, ids: rhai::Dynamic| {
+                    let mut set = HashSet::new();
+                    gather_backtrace_ids( &mut set, ids )?;
+
+                    if set.len() == 1 && list.unfiltered_ids_ref().is_none() {
+                        let id = set.into_iter().next().unwrap();
+                        return Ok( $ty_name::create(
+                            list.data_ref().clone(),
+                            Some( Arc::new( $ty_name::list_by_backtrace( &list.data_ref(), id ) ) ),
+                            list.filter_ref().cloned()
+                        ));
+                    }
+
+                    Ok( list.add_filter( |filter| {
+                        if let Some( ref mut existing ) = filter.backtrace_filter.only_matching_backtraces {
+                            *existing = existing.intersection( &set ).copied().collect();
+                        } else {
+                            filter.backtrace_filter.only_matching_backtraces = Some( set );
+                        }
+                    }) )
+                });
+
+                engine.register_result_fn( "only_not_matching_backtraces", |list: &mut $ty_name, ids: rhai::Dynamic| {
+                    let mut set = HashSet::new();
+                    gather_backtrace_ids( &mut set, ids )?;
+
+                    Ok( list.add_filter( |filter| {
+                        filter.backtrace_filter.only_not_matching_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
+                    }))
+                });
+
+                engine.register_result_fn( "only_matching_deallocation_backtraces", |list: &mut $ty_name, ids: rhai::Dynamic| {
+                    let mut set = HashSet::new();
+                    gather_backtrace_ids( &mut set, ids )?;
+
+                    Ok( list.add_filter( |filter| {
+                        if let Some( ref mut existing ) = filter.backtrace_filter.only_matching_deallocation_backtraces {
+                            *existing = existing.intersection( &set ).copied().collect();
+                        } else {
+                            filter.backtrace_filter.only_matching_deallocation_backtraces = Some( set );
+                        }
+                    }))
+                });
+
+                engine.register_result_fn( "only_not_matching_deallocation_backtraces", |list: &mut $ty_name, ids: rhai::Dynamic| {
+                    let mut set = HashSet::new();
+                    gather_backtrace_ids( &mut set, ids )?;
+
+                    Ok( list.add_filter( |filter| {
+                        filter.backtrace_filter.only_not_matching_deallocation_backtraces.get_or_insert_with( || HashSet::new() ).extend( set );
+                    }))
+                });
+
+                register_filter!( $ty_name, set_max, backtrace_filter.only_backtrace_length_at_least, i64 => usize );
+                register_filter!( $ty_name, set_min, backtrace_filter.only_backtrace_length_at_most, i64 => usize );
+                register_filter!( $ty_name, set_max, common_filter.only_larger_or_equal, i64 => u64 );
+                register_filter!( $ty_name, set_min, common_filter.only_smaller_or_equal, i64 => u64 );
+                register_filter!( $ty_name, set_max, common_filter.only_larger, i64 => u64 );
+                register_filter!( $ty_name, set_min, common_filter.only_smaller, i64 => u64 );
+                register_filter!( $ty_name, set_max, common_filter.only_address_at_least, i64 => u64 );
+                register_filter!( $ty_name, set_min, common_filter.only_address_at_most, i64 => u64 );
+
+                register_filter!( $ty_name, set_max, common_filter.only_allocated_after_at_least, Duration );
+                register_filter!( $ty_name, set_min, common_filter.only_allocated_until_at_most, Duration );
+                register_filter!( $ty_name, set_max, common_filter.only_deallocated_after_at_least, Duration );
+                register_filter!( $ty_name, set_min, common_filter.only_deallocated_until_at_most, Duration );
+                register_filter!( $ty_name, set_max, common_filter.only_not_deallocated_after_at_least, Duration );
+                register_filter!( $ty_name, set_min, common_filter.only_not_deallocated_until_at_most, Duration );
+                register_filter!( $ty_name, set_max, common_filter.only_alive_for_at_least, Duration );
+                register_filter!( $ty_name, set_min, common_filter.only_alive_for_at_most, Duration );
+
+                register_filter!( $ty_name, set_max, common_filter.only_leaked_or_deallocated_after, Duration );
+
+                register_filter!( $ty_name, common_filter.only_leaked, bool );
+                register_filter!( $ty_name, common_filter.only_temporary, bool );
+            }};
+        }
+
+        register_list!( AllocationList );
+        register_list!( MapList );
+
         Engine {
             inner: engine
         }
     }
 
-    pub fn run( &self, code: &str ) -> Result< Option< AllocationList >, EvalError > {
+    pub fn run( &self, code: &str ) -> Result< Option< EvalOutput >, EvalError > {
         match self.inner.eval::< rhai::plugin::Dynamic >( code ) {
             Ok( value ) => {
                 if value.is::< AllocationList >() {
-                    Ok( Some( value.cast::< AllocationList >() ) )
+                    Ok( Some( EvalOutput::AllocationList( value.cast::< AllocationList >() ) ) )
+                } else if value.is::< MapList >() {
+                    Ok( Some( EvalOutput::MapList( value.cast::< MapList >() ) ) )
                 } else {
                     Ok( None )
                 }
@@ -2204,11 +2604,28 @@ impl Engine {
     }
 }
 
+pub enum EvalOutput {
+    AllocationList( AllocationList ),
+    MapList( MapList )
+}
+
 #[derive(Debug)]
 pub struct EvalError {
     pub message: String,
     pub line: Option< usize >,
     pub column: Option< usize >
+}
+
+impl From< String > for EvalError {
+    fn from( message: String ) -> Self {
+        EvalError { message, line: None, column: None }
+    }
+}
+
+impl< 'a > From< &'a str > for EvalError {
+    fn from( message: &'a str ) -> Self {
+        message.to_owned().into()
+    }
 }
 
 pub fn run_script( path: &Path, data_path: Option< &Path >, argv: Vec< String > ) -> Result< (), std::io::Error > {
@@ -2362,14 +2779,27 @@ pub fn run_script_slave( data_path: Option< &Path > ) -> Result< (), std::io::Er
 }
 
 struct ToCodeContext {
-    allocation_source: String,
+    list_source: String,
     output: String
 }
 
 impl AllocationFilter {
-    pub fn to_code( &self, allocation_source: Option< String > ) -> String {
+    pub fn to_code( &self, list_source: Option< String > ) -> String {
         let mut ctx = ToCodeContext {
-            allocation_source: allocation_source.unwrap_or_else( || "allocations()".into() ),
+            list_source: list_source.unwrap_or_else( || "allocations()".into() ),
+            output: String::new()
+        };
+
+        self.to_code_impl( &mut ctx );
+
+        ctx.output
+    }
+}
+
+impl MapFilter {
+    pub fn to_code( &self, list_source: Option< String > ) -> String {
+        let mut ctx = ToCodeContext {
+            list_source: list_source.unwrap_or_else( || "maps()".into() ),
             output: String::new()
         };
 
@@ -2509,62 +2939,78 @@ impl ToCode for HashSet< BacktraceId > {
     }
 }
 
+macro_rules! out {
+    ($ctx:expr => $($field:ident.$name:ident)+) => {
+        $(
+            if let Some( ref value ) = $field.$name {
+                write!( &mut $ctx.output, "  .{}(", stringify!( $name ) ).unwrap();
+                value.to_code_impl( $ctx );
+                writeln!( &mut $ctx.output, ")" ).unwrap();
+            }
+        )+
+    };
+}
+
+macro_rules! out_bool {
+    ($ctx:expr => $($field:ident.$name:ident)+) => {
+        $(
+            if $field.$name {
+                writeln!( &mut $ctx.output, "  .{}()", stringify!( $name ) ).unwrap();
+            }
+        )+
+    }
+}
+
+impl ToCode for crate::filter::RawBacktraceFilter {
+    fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
+        out! { ctx =>
+            self.only_passing_through_function
+            self.only_not_passing_through_function
+            self.only_passing_through_source
+            self.only_not_passing_through_source
+            self.only_matching_backtraces
+            self.only_not_matching_backtraces
+            self.only_backtrace_length_at_least
+            self.only_backtrace_length_at_most
+        }
+    }
+}
+
+impl ToCode for crate::filter::RawCommonFilter {
+    fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
+        out! { ctx =>
+            self.only_larger_or_equal
+            self.only_larger
+            self.only_smaller_or_equal
+            self.only_smaller
+            self.only_address_at_least
+            self.only_address_at_most
+            self.only_allocated_after_at_least
+            self.only_allocated_until_at_most
+            self.only_deallocated_after_at_least
+            self.only_deallocated_until_at_most
+            self.only_not_deallocated_after_at_least
+            self.only_not_deallocated_until_at_most
+            self.only_alive_for_at_least
+            self.only_alive_for_at_most
+            self.only_leaked_or_deallocated_after
+        }
+
+        out_bool! { ctx =>
+            self.only_leaked
+            self.only_temporary
+        }
+    }
+}
+
 impl ToCode for RawAllocationFilter {
     fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
-        macro_rules! out {
-            ($($field:ident.$name:ident)+) => {
-                $(
-                    if let Some( ref value ) = $field.$name {
-                        write!( &mut ctx.output, "  .{}(", stringify!( $name ) ).unwrap();
-                        value.to_code_impl( ctx );
-                        writeln!( &mut ctx.output, ")" ).unwrap();
-                    }
-                )+
-            };
-        }
+        writeln!( &mut ctx.output, "{}", ctx.list_source ).unwrap();
 
-        macro_rules! out_bool {
-            ($($field:ident.$name:ident)+) => {
-                $(
-                    if $field.$name {
-                        writeln!( &mut ctx.output, "  .{}()", stringify!( $name ) ).unwrap();
-                    }
-                )+
-            }
-        }
+        self.backtrace_filter.to_code_impl( ctx );
+        self.common_filter.to_code_impl( ctx );
 
-        writeln!( &mut ctx.output, "{}", ctx.allocation_source ).unwrap();
-
-        let backtrace_filter = &self.backtrace_filter;
-        let common_filter = &self.common_filter;
-
-        out! {
-            backtrace_filter.only_passing_through_function
-            backtrace_filter.only_not_passing_through_function
-            backtrace_filter.only_passing_through_source
-            backtrace_filter.only_not_passing_through_source
-            backtrace_filter.only_matching_backtraces
-            backtrace_filter.only_not_matching_backtraces
-            backtrace_filter.only_backtrace_length_at_least
-            backtrace_filter.only_backtrace_length_at_most
-            common_filter.only_larger_or_equal
-            common_filter.only_larger
-            common_filter.only_smaller_or_equal
-            common_filter.only_smaller
-            common_filter.only_address_at_least
-            common_filter.only_address_at_most
-            common_filter.only_allocated_after_at_least
-            common_filter.only_allocated_until_at_most
-            common_filter.only_deallocated_after_at_least
-            common_filter.only_deallocated_until_at_most
-            common_filter.only_not_deallocated_after_at_least
-            common_filter.only_not_deallocated_until_at_most
-            common_filter.only_alive_for_at_least
-            common_filter.only_alive_for_at_most
-            common_filter.only_leaked_or_deallocated_after
-        }
-
-        out! {
+        out! { ctx =>
             self.only_first_size_larger_or_equal
             self.only_first_size_larger
             self.only_first_size_smaller_or_equal
@@ -2592,16 +3038,28 @@ impl ToCode for RawAllocationFilter {
             self.only_with_marker
         }
 
-        out_bool! {
-            common_filter.only_leaked
+        out_bool! { ctx =>
             self.only_chain_leaked
-            common_filter.only_temporary
             self.only_ptmalloc_mmaped
             self.only_ptmalloc_not_mmaped
             self.only_ptmalloc_from_main_arena
             self.only_ptmalloc_not_from_main_arena
             self.only_jemalloc
             self.only_not_jemalloc
+        }
+    }
+}
+
+impl ToCode for RawMapFilter {
+    fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
+        writeln!( &mut ctx.output, "{}", ctx.list_source ).unwrap();
+
+        self.backtrace_filter.to_code_impl( ctx );
+        self.common_filter.to_code_impl( ctx );
+
+        out! { ctx =>
+            self.only_peak_rss_at_least
+            self.only_peak_rss_at_most
         }
     }
 }

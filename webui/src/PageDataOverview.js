@@ -64,6 +64,10 @@ export default class PageDataOverview extends React.Component {
         fetch( (this.props.sourceUrl || "") + "/data/" + this.props.id + "/timeline_leaked" )
             .then( rsp => rsp.json() )
             .then( json => this.setState( {timeline_leaked: json} ) );
+
+        fetch( (this.props.sourceUrl || "") + "/data/" + this.props.id + "/timeline_maps" )
+            .then( rsp => rsp.json() )
+            .then( json => this.setState( {timeline_maps: json} ) );
     }
 
     render() {
@@ -231,6 +235,93 @@ export default class PageDataOverview extends React.Component {
             }
         }
 
+        if( this.state.timeline_maps ) {
+            if( this.state.timeline_maps.xs.length > 2 ) {
+                inner.push(
+                    <Switcher key="s4">
+                        <Graph
+                            key="rss"
+                            title="Total memory usage (RSS)"
+                            data={this.state.timeline_maps}
+                            y_accessor="rss"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="address_space"
+                            title="Address space"
+                            data={this.state.timeline_maps}
+                            y_accessor="address_space"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="anonymous"
+                            title="Anonymous"
+                            data={this.state.timeline_maps}
+                            y_accessor="anonymous"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="dirty"
+                            title="Dirty"
+                            data={this.state.timeline_maps}
+                            y_accessor="dirty"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="clean"
+                            title="Clean"
+                            data={this.state.timeline_maps}
+                            y_accessor="clean"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                        <Graph
+                            key="swap"
+                            title="Swap"
+                            data={this.state.timeline_maps}
+                            y_accessor="swap"
+                            y_label=""
+                            onZoom={this.onZoom.bind(this)}
+                            onRightClick={this.onRightClick.bind(this)}
+                            x0={this.state.x0}
+                            x1={this.state.x1}
+                            fill={true}
+                            xUnit="unix_timestamp_ms"
+                        />
+                    </Switcher>
+                );
+            }
+        }
+
         const prefix = (this.props.sourceUrl || "") + "/data/" + this.props.id;
 
         return (
@@ -274,6 +365,7 @@ export default class PageDataOverview extends React.Component {
                                 <a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics_ascii_tree/dynamic_statics_" + this.props.id + ".txt"}>Dynamically allocated statics</a>
                                 &nbsp;(<a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics/dynamic_statics_" + this.props.id + ".json"}>.json</a>)
                             </div>
+                            <div><Link to={"/maps/" + this.props.id}>Maps over time</Link></div>
                         </div>
                     </div>
                     <br />

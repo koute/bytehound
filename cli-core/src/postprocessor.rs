@@ -172,6 +172,18 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I, anonymize: 
                     write = false;
                 }
             },
+            Event::AddMap { ref mut name, .. } => {
+                process = true;
+                if anonymize != Anonymize::None {
+                    *name = Cow::Borrowed( "" );
+                }
+            },
+            Event::RemoveMap { .. } => {
+                process = true;
+            },
+            Event::UpdateMapUsage { .. } => {
+                process = true;
+            },
             Event::Header( ref mut body ) => {
                 anonymize_header( anonymize, body );
             },

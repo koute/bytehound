@@ -1,7 +1,7 @@
 use regex::Regex;
 use ahash::AHashMap as HashMap;
 use ahash::AHashSet as HashSet;
-use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer};
+use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer, SMap};
 
 pub trait TryMatch {
     type Item;
@@ -9,7 +9,7 @@ pub trait TryMatch {
 }
 
 pub trait Compile {
-    type Compiled;
+    type Compiled: TryMatch + Send + Sync;
     fn compile( &self, data: &Data ) -> Self::Compiled;
 }
 
@@ -107,6 +107,15 @@ pub struct RawAllocationFilter {
     pub only_with_marker: Option< u32 >
 }
 
+#[derive(Clone, Default)]
+pub struct RawMapFilter {
+    pub backtrace_filter: RawBacktraceFilter,
+    pub common_filter: RawCommonFilter,
+
+    pub only_peak_rss_at_least: Option< u64 >,
+    pub only_peak_rss_at_most: Option< u64 >,
+}
+
 #[derive(Copy, Clone)]
 pub enum NumberOrFractionOfTotal {
     Number( u64 ),
@@ -184,6 +193,17 @@ pub struct RawCompiledAllocationFilter {
     only_ptmalloc_from_main_arena: Option< bool >,
     only_jemalloc: Option< bool >,
     only_with_marker: Option< u32 >
+}
+
+#[derive(Clone)]
+pub struct RawCompiledMapFilter {
+    is_impossible: bool,
+
+    backtrace_filter: RawCompiledBacktraceFilter,
+    common_filter: RawCompiledCommonFilter,
+
+    only_peak_rss_at_least: Option< u64 >,
+    only_peak_rss_at_most: Option< u64 >,
 }
 
 impl< T > From< T > for Filter< T > {
@@ -557,6 +577,33 @@ impl Compile for RawAllocationFilter {
     }
 }
 
+impl Compile for RawMapFilter {
+    type Compiled = RawCompiledMapFilter;
+    fn compile( &self, data: &Data ) -> Self::Compiled {
+        let mut is_impossible = false;
+        let only_backtraces = compile_backtrace_filter( data, &self.backtrace_filter );
+        let common_filter = self.common_filter.compile( data );
+        is_impossible = is_impossible || common_filter.is_impossible;
+
+        RawCompiledMapFilter {
+            is_impossible,
+
+            backtrace_filter: RawCompiledBacktraceFilter {
+                only_backtraces,
+                only_not_matching_backtraces: self.backtrace_filter.only_not_matching_backtraces.clone(),
+
+                only_deallocation_backtraces: self.backtrace_filter.only_matching_deallocation_backtraces.clone(),
+                only_not_matching_deallocation_backtraces: self.backtrace_filter.only_not_matching_deallocation_backtraces.clone(),
+            },
+
+            common_filter,
+
+            only_peak_rss_at_least: self.only_peak_rss_at_least,
+            only_peak_rss_at_most: self.only_peak_rss_at_most,
+        }
+    }
+}
+
 pub struct BacktraceFilterArgs {
     pub backtrace: Option< BacktraceId >,
     pub deallocation_backtrace: Option< Option< BacktraceId > >
@@ -855,6 +902,45 @@ impl TryMatch for RawCompiledAllocationFilter {
     }
 }
 
+impl TryMatch for RawCompiledMapFilter {
+    type Item = SMap;
+    fn try_match( &self, data: &Data, map: &SMap ) -> bool {
+        if self.is_impossible {
+            return false;
+        }
+
+        if !self.common_filter.try_match( data, &CommonFilterArgs {
+            pointer: map.pointer,
+            size: map.size,
+            timestamp: map.timestamp,
+            deallocation_timestamp: map.deallocation.as_ref().map( |deallocation| deallocation.timestamp )
+        }) {
+            return false;
+        }
+
+        if !self.backtrace_filter.try_match( data, &BacktraceFilterArgs {
+            backtrace: map.source.map( |source| source.backtrace ),
+            deallocation_backtrace: map.deallocation.as_ref().map( |deallocation| deallocation.source.map( |source| source.backtrace ) )
+        }) {
+            return false;
+        }
+
+        if let Some( rss ) = self.only_peak_rss_at_least {
+            if !(map.peak_rss > rss) {
+                return false;
+            }
+        }
+
+        if let Some( rss ) = self.only_peak_rss_at_most {
+            if !(map.peak_rss < rss) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 impl< T > TryMatch for Filter< T > where T: TryMatch {
     type Item = T::Item;
     fn try_match( &self, data: &Data, allocation: &Self::Item ) -> bool {
@@ -881,3 +967,6 @@ impl< T > Compile for Filter< T > where T: Compile {
 
 pub type AllocationFilter = Filter< RawAllocationFilter >;
 pub type CompiledAllocationFilter = Filter< RawCompiledAllocationFilter >;
+
+pub type MapFilter = Filter< RawMapFilter >;
+pub type CompiledMapFilter = Filter< RawCompiledMapFilter >;

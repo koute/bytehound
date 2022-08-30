@@ -52,7 +52,12 @@ use crate::data::{
     ThreadId,
     Timestamp,
     StringInterner,
-    StringId
+    StringId,
+    SMap,
+    SMapId,
+    MapDeallocation,
+    MapUsage,
+    MapSource,
 };
 use crate::vecvec::DenseVecVec;
 use crate::reader::parse_events;
@@ -122,7 +127,9 @@ pub struct Loader {
     maximum_backtrace_depth: u32,
     previous_backtrace_on_thread: HashMap< u32, Vec< u64 > >,
     string_id_map: HashMap< u32, StringId >,
-    last_timestamp: Timestamp
+    last_timestamp: Timestamp,
+    smaps: Vec< SMap >,
+    address_to_smap_id: HashMap< u64, SMapId >,
 }
 
 fn address_to_frame< F: FnMut( Frame ) >( address_space: &dyn IAddressSpace, interner: &mut StringInterner, address: u64, mut callback: F ) {
@@ -250,7 +257,9 @@ impl Loader {
             maximum_backtrace_depth: 0,
             previous_backtrace_on_thread: Default::default(),
             string_id_map: Default::default(),
-            last_timestamp: Timestamp::min()
+            last_timestamp: Timestamp::min(),
+            smaps: Default::default(),
+            address_to_smap_id: Default::default(),
         };
 
         loader.update_timestamp_to_wall_clock( timestamp, wall_clock_secs, wall_clock_nsecs );
@@ -798,6 +807,105 @@ impl Loader {
                 self.pending_maps = parse_maps( &contents );
                 self.address_space_needs_reloading = true;
             },
+            Event::AddMap { timestamp, address, length, backtrace, thread, file_offset, inode, major, minor, flags, name } => {
+                let timestamp = self.shift_timestamp( timestamp );
+                self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+
+                let source = if thread != !0 {
+                    let backtrace = self.lookup_backtrace( backtrace ).unwrap();
+                    Some( MapSource {
+                        backtrace,
+                        thread
+                    })
+                } else {
+                    None
+                };
+
+                if let Some( id ) = self.address_to_smap_id.remove( &address ) {
+                    // TODO: Handle permission changes etc. in a special way instead
+                    //       of treating those as a new mapping?
+                    let smap = &mut self.smaps[ id.0 as usize ];
+                    smap.deallocation = Some( MapDeallocation {
+                        timestamp,
+                        source: source.clone()
+                    });
+                }
+
+                let smap = SMap {
+                    pointer: address,
+                    timestamp,
+                    size: length,
+                    source,
+                    deallocation: None,
+                    flags,
+                    usage_history: Vec::new(),
+                    file_offset,
+                    inode,
+                    major,
+                    minor,
+                    name: name.into(),
+                    peak_rss: 0
+                };
+
+                let id = SMapId( self.smaps.len() as u64 );
+                self.smaps.push( smap );
+                self.address_to_smap_id.insert( address, id );
+            },
+            Event::RemoveMap { timestamp, address, length, backtrace, thread } => {
+                let timestamp = self.shift_timestamp( timestamp );
+                self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+
+                let id = match self.address_to_smap_id.get( &address ) {
+                    Some( smap ) => *smap,
+                    None => {
+                        warn!( "Remove map for map which was not found: 0x{:016X}", address );
+                        return;
+                    }
+                };
+
+                let deallocation = Some( MapDeallocation {
+                    timestamp,
+                    source: if thread != !0 {
+                        let backtrace = self.lookup_backtrace( backtrace ).unwrap();
+                        Some( MapSource {
+                            backtrace,
+                            thread
+                        })
+                    } else {
+                        None
+                    },
+                });
+
+                let smap = &mut self.smaps[ id.0 as usize ];
+                if smap.size != length {
+                    warn!( "Length doesn't map for smap at 0x{:016X}", address );
+                }
+
+                smap.deallocation = deallocation;
+            },
+            Event::UpdateMapUsage { timestamp, address, anonymous, shared_clean, shared_dirty, private_clean, private_dirty, swap } => {
+                let timestamp = self.shift_timestamp( timestamp );
+                self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+
+                let id = match self.address_to_smap_id.get( &address ) {
+                    Some( smap ) => *smap,
+                    None => {
+                        warn!( "Usage update for map which was not found: 0x{:016X}", address );
+                        return;
+                    }
+                };
+
+                let smap = &mut self.smaps[ id.0 as usize ];
+                smap.usage_history.push( MapUsage {
+                    timestamp,
+                    anonymous: anonymous * 1024,
+                    shared_clean: shared_clean * 1024,
+                    shared_dirty: shared_dirty * 1024,
+                    private_clean: private_clean * 1024,
+                    private_dirty: private_dirty * 1024,
+                    swap: swap * 1024,
+                });
+            },
             Event::File { ref path, ref contents, .. } | Event::File64 { ref path, ref contents, .. } => {
                 if !contents.starts_with( b"\x7FELF" ) {
                     return;
@@ -1088,6 +1196,7 @@ impl Loader {
         self.mallopts.shrink_to_fit();
         self.mmap_operations.shrink_to_fit();
         self.group_stats.shrink_to_fit();
+        self.smaps.shrink_to_fit();
 
         for (index, (_, timestamp)) in current_total_max_size_by_backtrace.into_iter().enumerate() {
             self.group_stats[ index ].max_total_usage_first_seen_at = timestamp;
@@ -1106,6 +1215,10 @@ impl Loader {
         }
 
         allocations_by_backtrace.shrink_to_fit();
+
+        self.smaps.par_iter_mut().for_each( |map| {
+            map.peak_rss = map.usage_history.iter().map( |usage| usage.rss() ).max().unwrap_or( 0 );
+        });
 
         let last_timestamp = self.group_stats.iter().map( |stats| stats.last_allocation ).max().unwrap_or( initial_timestamp );
         let last_timestamp = std::cmp::max( self.last_timestamp, last_timestamp );
@@ -1135,7 +1248,9 @@ impl Loader {
             mmap_operations: self.mmap_operations,
             maximum_backtrace_depth: self.maximum_backtrace_depth,
             group_stats: self.group_stats,
-            chains
+            chains,
+            smap_ids: (0..self.smaps.len()).map( |id| SMapId( id as u64 ) ).collect(),
+            smaps: self.smaps,
         }
     }
 }

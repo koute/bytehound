@@ -7,6 +7,7 @@ import PageDataOverview from "./PageDataOverview.js";
 import PageDataAllocations from "./PageDataAllocations.js";
 import PageDataAddressSpace from "./PageDataAddressSpace.js";
 import PageDataConsole from "./PageDataConsole.js";
+import PageDataMaps from "./PageDataMaps.js";
 
 export default class App extends React.Component {
     render() {
@@ -18,6 +19,9 @@ export default class App extends React.Component {
                     }} />
                     <Route exact path="/allocations/:id" render={ ({ match, location, history }) => {
                         return <PageDataAllocations key="allocations" location={location} history={history} sourceUrl={this.props.sourceUrl} id={match.params.id} />;
+                    }} />
+                    <Route exact path="/maps/:id" render={ ({ match, location, history }) => {
+                        return <PageDataMaps key="maps" location={location} history={history} sourceUrl={this.props.sourceUrl} id={match.params.id} />;
                     }} />
                     <Route exact path="/address_space/:id" render={ ({ match, location, history }) => {
                         return <PageDataAddressSpace key="address_space" location={location} history={history} sourceUrl={this.props.sourceUrl} id={match.params.id} />;

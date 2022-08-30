@@ -13,6 +13,9 @@ use cli_core::{
     Timestamp,
     Compile,
     TryMatch,
+    SMapId,
+    SMap,
+    EvalOutput,
 };
 
 use crate::protocol;
@@ -46,8 +49,7 @@ impl From< crate::protocol::NumberOrPercentage > for cli_core::NumberOrFractionO
     }
 }
 
-fn run_custom_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< Arc< HashSet< AllocationId > > >, cli_core::script::EvalError > {
-    let mut custom_set = None;
+fn run_custom_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< EvalOutput >, cli_core::script::EvalError > {
     if let Some( ref custom_filter ) = custom_filter.custom_filter {
         if custom_filter.is_empty() {
             return Ok( None );
@@ -60,16 +62,38 @@ fn run_custom_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter
 
         let env = Arc::new( Mutex::new( cli_core::script::VirtualEnvironment::new() ) );
         let engine = cli_core::script::Engine::new( env.clone(), args );
-        let custom_set = custom_set.get_or_insert( HashSet::new() );
-        match engine.run( &custom_filter )? {
-            Some( mut list ) => {
-                custom_set.extend( list.allocation_ids().iter().copied() );
-            },
-            None => {}
-        }
+        return Ok( engine.run( &custom_filter )? );
     }
 
-    Ok( custom_set.map( |set| Arc::new( set ) ) )
+    Ok( None )
+}
+
+fn run_custom_allocation_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< Arc< HashSet< AllocationId > > >, cli_core::script::EvalError > {
+    match run_custom_filter( data, custom_filter )? {
+        None => {
+            Ok( None )
+        },
+        Some( EvalOutput::AllocationList( mut list ) ) => {
+            Ok( Some( Arc::new( list.allocation_ids().iter().copied().collect() ) ) )
+        },
+        Some( EvalOutput::MapList( .. ) ) => {
+            Err( "expected 'AllocationList', got 'MapList'".into() )
+        }
+    }
+}
+
+fn run_custom_map_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< Arc< HashSet< SMapId > > >, cli_core::script::EvalError > {
+    match run_custom_filter( data, custom_filter )? {
+        None => {
+            Ok( None )
+        },
+        Some( EvalOutput::AllocationList( .. ) ) => {
+            Err( "expected 'MapList', got 'AllocationList'".into() )
+        },
+        Some( EvalOutput::MapList( mut list ) ) => {
+            Ok( Some( Arc::new( list.map_ids().iter().copied().collect() ) ) )
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -94,18 +118,18 @@ impl AllocationFilter {
     }
 }
 
-pub fn prepare_filter(
+pub fn prepare_allocation_filter(
     data: &Arc< Data >,
     filter: &protocol::AllocFilter,
     custom_filter: &protocol::CustomFilter
 ) -> Result< AllocationFilter, PrepareFilterError > {
-    let filter = prepare_raw_filter( data, filter )?.compile( data );
-    let custom_filter = run_custom_filter( data, custom_filter ).map_err( |error| PrepareFilterError::InvalidCustomFilter( error.message ) )?;
+    let filter = prepare_raw_allocation_filter( data, filter )?.compile( data );
+    let custom_filter = run_custom_allocation_filter( data, custom_filter ).map_err( |error| PrepareFilterError::InvalidCustomFilter( error.message ) )?;
 
     Ok( AllocationFilter { filter, custom_filter } )
 }
 
-pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::AllocationFilter, PrepareFilterError > {
+pub fn prepare_raw_allocation_filter( data: &Data, filter: &protocol::AllocFilter ) -> Result< cli_core::AllocationFilter, PrepareFilterError > {
     use cli_core::Duration;
 
     let mut output = cli_core::RawAllocationFilter::default();
@@ -226,6 +250,127 @@ pub fn prepare_raw_filter( data: &Data, filter: &protocol::AllocFilter ) -> Resu
     }
 
     let output: cli_core::AllocationFilter = output.into();
+    Ok( output )
+}
+
+#[derive(Clone)]
+pub struct MapFilter {
+    filter: cli_core::CompiledMapFilter,
+    custom_filter: Option< Arc< HashSet< SMapId > > >
+}
+
+impl MapFilter {
+    pub fn try_match( &self, data: &Data, id: SMapId, allocation: &SMap ) -> bool {
+        if let Some( ref custom_filter ) = self.custom_filter {
+            if !custom_filter.contains( &id ) {
+                return false;
+            }
+        }
+
+        if !self.filter.try_match( data, allocation ) {
+            return false;
+        }
+
+        true
+    }
+}
+
+pub fn prepare_map_filter(
+    data: &Arc< Data >,
+    filter: &protocol::MapFilter,
+    custom_filter: &protocol::CustomFilter
+) -> Result< MapFilter, PrepareFilterError > {
+    let filter = prepare_raw_map_filter( data, filter )?.compile( data );
+    let custom_filter = run_custom_map_filter( data, custom_filter ).map_err( |error| PrepareFilterError::InvalidCustomFilter( error.message ) )?;
+
+    Ok( MapFilter { filter, custom_filter } )
+}
+
+pub fn prepare_raw_map_filter( data: &Data, filter: &protocol::MapFilter ) -> Result< cli_core::MapFilter, PrepareFilterError > {
+    use cli_core::Duration;
+
+    let mut output = cli_core::RawMapFilter::default();
+
+    // TODO: Deduplicate this with the allocation filter.
+    output.common_filter.only_allocated_after_at_least = filter.from.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.common_filter.only_allocated_until_at_most = filter.to.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) );
+    output.common_filter.only_address_at_least = filter.address_min;
+    output.common_filter.only_address_at_most = filter.address_max;
+    output.common_filter.only_larger_or_equal = filter.size_min;
+    output.common_filter.only_smaller_or_equal = filter.size_max;
+
+    output.common_filter.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
+    output.common_filter.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );
+
+    output.backtrace_filter.only_backtrace_length_at_least = filter.backtrace_depth_min.map( |value| value as usize );
+    output.backtrace_filter.only_backtrace_length_at_most = filter.backtrace_depth_max.map( |value| value as usize );
+
+    if let Some( id ) = filter.backtraces {
+        output.backtrace_filter.only_matching_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
+    }
+
+    if let Some( id ) = filter.deallocation_backtraces {
+        output.backtrace_filter.only_matching_deallocation_backtraces = Some( std::iter::once( BacktraceId::new( id ) ).collect() );
+    }
+
+    if let Some( ref pattern ) = filter.function_regex {
+        output.backtrace_filter.only_passing_through_function = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "function_regex", err ) )?
+        );
+    }
+
+    if let Some( ref pattern ) = filter.negative_function_regex {
+        output.backtrace_filter.only_not_passing_through_function = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_function_regex", err ) )?
+        );
+    }
+
+    if let Some( ref pattern ) = filter.source_regex {
+        output.backtrace_filter.only_passing_through_source = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "source_regex", err ) )?
+        );
+    }
+
+    if let Some( ref pattern ) = filter.negative_source_regex {
+        output.backtrace_filter.only_not_passing_through_source = Some(
+            Regex::new( &pattern ).map_err( |err| PrepareFilterError::InvalidRegex( "negative_source_regex", err ) )?
+        );
+    }
+
+    match filter.lifetime.unwrap_or( protocol::LifetimeFilter::All ) {
+        protocol::LifetimeFilter::All => {},
+        protocol::LifetimeFilter::OnlyLeaked => {
+            output.common_filter.only_leaked = true;
+        },
+        protocol::LifetimeFilter::OnlyChainLeaked => {
+            unimplemented!()
+        },
+        protocol::LifetimeFilter::OnlyNotDeallocatedInCurrentRange => {
+            output.common_filter.only_not_deallocated_after_at_least = output.common_filter.only_allocated_after_at_least;
+            output.common_filter.only_not_deallocated_until_at_most = output.common_filter.only_allocated_until_at_most;
+        },
+        protocol::LifetimeFilter::OnlyDeallocatedInCurrentRange => {
+            let min_1 = output.common_filter.only_allocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
+            let max_1 = output.common_filter.only_allocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
+
+            let min_2 = output.common_filter.only_deallocated_after_at_least.unwrap_or( Duration( Timestamp::from_secs( 0 ) ) );
+            let max_2 = output.common_filter.only_deallocated_until_at_most.unwrap_or( Duration( data.last_timestamp() - data.initial_timestamp() ) );
+
+            output.common_filter.only_deallocated_after_at_least = Some( std::cmp::max( min_1, min_2 ) );
+            output.common_filter.only_deallocated_until_at_most = Some( std::cmp::min( max_1, max_2 ) );
+        },
+        protocol::LifetimeFilter::OnlyTemporary => {
+            output.common_filter.only_temporary = true;
+        },
+        protocol::LifetimeFilter::OnlyWholeGroupLeaked => {
+            unimplemented!()
+        }
+    }
+
+    output.only_peak_rss_at_least = filter.peak_rss_min;
+    output.only_peak_rss_at_most = filter.peak_rss_max;
+
+    let output: cli_core::MapFilter = output.into();
     Ok( output )
 }
 

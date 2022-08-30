@@ -88,6 +88,17 @@ pub struct ResponseTimeline {
 }
 
 #[derive(Serialize)]
+pub struct ResponseMapTimeline {
+    pub xs: Vec< u64 >,
+    pub address_space: Vec< i64 >,
+    pub rss: Vec< i64 >,
+    pub anonymous: Vec< i64 >,
+    pub dirty: Vec< i64 >,
+    pub clean: Vec< i64 >,
+    pub swap: Vec< i64 >,
+}
+
+#[derive(Serialize)]
 pub struct Frame< 'a > {
     pub address: u64,
     pub address_s: String,
@@ -178,6 +189,47 @@ pub struct AllocationGroup< 'a > {
 }
 
 #[derive(Serialize)]
+pub struct MapDeallocation< 'a > {
+    pub timestamp: Timeval,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread: Option< u32 >,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtrace_id: Option< u32 >,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtrace: Option< Vec< Frame< 'a > > >
+}
+
+#[derive(Serialize)]
+pub struct Map< 'a > {
+    pub id: u64,
+    pub address: u64,
+    pub address_s: String,
+    pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread: Option< u32 >,
+    pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtrace_id: Option< u32 >,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deallocation: Option< MapDeallocation< 'a > >,
+    pub backtrace: Vec< Frame< 'a > >,
+    pub is_readable: bool,
+    pub is_writable: bool,
+    pub is_executable: bool,
+    pub is_shared: bool,
+    pub file_offset: u64,
+    pub inode: u64,
+    pub major: u32,
+    pub minor: u32,
+    pub name: Cow< 'a, str >,
+    pub peak_rss: u64,
+    pub graph_preview_url: Option< String >,
+    pub graph_url: Option< String >,
+}
+
+#[derive(Serialize)]
 pub struct Mallopt< 'a > {
     pub timestamp: Timeval,
     pub thread: u32,
@@ -238,6 +290,12 @@ pub struct ResponseAllocations< T: Serialize > {
 #[derive(Serialize)]
 pub struct ResponseAllocationGroups< T: Serialize > {
     pub allocations: T,
+    pub total_count: u64
+}
+
+#[derive(Serialize)]
+pub struct ResponseMaps< T: Serialize > {
+    pub maps: T,
     pub total_count: u64
 }
 
@@ -674,6 +732,29 @@ pub struct BacktraceFormat {
     pub strip_template_args: Option< bool >
 }
 
+#[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
+pub struct MapFilter {
+    pub from: Option< TimestampFilter< OffsetMin > >,
+    pub to: Option< TimestampFilter< OffsetMax > >,
+    pub lifetime: Option< LifetimeFilter >,
+    pub address_min: Option< u64 >,
+    pub address_max: Option< u64 >,
+    pub size_min: Option< u64 >,
+    pub size_max: Option< u64 >,
+    pub lifetime_min: Option< Interval >,
+    pub lifetime_max: Option< Interval >,
+    pub backtrace_depth_min: Option< u32 >,
+    pub backtrace_depth_max: Option< u32 >,
+    pub backtraces: Option< u32 >, // TODO: Support multiple.
+    pub deallocation_backtraces: Option< u32 >, // TODO: Support multiple.
+    pub function_regex: Option< String >,
+    pub source_regex: Option< String >,
+    pub negative_function_regex: Option< String >,
+    pub negative_source_regex: Option< String >,
+    pub peak_rss_min: Option< u64 >,
+    pub peak_rss_max: Option< u64 >,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct RequestAllocations {
     pub skip: Option< u64 >,
@@ -689,6 +770,29 @@ pub struct RequestAllocationGroups {
     pub count: Option< u32 >,
 
     pub sort_by: Option< AllocGroupsSortBy >,
+    pub order: Option< Order >,
+
+    pub generate_graphs: Option< bool >
+}
+
+#[derive(Copy, Clone, Deserialize, Debug)]
+pub enum MapsSortBy {
+    #[serde(rename = "timestamp")]
+    Timestamp,
+    #[serde(rename = "address")]
+    Address,
+    #[serde(rename = "size")]
+    Size,
+    #[serde(rename = "peak_rss")]
+    PeakRss,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RequestMaps {
+    pub skip: Option< u64 >,
+    pub count: Option< u32 >,
+
+    pub sort_by: Option< MapsSortBy >,
     pub order: Option< Order >,
 
     pub generate_graphs: Option< bool >

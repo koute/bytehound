@@ -44,6 +44,7 @@ use crate::writers;
 use crate::nohash::NoHash;
 use crate::unwind::Backtrace;
 use crate::allocation_tracker::{AllocationBucket, BufferedAllocation};
+use crate::smaps::update_smaps;
 
 fn get_hash< T: Hash >( value: T ) -> u64 {
     use std::collections::hash_map::DefaultHasher;
@@ -555,10 +556,13 @@ pub(crate) fn thread_main() {
     let mut allocation_lock_for_memory_dump = None;
     let mut last_broadcast = coarse_timestamp;
     let mut last_server_poll = coarse_timestamp;
+    let mut last_smaps_update = coarse_timestamp;
+    let mut force_smaps_update = true;
     let mut timestamp_override = None;
     let mut poll_fds = Vec::new();
     let mut backtrace_cache = BacktraceCache::new( opt::get().backtrace_cache_size_level_2 );
     let mut thread_gc = crate::global::ThreadGarbageCollector::default();
+    let mut smaps_state = Default::default();
     loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 
@@ -792,6 +796,7 @@ pub(crate) fn thread_main() {
                 InternalEvent::Exit => {
                     crate::allocation_tracker::on_exit();
                     running = false;
+                    force_smaps_update = true;
                 },
                 InternalEvent::GrabMemoryDump => {
                     // Block any further allocations.
@@ -834,8 +839,32 @@ pub(crate) fn thread_main() {
                     };
 
                     let _ = event.write_to_stream( &mut *serializer );
+
+                    update_smaps(
+                        timestamp,
+                        &mut smaps_state,
+                        &mut backtrace_cache,
+                        &mut *serializer
+                    );
+
+                    last_smaps_update = timestamp;
+                    force_smaps_update = false;
                 }
             }
+        }
+
+        let should_update_smaps = force_smaps_update || (coarse_timestamp - last_smaps_update).as_msecs() >= 1000;
+        if should_update_smaps {
+            let timestamp = get_timestamp();
+            update_smaps(
+                timestamp,
+                &mut smaps_state,
+                &mut backtrace_cache,
+                &mut *serializer
+            );
+
+            last_smaps_update = timestamp;
+            force_smaps_update = false;
         }
 
         if (coarse_timestamp - last_flush_timestamp).as_secs() > 30 {

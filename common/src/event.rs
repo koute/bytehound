@@ -112,6 +112,17 @@ pub struct AllocBody {
     pub preceding_free_space: u64
 }
 
+bitflags::bitflags! {
+    #[derive(Readable, Writable)]
+    #[repr(transparent)]
+    pub struct SMapFlags: u32 {
+        const READABLE = 1 << 0;
+        const WRITABLE = 1 << 1;
+        const EXECUTABLE = 1 << 2;
+        const SHARED = 1 << 3;
+    }
+}
+
 #[derive(Clone, PartialEq, Debug, Readable, Writable)]
 pub enum Event< 'a > {
     Header( HeaderBody ),
@@ -247,6 +258,44 @@ pub enum Event< 'a > {
         path: Cow< 'a, str >,
         #[speedy(length_type = u64)]
         contents: Cow< 'a, [u8] >
+    },
+    AddMap {
+        timestamp: Timestamp,
+        address: u64,
+        length: u64,
+        file_offset: u64,
+        inode: u64,
+        backtrace: u64,
+        thread: u32,
+        major: u32,
+        minor: u32,
+        flags: SMapFlags,
+        name: Cow< 'a, str >
+    },
+    RemoveMap {
+        timestamp: Timestamp,
+        address: u64,
+        length: u64,
+        backtrace: u64,
+        thread: u32
+    },
+    UpdateMapUsage {
+        timestamp: Timestamp,
+        address: u64,
+
+        // NOTE: All of these are in kilobytes (base 1024).
+        #[speedy(varint)]
+        anonymous: u64,
+        #[speedy(varint)]
+        shared_clean: u64,
+        #[speedy(varint)]
+        shared_dirty: u64,
+        #[speedy(varint)]
+        private_clean: u64,
+        #[speedy(varint)]
+        private_dirty: u64,
+        #[speedy(varint)]
+        swap: u64,
     },
 }
 

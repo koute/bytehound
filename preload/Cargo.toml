@@ -22,6 +22,8 @@ tikv-jemallocator = { path = "../jemallocator", default-features = false }
 tikv-jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
 goblin = "0.0.24"
 smallvec = { version = "1", features = ["union"] }
+ahash = "0.8"
+hashbrown = "0.12"
 
 [dependencies.thread-local-reentrant]
 git = "https://github.com/koute/not-perf.git"

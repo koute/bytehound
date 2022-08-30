@@ -14,7 +14,7 @@ use common::Timestamp;
 
 use crate::InternalEvent;
 use crate::event::{InternalAllocation, InternalAllocationId, send_event, send_event_throttled};
-use crate::global::{StrongThreadHandle, on_exit};
+use crate::global::{MapSource, StrongThreadHandle, on_exit};
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
@@ -787,6 +787,11 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+    mmap64( addr, length, prot, flags, fildes, off as libc::off64_t )
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn mmap64( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t ) -> *mut c_void {
     let mut thread = StrongThreadHandle::acquire();
     if !opt::get().gather_mmap_calls {
         thread = None;
@@ -799,11 +804,14 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
     };
 
     let backtrace = unwind::grab( &mut thread );
-
-    let _lock = crate::global::MMAP_LOCK.lock();
-    let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
-
+    let mut maps_registry = crate::global::MMAP_LOCK.lock().unwrap();
     let timestamp = get_timestamp();
+    let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
+    if ptr != libc::MAP_FAILED {
+        maps_registry.mmap_source_by_address.insert( ptr as usize, MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() } );
+        maps_registry.munmap_source_by_address.remove( &(ptr as usize) );
+    }
+
     send_event_throttled( || InternalEvent::Mmap {
         pointer: ptr as usize,
         length: length as usize,
@@ -834,11 +842,14 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     };
 
     let backtrace = unwind::grab( &mut thread );
-
-    let _lock = crate::global::MMAP_LOCK.lock();
-    let result = syscall::munmap( ptr, length );
-
+    let mut maps_registry = crate::global::MMAP_LOCK.lock().unwrap();
     let timestamp = get_timestamp();
+    let result = syscall::munmap( ptr, length );
+    if result == 0 {
+        maps_registry.mmap_source_by_address.remove( &(ptr as usize) );
+        maps_registry.munmap_source_by_address.insert( ptr as usize, MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() } );
+    }
+
     send_event_throttled( || InternalEvent::Munmap {
         ptr: ptr as usize,
         len: length as usize,

@@ -1022,7 +1022,7 @@ export default class PageDataAllocations extends React.Component {
                 });
             });
 
-        const url = (this.props.sourceUrl || "") + "/data/" + this.props.id + "/filter_to_script?" + create_query( params ).toString();
+        const url = (this.props.sourceUrl || "") + "/data/" + this.props.id + "/allocation_filter_to_script?" + create_query( params ).toString();
         fetch( url, {
             cache: "no-cache"
         })
@@ -1036,6 +1036,6 @@ export default class PageDataAllocations extends React.Component {
                 this.setState({
                     filterAsScript: null
                 });
-            })
+            });
     }
 }

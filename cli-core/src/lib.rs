@@ -33,7 +33,7 @@ mod timeline;
 pub mod script;
 mod script_virtual;
 
-pub use crate::data::{Data, DataId, CodePointer, DataPointer, BacktraceId, Timestamp, Operation, OperationId, StringId, Allocation, AllocationId, FrameId, Mallopt, MalloptKind, MmapOperation, MemoryMap, MemoryUnmap, CountAndSize};
+pub use crate::data::{Data, DataId, CodePointer, DataPointer, BacktraceId, Timestamp, Operation, OperationId, StringId, Allocation, AllocationId, FrameId, Mallopt, MalloptKind, MmapOperation, MemoryMap, MemoryUnmap, CountAndSize, SMapId, SMap, SMapFlags, MapUsage};
 pub use crate::loader::Loader;
 pub use crate::tree::{Tree, Node, NodeId};
 pub use crate::frame::Frame;
@@ -47,8 +47,8 @@ pub use crate::postprocessor::{Anonymize, postprocess};
 pub use crate::squeeze::squeeze_data;
 pub use crate::reader::parse_events;
 pub use crate::repack::repack;
-pub use crate::script::run_script;
-pub use crate::timeline::build_timeline;
+pub use crate::script::{EvalOutput, run_script};
+pub use crate::timeline::{build_allocation_timeline, build_map_timeline};
 
 pub use common::event;
 
@@ -62,4 +62,8 @@ pub use crate::filter::{
     NumberOrFractionOfTotal,
     Compile,
     TryMatch,
+    MapFilter,
+    CompiledMapFilter,
+    RawMapFilter,
+    RawCompiledMapFilter,
 };
