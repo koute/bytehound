@@ -32,12 +32,12 @@ import {
 const FIELDS = {
     from: {
         ...DATE_OR_PERCENTAGE_FIELD,
-        label: "From",
+        label: "Allocated after",
         badge: value => "From " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
     },
     to: {
         ...DATE_OR_PERCENTAGE_FIELD,
-        label: "To",
+        label: "Allocated before",
         badge: value => "Until " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
     },
     lifetime_min: {
