@@ -356,7 +356,6 @@ export default class PageDataOverview extends React.Component {
                             <div style={{marginLeft: "1rem"}}>
                                 <div><a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/export/heaptrack/heaptrack.dat"}>...as Heaptrack data</a></div>
                             </div>
-                            <div><Link to={"/address_space/" + this.props.id + "?lifetime=only_not_deallocated_in_current_range&mmaped=no"}>Address space fragmentation</Link></div>
                             <div>
                                 <a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_constants_ascii_tree/dynamic_constants_" + this.props.id + ".txt"}>Dynamically allocated constants</a>
                                 &nbsp;(<a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_constants/dynamic_constants_" + this.props.id + ".json"}>.json</a>)
