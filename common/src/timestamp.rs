@@ -42,7 +42,7 @@ impl Div< f64 > for Timestamp {
 
 impl Timestamp {
     #[inline]
-    pub fn from_secs( secs: u64 ) -> Self {
+    pub const fn from_secs( secs: u64 ) -> Self {
         Timestamp( secs * 1_000_000 )
     }
 
