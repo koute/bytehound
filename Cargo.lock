@@ -531,6 +531,8 @@ dependencies = [
  "nwind",
  "parking_lot 0.12.1",
  "perf_event_open",
+ "preload-syscallee",
+ "preload-syscaller",
  "sc",
  "smallvec 1.9.0",
  "thread-local-reentrant",
@@ -1816,6 +1818,50 @@ name = "ppv-lite86"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb9f9e6e233e5c4a35559a617bf40a4ec447db2e84c20b55a6f83167b7e57872"
+
+[[package]]
+name = "preload-syscallee"
+version = "0.9.0"
+dependencies = [
+ "common",
+ "glob 0.2.11",
+ "goblin",
+ "lazy_static",
+ "libc",
+ "log",
+ "lru",
+ "memmap",
+ "nwind",
+ "parking_lot 0.12.1",
+ "perf_event_open",
+ "sc",
+ "smallvec 1.9.0",
+ "thread-local-reentrant",
+ "tikv-jemalloc-sys 0.4.2+5.2.1-patched.2",
+ "tikv-jemallocator 0.4.1",
+]
+
+[[package]]
+name = "preload-syscaller"
+version = "0.9.0"
+dependencies = [
+ "common",
+ "glob 0.2.11",
+ "goblin",
+ "lazy_static",
+ "libc",
+ "log",
+ "lru",
+ "memmap",
+ "nwind",
+ "parking_lot 0.12.1",
+ "perf_event_open",
+ "sc",
+ "smallvec 1.9.0",
+ "thread-local-reentrant",
+ "tikv-jemalloc-sys 0.4.2+5.2.1-patched.2",
+ "tikv-jemallocator 0.4.1",
+]
 
 [[package]]
 name = "proc-macro-hack"
