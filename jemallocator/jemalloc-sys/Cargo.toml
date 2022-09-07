@@ -32,6 +32,7 @@ bench = false
 
 [dependencies]
 libc = { version = "^0.2.8", default-features = false }
+preload-syscallee = { path = "../../preload-syscallee" }
 
 [build-dependencies]
 cc = "^1.0.13"
