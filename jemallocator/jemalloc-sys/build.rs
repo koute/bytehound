@@ -91,6 +91,7 @@ fn main() {
         println!("cargo:rustc-cfg=prefixed");
     }
 
+    println!("cargo:rustc-link-lib={}={}", "dylib", "preload_syscallee");
     if let Some(jemalloc) = env::var_os("JEMALLOC_OVERRIDE") {
         info!("jemalloc override set");
         let jemalloc = PathBuf::from(jemalloc);
@@ -111,7 +112,6 @@ fn main() {
             "dylib"
         };
         println!("cargo:rustc-link-lib={}={}", kind, &stem[3..]);
-        println!("cargo:rustc-link-lib={}={}", "dylib", "preload_syscallee");
         return;
     }
     // Disable -Wextra warnings - jemalloc doesn't compile free of warnings with
