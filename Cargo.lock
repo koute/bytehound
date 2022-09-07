@@ -1837,8 +1837,6 @@ dependencies = [
  "sc",
  "smallvec 1.9.0",
  "thread-local-reentrant",
- "tikv-jemalloc-sys 0.4.2+5.2.1-patched.2",
- "tikv-jemallocator 0.4.1",
 ]
 
 [[package]]
