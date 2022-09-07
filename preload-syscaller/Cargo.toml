@@ -1,13 +1,8 @@
 [package]
-name = "bytehound-preload"
+name = "preload-syscaller"
 version = "0.9.0"
 authors = ["Jan Bujak <j@exia.io>"]
 edition = "2018"
-rust-version = "1.62"
-
-[lib]
-crate-type = ["cdylib"]
-name = "bytehound"
 
 [dependencies]
 parking_lot = { version = "0.12" }
@@ -18,9 +13,10 @@ memmap = "0.7"
 log = "0.4"
 glob = "0.2"
 lru = { version = "0.6", default-features = false }
+tikv-jemallocator = { path = "../jemallocator", default-features = false }
+tikv-jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
 goblin = "0.0.24"
 smallvec = { version = "1", features = ["union"] }
-preload-syscaller = { path = "../preload-syscaller" }
 
 [dependencies.thread-local-reentrant]
 git = "https://github.com/koute/not-perf.git"

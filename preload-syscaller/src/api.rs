@@ -72,29 +72,24 @@ extern "C" {
     fn fork_real() -> libc::pid_t;
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    syscall::mmap( addr, length, prot, flags, fildes, off )
-}
+//pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+//    syscall::mmap( addr, length, prot, flags, fildes, off )
+//}
 
-#[no_mangle]
-pub unsafe extern "C" fn memory_profiler_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
-    syscall::munmap( addr, length )
-}
+//pub unsafe extern "C" fn memory_profiler_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+//    syscall::munmap( addr, length )
+//}
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _exit( status: c_int ) {
     on_exit();
     syscall::exit( status as u32 );
 }
 
 #[allow(non_snake_case)]
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _Exit( status: c_int ) {
     _exit( status );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn malloc_usable_size( ptr: *mut c_void ) -> size_t {
     if ptr.is_null() {
         return 0;
@@ -247,12 +242,10 @@ unsafe fn allocate( requested_size: usize, kind: AllocationKind ) -> *mut c_void
     pointer
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn malloc( size: size_t ) -> *mut c_void {
     allocate( size, AllocationKind::Malloc )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn calloc( count: size_t, element_size: size_t ) -> *mut c_void {
     let size = match count.checked_mul( element_size ) {
         None => return ptr::null_mut(),
@@ -332,12 +325,10 @@ unsafe fn realloc_impl( old_pointer: *mut c_void, requested_size: size_t ) -> *m
     }
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn realloc( old_ptr: *mut c_void, size: size_t ) -> *mut c_void {
     realloc_impl( old_ptr, size )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn reallocarray( old_ptr: *mut c_void, count: size_t, element_size: size_t ) -> *mut c_void {
     let size = match (count as usize).checked_mul( element_size as usize ) {
         None => {
@@ -350,7 +341,6 @@ pub unsafe extern "C" fn reallocarray( old_ptr: *mut c_void, count: size_t, elem
     realloc_impl( old_ptr, size )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn free( pointer: *mut c_void ) {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
@@ -383,7 +373,6 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
     on_free( id, address, backtrace, thread );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_malloc( requested_size: size_t ) -> *mut c_void {
     jemalloc_allocate( requested_size, JeAllocationKind::Malloc )
 }
@@ -457,12 +446,10 @@ unsafe fn jemalloc_allocate( requested_size: usize, kind: JeAllocationKind ) -> 
     pointer
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_void {
     jemalloc_allocate( requested_size, JeAllocationKind::MallocX( flags ) )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_calloc( count: size_t, element_size: size_t ) -> *mut c_void {
     let requested_size = match count.checked_mul( element_size ) {
         None => return ptr::null_mut(),
@@ -472,7 +459,6 @@ pub unsafe extern "C" fn _rjem_calloc( count: size_t, element_size: size_t ) -> 
     jemalloc_allocate( requested_size, JeAllocationKind::Calloc )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flags: c_int ) {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
@@ -508,12 +494,10 @@ pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: s
     on_free( id, address, backtrace, thread );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_realloc( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
     jemalloc_reallocate( old_pointer, requested_size, None )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, flags: c_int ) -> *mut c_void {
     jemalloc_reallocate( old_pointer, requested_size, Some( flags ) )
 }
@@ -589,7 +573,6 @@ unsafe fn jemalloc_reallocate( old_pointer: *mut c_void, requested_size: size_t,
     }
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_xallocx( pointer: *mut c_void, requested_size: size_t, extra: size_t, flags: c_int ) -> size_t {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
@@ -644,7 +627,6 @@ pub unsafe extern "C" fn _rjem_xallocx( pointer: *mut c_void, requested_size: si
     new_requested_size
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -> size_t {
     let effective_size = match requested_size.checked_add( mem::size_of::< InternalAllocationId >() ) {
         Some( size ) => size,
@@ -654,7 +636,6 @@ pub unsafe extern "C" fn _rjem_nallocx( requested_size: size_t, flags: c_int ) -
     jem_nallocx_real( effective_size, flags ).checked_sub( mem::size_of::< InternalAllocationId >() ).expect( "_rjem_nallocx: underflow" )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_malloc_usable_size( pointer: *mut c_void ) -> size_t {
     let usable_size = jem_malloc_usable_size_real( pointer );
     match usable_size.checked_sub( mem::size_of::< InternalAllocationId >() ) {
@@ -666,14 +647,12 @@ pub unsafe extern "C" fn _rjem_malloc_usable_size( pointer: *mut c_void ) -> siz
     }
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_mallctl( name: *const libc::c_char, _oldp: *mut c_void, _oldlenp: *mut size_t, _newp: *mut c_void, _newlen: size_t ) -> c_int {
     warn!( "unimplemented: rjem_mallctl called: name={:?}", std::ffi::CStr::from_ptr( name ) );
 
     0
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_posix_memalign( memptr: *mut *mut c_void, alignment: size_t, requested_size: size_t ) -> c_int {
     if memptr.is_null() {
         return libc::EINVAL;
@@ -694,22 +673,18 @@ pub unsafe extern "C" fn _rjem_posix_memalign( memptr: *mut *mut c_void, alignme
     }
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
     todo!( "_rjem_aligned_alloc" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_memalign( _alignment: size_t, _size: size_t ) -> *mut c_void {
     todo!( "_rjem_memalign" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_valloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
     todo!( "_rjem_valloc" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_free( pointer: *mut c_void ) {
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
@@ -738,22 +713,18 @@ pub unsafe extern "C" fn _rjem_free( pointer: *mut c_void ) {
     on_free( id, address, backtrace, thread );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_sallocx( _pointer: *const c_void, _flags: c_int ) -> size_t {
     todo!( "_rjem_sallocx" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_dallocx( _pointer: *mut c_void, _flags: c_int ) {
     todo!( "_rjem_dallocx" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_mallctlnametomib( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int {
     jem_mallctlnametomib_real( name, mibp, miblenp )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_mallctlbymib(
     mib: *const size_t,
     miblen: size_t,
@@ -765,7 +736,6 @@ pub unsafe extern "C" fn _rjem_mallctlbymib(
     jem_mallctlbymib_real( mib, miblen, oldp, oldpenp, newp, newlen )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_malloc_stats_print(
     write_cb: Option< unsafe extern "C" fn( *mut c_void, *const libc::c_char ) >,
     cbopaque: *mut c_void,
@@ -774,7 +744,6 @@ pub unsafe extern "C" fn _rjem_malloc_stats_print(
     jem_malloc_stats_print_real( write_cb, cbopaque, opts )
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: size_t, requested_size: size_t ) -> c_int {
     if memptr.is_null() {
         return libc::EINVAL;
@@ -795,7 +764,6 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
     }
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     let mut thread = StrongThreadHandle::acquire();
     if !opt::get().gather_mmap_calls {
@@ -830,7 +798,6 @@ pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, f
     ptr
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let mut thread = StrongThreadHandle::acquire();
     if !opt::get().gather_mmap_calls {
@@ -860,7 +827,6 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     result
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     if crate::global::using_unprefixed_jemalloc() {
         return 0;
@@ -885,7 +851,6 @@ pub unsafe extern "C" fn mallopt( param: c_int, value: c_int ) -> c_int {
     result
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn fork() -> libc::pid_t {
     let pid = fork_real();
     if pid == 0 {
@@ -897,27 +862,22 @@ pub unsafe extern "C" fn fork() -> libc::pid_t {
     pid
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn memalign( _alignment: size_t, _size: size_t ) -> *mut c_void {
     unimplemented!( "'memalign' is unimplemented!" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
     unimplemented!( "'aligned_alloc' is unimplemented!" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn valloc( _size: size_t ) -> *mut c_void {
     unimplemented!( "'valloc' is unimplemented!" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn pvalloc( _size: size_t ) -> *mut c_void {
     unimplemented!( "'pvalloc' is unimplemented!" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn memory_profiler_set_marker( value: u32 ) {
     let thread = StrongThreadHandle::acquire();
     send_event( InternalEvent::SetMarker {
@@ -927,7 +887,6 @@ pub unsafe extern "C" fn memory_profiler_set_marker( value: u32 ) {
     mem::drop( thread );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn memory_profiler_override_next_timestamp( timestamp: u64 ) {
     let thread = StrongThreadHandle::acquire();
     send_event_throttled( || InternalEvent::OverrideNextTimestamp {
@@ -944,7 +903,6 @@ fn sync() {
     mem::drop( thread );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn memory_profiler_start() {
     debug!( "Start called..." );
     if crate::global::enable() {
@@ -953,7 +911,6 @@ pub unsafe extern "C" fn memory_profiler_start() {
     debug!( "Start finished" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn memory_profiler_stop() {
     debug!( "Stop called..." );
     if crate::global::disable() {
@@ -962,14 +919,12 @@ pub unsafe extern "C" fn memory_profiler_stop() {
     debug!( "Stop finished" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn memory_profiler_sync() {
     debug!( "Sync called..." );
     sync();
     debug!( "Sync finished" );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn __register_frame( fde: *const u8 ) {
     debug!( "Registering new frame: 0x{:016X}", fde as usize );
 
@@ -984,7 +939,6 @@ pub unsafe extern "C" fn __register_frame( fde: *const u8 ) {
     std::mem::drop( thread );
 }
 
-#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn __deregister_frame( fde: *const u8 ) {
     debug!( "Deregistering new frame: 0x{:016X}", fde as usize );
 
@@ -998,3 +952,4 @@ pub unsafe extern "C" fn __deregister_frame( fde: *const u8 ) {
     unwind::deregister_frame_by_pointer( fde );
     std::mem::drop( thread );
 }
+
