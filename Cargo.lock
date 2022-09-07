@@ -886,6 +886,7 @@ dependencies = [
  "nwind",
  "parking_lot 0.12.1",
  "perf_event_open",
+ "preload-syscallee",
  "sc",
  "smallvec",
  "thread-local-reentrant",
