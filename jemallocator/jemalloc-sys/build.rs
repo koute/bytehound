@@ -111,6 +111,7 @@ fn main() {
             "dylib"
         };
         println!("cargo:rustc-link-lib={}={}", kind, &stem[3..]);
+        println!("cargo:rustc-link-lib={}={}", "dylib", "preload_syscallee");
         return;
     }
     // Disable -Wextra warnings - jemalloc doesn't compile free of warnings with
