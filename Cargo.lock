@@ -108,8 +108,6 @@ dependencies = [
  "sc",
  "smallvec",
  "thread-local-reentrant",
- "tikv-jemalloc-sys",
- "tikv-jemallocator",
 ]
 
 [[package]]
