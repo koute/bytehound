@@ -72,13 +72,13 @@ extern "C" {
     fn fork_real() -> libc::pid_t;
 }
 
-pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    syscall::mmap( addr, length, prot, flags, fildes, off )
-}
+//pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+//    syscall::mmap( addr, length, prot, flags, fildes, off )
+//}
 
-pub unsafe extern "C" fn memory_profiler_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
-    syscall::munmap( addr, length )
-}
+//pub unsafe extern "C" fn memory_profiler_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+//    syscall::munmap( addr, length )
+//}
 
 pub unsafe extern "C" fn _exit( status: c_int ) {
     on_exit();

@@ -8,18 +8,14 @@
 #include "jemalloc/internal/assert.h"
 #include "jemalloc/internal/malloc_io.h"
 
+#include "jemalloc/internal/preload_syscallee.h"
+  
 #ifdef JEMALLOC_SYSCTL_VM_OVERCOMMIT
 #include <sys/sysctl.h>
 #ifdef __FreeBSD__
 #include <vm/vm_param.h>
 #endif
 #endif
-
-void * memory_profiler_raw_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
-int memory_profiler_raw_munmap(void *addr, size_t len);
-
-#define mmap memory_profiler_raw_mmap
-#define munmap memory_profiler_raw_munmap
 
 /******************************************************************************/
 /* Data. */
@@ -82,7 +78,8 @@ os_pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
 	{
 		int prot = *commit ? PAGES_PROT_COMMIT : PAGES_PROT_DECOMMIT;
 
-		ret = mmap(addr, size, prot, mmap_flags, -1, 0);
+printf("hello2");
+		ret = memory_profiler_raw_mmap(addr, size, prot, mmap_flags, -1, 0);
 	}
 	assert(ret != NULL);
 
@@ -138,7 +135,8 @@ os_pages_unmap(void *addr, size_t size) {
 #ifdef _WIN32
 	if (VirtualFree(addr, 0, MEM_RELEASE) == 0)
 #else
-	if (munmap(addr, size) == -1)
+printf("hello2");
+	if (memory_profiler_raw_munmap(addr, size) == -1)
 #endif
 	{
 		char buf[BUFERROR_BUF];
@@ -207,7 +205,8 @@ pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
 			flags |= MAP_ALIGNED(alignment_bits - 1);
 		}
 
-		void *ret = mmap(addr, size, prot, flags, -1, 0);
+printf("hello2");
+		void *ret = memory_profiler_raw_mmap(addr, size, prot, flags, -1, 0);
 		if (ret == MAP_FAILED) {
 			ret = NULL;
 		}
@@ -266,7 +265,8 @@ pages_commit_impl(void *addr, size_t size, bool commit) {
 #else
 	{
 		int prot = commit ? PAGES_PROT_COMMIT : PAGES_PROT_DECOMMIT;
-		void *result = mmap(addr, size, prot, mmap_flags | MAP_FIXED,
+		printf("hello2");
+		void *result = memory_profiler_raw_mmap(addr, size, prot, mmap_flags | MAP_FIXED,
 		    -1, 0);
 		if (result == MAP_FAILED) {
 			return true;

@@ -61,35 +61,35 @@ lazy_static! {
     };
 }
 
-//pub use crate::api::{
-//    memory_profiler_raw_mmap,
-//    memory_profiler_raw_munmap,
-//
-//    __register_frame,
-//    __deregister_frame,
-//
-//    _exit,
-//    _Exit,
-//    fork,
-//
-//    malloc,
-//    calloc,
-//    realloc,
-//    reallocarray,
-//    free,
-//    posix_memalign,
-//    malloc_usable_size,
-//    mmap,
-//    munmap,
-//    mallopt,
-//    memalign,
-//    aligned_alloc,
-//    valloc,
-//    pvalloc,
-//
-//    memory_profiler_set_marker,
-//    memory_profiler_override_next_timestamp,
-//    memory_profiler_start,
-//    memory_profiler_stop,
-//    memory_profiler_sync
-//};
+pub use crate::api::{
+    memory_profiler_raw_mmap,
+    memory_profiler_raw_munmap,
+
+    __register_frame,
+    __deregister_frame,
+
+    _exit,
+    _Exit,
+    fork,
+
+    malloc,
+    calloc,
+    realloc,
+    reallocarray,
+    free,
+    posix_memalign,
+    malloc_usable_size,
+    mmap,
+    munmap,
+    mallopt,
+    memalign,
+    aligned_alloc,
+    valloc,
+    pvalloc,
+
+    memory_profiler_set_marker,
+    memory_profiler_override_next_timestamp,
+    memory_profiler_start,
+    memory_profiler_stop,
+    memory_profiler_sync
+};
