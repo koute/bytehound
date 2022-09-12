@@ -36,33 +36,21 @@ extern "C" {
     fn libc_mallopt_real( params: c_int, value: c_int ) -> c_int;
 }
 
+use tikv_jemalloc_sys::malloc as jem_malloc_real;
+use tikv_jemalloc_sys::mallocx as jem_mallocx_real;
+use tikv_jemalloc_sys::calloc as jem_calloc_real;
+use tikv_jemalloc_sys::sdallocx as jem_sdallocx_real;
+use tikv_jemalloc_sys::realloc as jem_realloc_real;
+use tikv_jemalloc_sys::rallocx as jem_rallocx_real;
+use tikv_jemalloc_sys::xallocx as jem_xallocx_real;
+use tikv_jemalloc_sys::nallocx as jem_nallocx_real;
+use tikv_jemalloc_sys::malloc_usable_size as jem_malloc_usable_size_real;
+use tikv_jemalloc_sys::mallctlnametomib as jem_mallctlnametomib_real;
+use tikv_jemalloc_sys::mallctlbymib as jem_mallctlbymib_real;
+use tikv_jemalloc_sys::malloc_stats_print as jem_malloc_stats_print_real;
+use tikv_jemalloc_sys::free as jem_free_real;
+
 extern "C" {
-    #[link_name = "_rjem_mp_malloc"]
-    fn jem_malloc_real( size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_mallocx"]
-    fn jem_mallocx_real( size: size_t, flags: c_int ) -> *mut c_void;
-    #[link_name = "_rjem_mp_calloc"]
-    fn jem_calloc_real( count: size_t, element_size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_sdallocx"]
-    fn jem_sdallocx_real( pointer: *mut c_void, _size: size_t, _flags: c_int );
-    #[link_name = "_rjem_mp_realloc"]
-    fn jem_realloc_real( old_pointer: *mut c_void, size: size_t ) -> *mut c_void;
-    #[link_name = "_rjem_mp_rallocx"]
-    fn jem_rallocx_real( old_pointer: *mut c_void, size: size_t, _flags: c_int ) -> *mut c_void;
-    #[link_name = "_rjem_mp_xallocx"]
-    fn jem_xallocx_real( pointer: *mut c_void, size: size_t, extra: size_t, _flags: c_int ) -> size_t;
-    #[link_name = "_rjem_mp_nallocx"]
-    fn jem_nallocx_real( size: size_t, _flags: c_int ) -> size_t;
-    #[link_name = "_rjem_mp_malloc_usable_size"]
-    fn jem_malloc_usable_size_real( pointer: *mut c_void ) -> size_t;
-    #[link_name = "_rjem_mp_mallctlnametomib"]
-    fn jem_mallctlnametomib_real( name: *const libc::c_char, mibp: *mut size_t, miblenp: *mut size_t ) -> c_int;
-    #[link_name = "_rjem_mp_mallctlbymib"]
-    fn jem_mallctlbymib_real( mib: *const size_t, miblen: size_t, oldp: *mut c_void, oldpenp: *mut size_t, newp: *mut c_void, newlen: size_t ) -> c_int;
-    #[link_name = "_rjem_mp_malloc_stats_print"]
-    fn jem_malloc_stats_print_real( write_cb: Option< unsafe extern "C" fn( *mut c_void, *const libc::c_char ) >, cbopaque: *mut c_void, opts: *const libc::c_char );
-    #[link_name = "_rjem_mp_free"]
-    fn jem_free_real( ptr: *mut c_void );
     #[link_name = "_rjem_mp_memalign"]
     fn jem_memalign_real( alignment: size_t, size: size_t ) -> *mut c_void;
 }
