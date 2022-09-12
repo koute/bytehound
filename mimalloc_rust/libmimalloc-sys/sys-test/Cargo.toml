@@ -1,0 +1,15 @@
+[package]
+name = "libmimalloc-sys-test"
+version = "0.1.0"
+authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
+edition = "2018"
+description = "Bindings test for libmimalloc-sys"
+license = "MIT"
+publish = false
+
+[dependencies]
+libmimalloc-sys = { path = "..", features = ["extended"] }
+libc = "0.2"
+
+[build-dependencies]
+ctest2 = "0.4"

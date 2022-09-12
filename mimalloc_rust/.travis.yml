@@ -1,0 +1,48 @@
+language: rust
+
+sudo: required
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+os:
+  - windows
+  - linux
+  - osx
+
+dist: xenial
+
+matrix:
+  allow_failures:
+    - rust: nightly
+    - os: windows
+
+addons:
+  apt:
+    packages:
+      - cmake
+      - gcc
+
+language: rust
+
+cache: cargo
+
+before_script:
+  # Remove sh.exe from the path otherwise CMake will complain:
+  # "sh.exe was found in your PATH, here: C:/Program Files/Git/usr/bin/sh.exe"
+  # and the MinGW build will not work (the Visual Studio build does not care).
+  # See http://help.appveyor.com/discussions/problems/3193-cmake-building-for-mingw-issue-with-git-shexe
+  # The entire directory containing sh.exe could be removed from the PATH environment:
+  # - set PATH=%PATH:C:\Program Files\Git\usr\bin;=%
+  # However, this will also remove all other programs in this directory from the PATH.
+  # In particular "patch" is still required.
+  # So, just rename sh.exe:
+  - if [ "$TRAVIS_OS_NAME" = "windows" ]; then mv "C:\Program Files\Git\usr\bin\sh.exe" "C:\Program Files\Git\usr\bin\_sh.exe"   ; fi
+
+script:
+  - cargo test --verbose --all
+  - cargo test --verbose --all --no-default-features
+  - cargo test --release --verbose --all
+  - cargo test --release --verbose --all --no-default-features
