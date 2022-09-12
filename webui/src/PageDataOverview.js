@@ -381,6 +381,9 @@ export default class PageDataOverview extends React.Component {
                         <MenuItem>
                             <Link to={this.allocationsAllocatedInRangeLink()}>Allocations: allocated in current range (between {this.getSelectedRange()})</Link>
                         </MenuItem>
+                        <MenuItem>
+                            <Link to={this.mapsAliveAtLink()}>Maps: alive here (at {this.getSelectedDate()})</Link>
+                        </MenuItem>
                     </ContextMenu>
                 </div>
             </div>
@@ -394,6 +397,15 @@ export default class PageDataOverview extends React.Component {
 
         const x = Math.floor( this.state.context_x );
         return "/allocations/" + this.props.id + "?alive_at=" + x
+    }
+
+    mapsAliveAtLink() {
+        if( this.state.context_range === undefined ) {
+            return "/";
+        }
+
+        const x = Math.floor( this.state.context_x );
+        return "/maps/" + this.props.id + "?alive_at=" + x
     }
 
     allocationsAliveInRangeLink() {

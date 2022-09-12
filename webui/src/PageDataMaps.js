@@ -40,6 +40,16 @@ const FIELDS = {
         label: "Allocated before",
         badge: value => "Until " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
     },
+    alive_at: {
+        ...DATE_OR_PERCENTAGE_FIELD,
+        label: "Alive at (1)",
+        badge: value => "Alive at " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
+    },
+    alive_at_2: {
+        ...DATE_OR_PERCENTAGE_FIELD,
+        label: "Alive at (2)",
+        badge: value => "Alive at " + (fmt_or_percent( fmt_date_unix_ms )( value ) || value)
+    },
     lifetime_min: {
         ...DURATION_FIELD,
         label: "Lifetime min",
@@ -166,6 +176,11 @@ class FilterEditor extends FilterEditorBase {
                             {this.field("lifetime_min")}
                             <div className="px-2" />
                             {this.field("lifetime_max")}
+                        </div>
+                        <div className="d-flex flex-row">
+                            {this.field("alive_at")}
+                            <div className="px-2" />
+                            {this.field("alive_at_2")}
                         </div>
                     </div>
                     <div className="px-2" />
