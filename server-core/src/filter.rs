@@ -145,6 +145,13 @@ pub fn prepare_raw_allocation_filter( data: &Data, filter: &protocol::AllocFilte
     output.only_last_size_larger_or_equal = filter.last_size_min;
     output.only_last_size_smaller_or_equal = filter.last_size_max;
 
+    if let Some( only_alive_at ) = filter.alive_at.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) ) {
+        output.common_filter.only_alive_at.push( only_alive_at );
+    }
+    if let Some( only_alive_at ) = filter.alive_at_2.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) ) {
+        output.common_filter.only_alive_at.push( only_alive_at );
+    }
+
     output.common_filter.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
     output.common_filter.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );
 
@@ -284,6 +291,13 @@ pub fn prepare_raw_map_filter( data: &Data, filter: &protocol::MapFilter ) -> Re
     output.common_filter.only_address_at_most = filter.address_max;
     output.common_filter.only_larger_or_equal = filter.size_min;
     output.common_filter.only_smaller_or_equal = filter.size_max;
+
+    if let Some( only_alive_at ) = filter.alive_at.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) ) {
+        output.common_filter.only_alive_at.push( only_alive_at );
+    }
+    if let Some( only_alive_at ) = filter.alive_at_2.map( |ts| Duration( ts.to_timestamp( data.initial_timestamp(), data.last_timestamp() ) ) ) {
+        output.common_filter.only_alive_at.push( only_alive_at );
+    }
 
     output.common_filter.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
     output.common_filter.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );

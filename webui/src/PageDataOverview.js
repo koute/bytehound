@@ -373,12 +373,37 @@ export default class PageDataOverview extends React.Component {
                     <ContextMenuTrigger id="overview_context_menu" ref={c => this.context_trigger = c}></ContextMenuTrigger>
                     <ContextMenu id="overview_context_menu">
                         <MenuItem>
+                            <Link to={this.allocationsAliveAtLink()}>Allocations: alive here (at {this.getSelectedDate()})</Link>
+                        </MenuItem>
+                        <MenuItem>
+                            <Link to={this.allocationsAliveInRangeLink()}>Allocations: alive for the whole current range ({this.getSelectedRange()})</Link>
+                        </MenuItem>
+                        <MenuItem>
                             <Link to={this.allocationsAllocatedInRangeLink()}>Allocations: allocated in current range (between {this.getSelectedRange()})</Link>
                         </MenuItem>
                     </ContextMenu>
                 </div>
             </div>
         );
+    }
+
+    allocationsAliveAtLink() {
+        if( this.state.context_range === undefined ) {
+            return "/";
+        }
+
+        const x = Math.floor( this.state.context_x );
+        return "/allocations/" + this.props.id + "?alive_at=" + x
+    }
+
+    allocationsAliveInRangeLink() {
+        if( this.state.context_range === undefined ) {
+            return "/";
+        }
+
+        const x0 = Math.floor( this.state.context_range[ 0 ] );
+        const x1 = Math.floor( this.state.context_range[ 1 ] );
+        return "/allocations/" + this.props.id + "?alive_at=" + x0 + "&alive_at_2=" + x1;
     }
 
     allocationsAllocatedInRangeLink() {
@@ -389,6 +414,14 @@ export default class PageDataOverview extends React.Component {
         const x0 = Math.floor( this.state.context_range[ 0 ] );
         const x1 = Math.floor( this.state.context_range[ 1 ] );
         return "/allocations/" + this.props.id + "?from=" + x0 + "&to=" + x1;
+    }
+
+    getSelectedDate() {
+        if( !this.state.timeline || this.state.context_x === undefined ) {
+            return "";
+        }
+
+        return fmt_date_unix_ms( this.state.context_x );
     }
 
     getSelectedRange() {

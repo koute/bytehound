@@ -58,6 +58,7 @@ pub struct RawCommonFilter {
     pub only_allocated_until_at_most: Option< Duration >,
     pub only_deallocated_after_at_least: Option< Duration >,
     pub only_deallocated_until_at_most: Option< Duration >,
+    pub only_alive_at: Vec< Duration >,
     pub only_alive_for_at_least: Option< Duration >,
     pub only_alive_for_at_most: Option< Duration >,
     pub only_leaked_or_deallocated_after: Option< Duration >,
@@ -398,14 +399,23 @@ impl Compile for RawCommonFilter {
             }
         }
 
+        let only_allocated_after_at_least = self.only_allocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp );
+        let mut only_allocated_until_at_most = self.only_allocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp );
+
+        for only_alive_at in &self.only_alive_at {
+            let only_alive_at = only_alive_at.0 + data.initial_timestamp;
+            only_allocated_until_at_most = std::cmp::min( only_allocated_until_at_most, only_alive_at );
+            only_leaked_or_deallocated_after = std::cmp::max( only_leaked_or_deallocated_after, only_alive_at );
+        }
+
         Self::Compiled {
             is_impossible,
             only_larger_or_equal,
             only_smaller_or_equal,
             only_address_at_least: self.only_address_at_least.unwrap_or( 0 ),
             only_address_at_most: self.only_address_at_most.unwrap_or( !0 ),
-            only_allocated_after_at_least: self.only_allocated_after_at_least.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.initial_timestamp ),
-            only_allocated_until_at_most: self.only_allocated_until_at_most.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp ),
+            only_allocated_after_at_least,
+            only_allocated_until_at_most,
             only_deallocated_between_inclusive: only_deallocated_between_inclusive,
             only_alive_for_at_least: self.only_alive_for_at_least.unwrap_or( Duration::from_secs( 0 ) ),
             only_alive_for_at_most: self.only_alive_for_at_most,

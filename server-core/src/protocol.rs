@@ -711,6 +711,8 @@ pub struct AllocFilter {
     pub chain_lifetime_max: Option< Interval >,
     pub position_in_chain_min: Option< u32 >,
     pub position_in_chain_max: Option< u32 >,
+    pub alive_at: Option< TimestampFilter< OffsetMin > >,
+    pub alive_at_2: Option< TimestampFilter< OffsetMin > >,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
@@ -749,6 +751,8 @@ pub struct MapFilter {
     pub negative_source_regex: Option< String >,
     pub peak_rss_min: Option< u64 >,
     pub peak_rss_max: Option< u64 >,
+    pub alive_at: Option< TimestampFilter< OffsetMin > >,
+    pub alive_at_2: Option< TimestampFilter< OffsetMin > >,
 }
 
 #[derive(Deserialize, Debug)]

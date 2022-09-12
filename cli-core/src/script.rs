@@ -2568,6 +2568,19 @@ impl Engine {
 
                 register_filter!( $ty_name, common_filter.only_leaked, bool );
                 register_filter!( $ty_name, common_filter.only_temporary, bool );
+
+                engine.register_result_fn( "only_alive_at", |list: &mut $ty_name, xs: rhai::Array| -> Result< $ty_name, Box< rhai::EvalAltResult > > {
+                    let mut xs_cast = Vec::new();
+                    for value in xs {
+                        if let Some( value ) = value.clone().try_cast::< Duration >() {
+                            xs_cast.push( value );
+                        } else {
+                            return Err( error( format!( "expected an array of 'Duration's, got {}", value.type_name() ) ) );
+                        }
+                    }
+
+                    Ok( list.add_filter( |filter| filter.common_filter.only_alive_at = xs_cast ) )
+                });
             }};
         }
 
@@ -2949,6 +2962,27 @@ macro_rules! out {
     };
 }
 
+macro_rules! out_vec_if_not_empty {
+    ($ctx:expr => $($field:ident.$name:ident)+) => {
+        $(
+            if !$field.$name.is_empty() {
+                write!( &mut $ctx.output, "  .{}([", stringify!( $name ) ).unwrap();
+                let mut is_first = true;
+                for value in &$field.$name {
+                    if is_first {
+                        is_first = false;
+                    } else {
+                        write!( &mut $ctx.output, ", " ).unwrap();
+                    }
+                    value.to_code_impl( $ctx );
+                }
+
+                writeln!( &mut $ctx.output, "])" ).unwrap();
+            }
+        )+
+    };
+}
+
 macro_rules! out_bool {
     ($ctx:expr => $($field:ident.$name:ident)+) => {
         $(
@@ -2990,6 +3024,10 @@ impl ToCode for crate::filter::RawCommonFilter {
             self.only_alive_for_at_least
             self.only_alive_for_at_most
             self.only_leaked_or_deallocated_after
+        }
+
+        out_vec_if_not_empty! { ctx =>
+            self.only_alive_at
         }
 
         out_bool! { ctx =>
