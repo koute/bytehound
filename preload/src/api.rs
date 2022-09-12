@@ -61,18 +61,39 @@ extern "C" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn memory_profiler_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    let pointer = syscall::mmap( addr, length, prot, flags, fildes, off );
+pub unsafe extern "C" fn bytehound_jemalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+    let pointer = mmap( addr, length, prot, flags, fildes, off );
     if pointer != libc::MAP_FAILED {
-        crate::syscall::pr_set_vma_anon_name( pointer, length, b"bytehound:jemalloc\0" );
+        crate::syscall::pr_set_vma_anon_name( pointer, length, b"jemalloc\0" );
     }
 
     pointer
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn memory_profiler_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+pub unsafe extern "C" fn bytehound_jemalloc_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+    munmap( addr, length )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bytehound_mimalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+    let prot = prot | libc::PROT_READ | libc::PROT_WRITE;
+    let pointer = syscall::mmap( addr, length, prot, flags, fildes, off );
+    if pointer != libc::MAP_FAILED {
+        crate::syscall::pr_set_vma_anon_name( pointer, length, b"bytehound\0" );
+    }
+
+    pointer
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bytehound_mimalloc_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
     syscall::munmap( addr, length )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bytehound_mimalloc_raw_mprotect( _addr: *mut c_void, _length: size_t, _prot: c_int ) -> c_int {
+    0
 }
 
 #[cfg_attr(not(test), no_mangle)]

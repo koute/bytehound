@@ -15,11 +15,11 @@
 #endif
 #endif
 
-void * memory_profiler_raw_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
-int memory_profiler_raw_munmap(void *addr, size_t len);
+void * bytehound_jemalloc_raw_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
+int bytehound_jemalloc_raw_munmap(void *addr, size_t len);
 
-#define mmap memory_profiler_raw_mmap
-#define munmap memory_profiler_raw_munmap
+#define mmap bytehound_jemalloc_raw_mmap
+#define munmap bytehound_jemalloc_raw_munmap
 
 /******************************************************************************/
 /* Data. */

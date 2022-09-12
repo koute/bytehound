@@ -44,7 +44,7 @@ use crate::event::InternalEvent;
 use crate::utils::read_file;
 
 #[global_allocator]
-static mut ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+static mut GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub(crate) const PAGE_SIZE: usize = 4096;
 
@@ -63,8 +63,12 @@ lazy_static! {
 }
 
 pub use crate::api::{
-    memory_profiler_raw_mmap,
-    memory_profiler_raw_munmap,
+    bytehound_jemalloc_raw_mmap,
+    bytehound_jemalloc_raw_munmap,
+
+    bytehound_mimalloc_raw_mmap,
+    bytehound_mimalloc_raw_munmap,
+    bytehound_mimalloc_raw_mprotect,
 
     __register_frame,
     __deregister_frame,

@@ -62,6 +62,14 @@ terms of the MIT license. A copy of the license can be found in the file
 #endif
 #endif
 
+void * bytehound_mimalloc_raw_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off);
+int bytehound_mimalloc_raw_munmap(void *addr, size_t len);
+int bytehound_mimalloc_raw_mprotect(void *addr, size_t len, int prot);
+
+#define mmap bytehound_mimalloc_raw_mmap
+#define munmap bytehound_mimalloc_raw_munmap
+#define mprotect bytehound_mimalloc_raw_mprotect
+
 /* -----------------------------------------------------------
   Initialization.
   On windows initializes support for aligned allocation and
