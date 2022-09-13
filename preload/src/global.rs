@@ -502,9 +502,13 @@ fn hook_symbols( names: &[&str], addresses: &[usize], replacements: &[usize] ) {
             panic!( "tried to replace a symbol with itself: symbol='{}', address=0x{:016X}", name, replacement );
         }
 
-        let page = (address as usize & !(4096 - 1)) as *mut libc::c_void;
+        let page_1 = address as usize & !(4096 - 1);
+        let page_2 = (address as usize + 14) & !(4096 - 1);
+        let page = page_1 as *mut libc::c_void;
+        let length = if page_1 == page_2 { 4096 } else { 8192 };
+
         unsafe {
-            if libc::mprotect( page, 4096, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC ) < 0 {
+            if libc::mprotect( page, length, libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC ) < 0 {
                 panic!( "mprotect failed: {}", std::io::Error::last_os_error() );
             }
 
@@ -518,7 +522,7 @@ fn hook_symbols( names: &[&str], addresses: &[usize], replacements: &[usize] ) {
             std::ptr::write_unaligned( p, 0x00 ); p = p.add( 1 );
             std::ptr::write_unaligned( p as *mut usize, replacement );
 
-            if libc::mprotect( page, 4096, libc::PROT_READ | libc::PROT_EXEC ) < 0 {
+            if libc::mprotect( page, length, libc::PROT_READ | libc::PROT_EXEC ) < 0 {
                 warn!( "mprotect failed: {}", std::io::Error::last_os_error() );
             }
         }
