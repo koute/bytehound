@@ -731,13 +731,12 @@ impl StrongThreadHandle {
         }
 
         let tls = TLS.try_with( |tls| {
-            if ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
-                throttle( tls );
-            }
-
             if !tls.is_enabled() {
                 None
             } else {
+                if ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
+                    throttle( tls );
+                }
                 tls.set_enabled( false );
                 Some( tls.0.clone() )
             }
