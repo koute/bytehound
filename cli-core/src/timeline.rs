@@ -205,7 +205,7 @@ fn build_timeline< T >(
 
     if output.is_empty() {
         output.push( TimelinePoint {
-            timestamp: current_time * granularity - 1,
+            timestamp: current_time * granularity.saturating_sub( 1 ),
             value: Default::default(),
             positive_change: Default::default(),
             negative_change: Default::default(),
