@@ -1,5 +1,4 @@
 use std::cell::UnsafeCell;
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -18,7 +17,7 @@ pub type RawThreadHandle = ArcLite< ThreadData >;
 
 struct ThreadRegistry {
     enabled_for_new_threads: bool,
-    threads_by_system_id: Option< HashMap< u32, RawThreadHandle > >,
+    threads_by_system_id: crate::utils::HashMap< u32, RawThreadHandle >,
     new_dead_thread_queue: Vec< (Timestamp, RawThreadHandle) >,
     thread_counter: u64
 }
@@ -26,8 +25,8 @@ struct ThreadRegistry {
 unsafe impl Send for ThreadRegistry {}
 
 impl ThreadRegistry {
-    fn threads_by_system_id( &mut self ) -> &mut HashMap< u32, RawThreadHandle > {
-        self.threads_by_system_id.get_or_insert_with( HashMap::new )
+    fn threads_by_system_id( &mut self ) -> &mut crate::utils::HashMap< u32, RawThreadHandle > {
+        &mut self.threads_by_system_id
     }
 }
 
@@ -51,7 +50,7 @@ static DESIRED_STATE: AtomicUsize = AtomicUsize::new( DESIRED_STATE_DISABLED );
 
 static THREAD_REGISTRY: SpinLock< ThreadRegistry > = SpinLock::new( ThreadRegistry {
     enabled_for_new_threads: false,
-    threads_by_system_id: None,
+    threads_by_system_id: crate::utils::empty_hashmap(),
     new_dead_thread_queue: Vec::new(),
     thread_counter: 1
 });
@@ -1000,7 +999,7 @@ pub struct ThreadGarbageCollector {
 
 impl ThreadGarbageCollector {
     pub(crate) fn run( &mut self, now: Timestamp, events: &mut crate::channel::ChannelBuffer< InternalEvent > ) {
-        use std::collections::hash_map::Entry;
+        use crate::utils::Entry;
 
         lock_thread_registry( |thread_registry| {
             std::mem::swap( &mut thread_registry.new_dead_thread_queue, &mut self.buffer );
@@ -1027,7 +1026,7 @@ impl ThreadGarbageCollector {
         for (_, thread) in self.dead_threads.drain( ..count ) {
             lock_thread_registry( |thread_registry| {
                 let mut entry_by_system_id = None;
-                if let Entry::Occupied( entry ) = thread_registry.threads_by_system_id.as_mut().unwrap().entry( thread.thread_id ) {
+                if let Entry::Occupied( entry ) = thread_registry.threads_by_system_id.entry( thread.thread_id ) {
                     if RawThreadHandle::ptr_eq( entry.get(), &thread ) {
                         entry_by_system_id = Some( entry.remove_entry() );
                     }
