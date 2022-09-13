@@ -196,7 +196,8 @@ pub fn update_smaps(
     timestamp: Timestamp,
     state: &mut State,
     backtrace_cache: &mut BacktraceCache,
-    serializer: &mut impl Write
+    serializer: &mut impl Write,
+    force_emit: bool,
 ) {
     state.clear_buffers();
 
@@ -348,7 +349,7 @@ pub fn update_smaps(
             }
         });
 
-        if !smap.is_on_hold( timestamp ) {
+        if !smap.is_on_hold( timestamp ) || force_emit {
             // Emit the map if necessary.
             emit_map_if_pending(
                 address,

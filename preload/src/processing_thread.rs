@@ -844,7 +844,8 @@ pub(crate) fn thread_main() {
                         timestamp,
                         &mut smaps_state,
                         &mut backtrace_cache,
-                        &mut *serializer
+                        &mut *serializer,
+                        true
                     );
 
                     last_smaps_update = timestamp;
@@ -860,7 +861,8 @@ pub(crate) fn thread_main() {
                 timestamp,
                 &mut smaps_state,
                 &mut backtrace_cache,
-                &mut *serializer
+                &mut *serializer,
+                false
             );
 
             last_smaps_update = timestamp;
@@ -872,6 +874,15 @@ pub(crate) fn thread_main() {
             let _ = serializer.flush();
         }
     }
+
+    let timestamp = get_timestamp();
+    update_smaps(
+        timestamp,
+        &mut smaps_state,
+        &mut backtrace_cache,
+        &mut output_writer,
+        true
+    );
 
     let _ = output_writer.flush();
     for client in &mut output_writer.inner_mut_without_flush().clients {
