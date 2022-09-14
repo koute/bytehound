@@ -575,6 +575,12 @@ fn initialize_stage_1() {
 fn initialize_stage_2() {
     info!( "Initializing stage 2..." );
 
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mmap_address = unsafe { libc::dlsym( libc::RTLD_NEXT, b"__mmap\0".as_ptr() as *const libc::c_char ) };
+        hook_symbols( &["__mmap"], &[mmap_address as usize], &[crate::api::mmap_private as usize] );
+    }
+
     crate::init::initialize_atexit_hook();
     crate::init::initialize_signal_handlers();
 

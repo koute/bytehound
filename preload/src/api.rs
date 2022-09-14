@@ -799,6 +799,10 @@ pub unsafe extern "C" fn mmap64( addr: *mut c_void, length: size_t, prot: c_int,
     mmap_internal( addr, length, prot, flags, fildes, off, Some( b"mmap\0" ) )
 }
 
+pub unsafe extern "C" fn mmap_private( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, Some( b"glibc\0" ) )
+}
+
 #[inline(always)]
 unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, name: Option< &[u8] > ) -> *mut c_void {
     if let Some( mut thread ) = crate::global::acquire_any_thread_handle() {
