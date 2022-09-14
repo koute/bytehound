@@ -853,6 +853,7 @@ pub(crate) fn thread_main() {
             }
         }
 
+        coarse_timestamp = get_timestamp();
         let should_update_smaps = force_smaps_update || (coarse_timestamp - last_smaps_update).as_msecs() >= 1000;
         if should_update_smaps {
             let timestamp = get_timestamp();
