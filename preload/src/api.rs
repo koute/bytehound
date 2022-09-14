@@ -791,12 +791,12 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, None )
+    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, Some( b"mmap\0" ) )
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap64( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off, None )
+    mmap_internal( addr, length, prot, flags, fildes, off, Some( b"mmap\0" ) )
 }
 
 #[inline(always)]
