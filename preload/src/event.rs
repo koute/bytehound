@@ -133,6 +133,7 @@ pub(crate) enum InternalEvent {
         timestamp: Timestamp
     },
     AddressSpaceUpdated {
+        timestamp: Timestamp,
         maps: String,
         new_binaries: Vec< Arc< nwind::BinaryData > >
     },

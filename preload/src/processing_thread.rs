@@ -816,8 +816,7 @@ pub(crate) fn thread_main() {
                 InternalEvent::OverrideNextTimestamp { timestamp } => {
                     timestamp_override = Some( timestamp );
                 },
-                InternalEvent::AddressSpaceUpdated { maps, new_binaries } => {
-                    let timestamp = get_timestamp();
+                InternalEvent::AddressSpaceUpdated { timestamp, maps, new_binaries } => {
                     if opt::get().write_binaries_to_output || serializer.inner_mut_without_flush().file.is_none() {
                         for binary in new_binaries {
                             debug!( "Writing new binary: {}", binary.name() );

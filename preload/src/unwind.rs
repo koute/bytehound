@@ -257,8 +257,10 @@ pub fn prepare_to_start_unwinding() {
 fn reload() {
     let mut address_space = AS.write().unwrap();
     info!( "Reloading address space" );
+    let timestamp = crate::timestamp::get_timestamp();
     let update = address_space.reload().unwrap();
     crate::event::send_event( crate::event::InternalEvent::AddressSpaceUpdated {
+        timestamp,
         maps: update.maps,
         new_binaries: update.new_binaries
     });
