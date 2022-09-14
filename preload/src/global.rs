@@ -65,6 +65,8 @@ static PROCESSING_THREAD_HANDLE: SpinLock< Option< libc::pthread_t > > = SpinLoc
 pub static mut SYM_REGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
 pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
 
+pub static mut INITIAL_TIMESTAMP: Timestamp = Timestamp::from_secs( 0 );
+
 #[derive(Clone)]
 pub struct MapSource {
     pub timestamp: Timestamp,
@@ -549,6 +551,10 @@ fn resolve_original_syms() {
 }
 
 fn initialize_stage_1() {
+    unsafe {
+        INITIAL_TIMESTAMP = crate::timestamp::get_timestamp();
+    }
+
     crate::init::initialize_logger();
     info!( "Version: {}", env!( "CARGO_PKG_VERSION" ) );
 

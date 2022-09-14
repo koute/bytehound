@@ -520,7 +520,7 @@ pub(crate) fn thread_main() {
     info!( "Starting event thread..." );
 
     let uuid = generate_data_id();
-    let initial_timestamp = get_timestamp();
+    let initial_timestamp = unsafe { crate::global::INITIAL_TIMESTAMP };
     info!( "Data ID: {}", uuid );
 
     let mut output_writer = Lz4Writer::new( Output::new() );
