@@ -698,6 +698,10 @@ impl WeakThreadHandle {
     pub fn system_tid( &self ) -> u32 {
         self.0.thread_id
     }
+
+    pub fn unwind_state( &self ) -> (&UnsafeCell< bool >, &UnsafeCell< ThreadUnwindState >) {
+        (&self.0.is_unwinding, &self.0.unwind_state)
+    }
 }
 
 /// A handle to per-thread storage.
@@ -706,21 +710,6 @@ impl WeakThreadHandle {
 pub struct StrongThreadHandle( Option< RawThreadHandle > );
 
 impl StrongThreadHandle {
-    #[cold]
-    #[inline(never)]
-    fn acquire_slow() -> Option< Self > {
-        let current_thread_id = syscall::gettid();
-        lock_thread_registry( |thread_registry| {
-            if let Some( thread ) = thread_registry.threads_by_system_id().get( &current_thread_id ) {
-                debug!( "Acquired a dead thread: {:04X}", current_thread_id );
-                Some( StrongThreadHandle( Some( thread.clone() ) ) )
-            } else {
-                warn!( "Failed to acquire a handle for thread: {:04X}", current_thread_id );
-                None
-            }
-        })
-    }
-
     #[inline(always)]
     pub fn acquire() -> Option< Self > {
         let state = STATE.load( Ordering::Relaxed );
@@ -750,7 +739,7 @@ impl StrongThreadHandle {
                 None
             },
             Err( TlsAccessError::Destroyed ) => {
-                Self::acquire_slow()
+                acquire_slow().map( |tls| StrongThreadHandle( Some( tls ) ) )
             }
         }
     }
@@ -765,15 +754,13 @@ impl StrongThreadHandle {
         WeakThreadHandle( tls )
     }
 
-    pub fn unwind_state( &mut self ) -> &mut ThreadUnwindState {
+    pub fn unwind_state( &mut self ) -> (&UnsafeCell< bool >, &UnsafeCell< ThreadUnwindState >) {
         let tls = match self.0.as_ref() {
             Some( tls ) => tls,
             None => unsafe { std::hint::unreachable_unchecked() }
         };
 
-        unsafe {
-            &mut *tls.unwind_state.get()
-        }
+        (&tls.is_unwinding, &tls.unwind_state)
     }
 
     pub fn on_new_allocation( &mut self ) -> InternalAllocationId {
@@ -846,6 +833,77 @@ impl Drop for StrongThreadHandle {
     }
 }
 
+pub enum ThreadHandleKind {
+    Strong( StrongThreadHandle ),
+    Weak( WeakThreadHandle )
+}
+
+impl ThreadHandleKind {
+    pub fn system_tid( &self ) -> u32 {
+        match self {
+            ThreadHandleKind::Strong( StrongThreadHandle( ref handle ) ) => handle.as_ref().unwrap(),
+            ThreadHandleKind::Weak( WeakThreadHandle( ref handle ) ) => handle,
+        }.thread_id
+    }
+
+    pub fn decay( self ) -> WeakThreadHandle {
+        match self {
+            ThreadHandleKind::Strong( handle ) => handle.decay(),
+            ThreadHandleKind::Weak( handle ) => handle,
+        }
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn acquire_slow() -> Option< RawThreadHandle > {
+    let current_thread_id = syscall::gettid();
+    lock_thread_registry( |thread_registry| {
+        if let Some( thread ) = thread_registry.threads_by_system_id().get( &current_thread_id ) {
+            debug!( "Acquired a dead thread: {:04X}", current_thread_id );
+            Some( thread.clone() )
+        } else {
+            warn!( "Failed to acquire a handle for thread: {:04X}", current_thread_id );
+            None
+        }
+    })
+}
+
+#[inline(always)]
+pub fn acquire_any_thread_handle() -> Option< ThreadHandleKind > {
+    let state = STATE.load( Ordering::Relaxed );
+    if state != STATE_ENABLED {
+        if !try_enable( state ) {
+            return None;
+        }
+    }
+
+    let tls = TLS.try_with( |tls| {
+        if !tls.is_enabled() {
+            ThreadHandleKind::Weak( WeakThreadHandle( tls.0.clone() ) )
+        } else {
+            if ArcLite::get_refcount_relaxed( tls ) >= THROTTLE_LIMIT {
+                throttle( tls );
+            }
+
+            tls.set_enabled( false );
+            ThreadHandleKind::Strong( StrongThreadHandle( Some( tls.0.clone() ) ) )
+        }
+    });
+
+    match tls {
+        Ok( tls ) => {
+            Some( tls )
+        },
+        Err( TlsAccessError::Uninitialized ) => {
+            None
+        },
+        Err( TlsAccessError::Destroyed ) => {
+            Some( ThreadHandleKind::Strong( StrongThreadHandle( Some( acquire_slow()? ) ) ) )
+        }
+    }
+}
+
 pub struct AllocationLock {
     current_thread_id: u32,
     registry_lock: SpinLockGuard< 'static, ThreadRegistry >
@@ -913,6 +971,7 @@ pub struct ThreadData {
     is_internal: UnsafeCell< bool >,
     enabled: AtomicBool,
     is_dead: AtomicBool,
+    is_unwinding: UnsafeCell< bool >,
     unwind_state: UnsafeCell< ThreadUnwindState >,
     allocation_counter: UnsafeCell< u64 >,
     allocation_tracker: AllocationTracker,
@@ -978,6 +1037,7 @@ thread_local_reentrant! {
                 is_internal: UnsafeCell::new( false ),
                 is_dead: AtomicBool::new( false ),
                 enabled: AtomicBool::new( registry.enabled_for_new_threads ),
+                is_unwinding: UnsafeCell::new( false ),
                 unwind_state: UnsafeCell::new( ThreadUnwindState::new() ),
                 allocation_counter: UnsafeCell::new( 1 ),
                 allocation_tracker: crate::allocation_tracker::on_thread_created( internal_thread_id ),

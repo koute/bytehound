@@ -327,9 +327,41 @@ fn on_broken_unwinding( last_backtrace_depth: usize, stale_frame_count: usize ) 
     unsafe { libc::abort(); }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn grab( tls: &mut StrongThreadHandle ) -> Backtrace {
-    let unwind_state = tls.unwind_state();
+    unsafe {
+        let (is_unwinding, unwind_state) = tls.unwind_state();
+        *is_unwinding.get() = true;
+        let backtrace = grab_with_unwind_state( &mut *unwind_state.get() );
+        *is_unwinding.get() = false;
+        backtrace
+    }
+}
+
+#[inline(always)]
+pub fn grab_from_any( tls: &mut crate::global::ThreadHandleKind ) -> Option< Backtrace > {
+    match tls {
+        crate::global::ThreadHandleKind::Strong( tls ) => {
+            Some( grab( tls ) )
+        },
+        crate::global::ThreadHandleKind::Weak( tls ) => {
+            unsafe {
+                let (is_unwinding, unwind_state) = tls.unwind_state();
+                if *is_unwinding.get() {
+                    return None;
+                }
+
+                *is_unwinding.get() = true;
+                let backtrace = grab_with_unwind_state( &mut *unwind_state.get() );
+                *is_unwinding.get() = false;
+                Some( backtrace )
+            }
+        }
+    }
+}
+
+#[inline(never)]
+fn grab_with_unwind_state( unwind_state: &mut ThreadUnwindState ) -> Backtrace {
     let unwind_ctx = &mut unwind_state.unwind_ctx;
 
     let address_space = unsafe {
