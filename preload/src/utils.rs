@@ -42,14 +42,14 @@ pub fn temporarily_change_umask( umask: libc::c_int ) -> RestoreFileCreationMask
     RestoreFileCreationMaskOnDrop( old_umask )
 }
 
-const STACK_BUFFER_LEN: usize = 1024;
+const STACK_BUFFER_DEFAULT_LEN: usize = 1024;
 
-pub struct Buffer {
-    buffer: [MaybeUninit< u8 >; STACK_BUFFER_LEN],
+pub struct Buffer< const L: usize = STACK_BUFFER_DEFAULT_LEN > {
+    buffer: [MaybeUninit< u8 >; L],
     length: usize
 }
 
-impl std::fmt::Debug for Buffer {
+impl< const L: usize > std::fmt::Debug for Buffer< L > {
     fn fmt( &self, formatter: &mut std::fmt::Formatter ) -> std::fmt::Result {
         let slice = self.as_slice();
         if let Ok( string ) = std::str::from_utf8( slice ) {
@@ -60,11 +60,11 @@ impl std::fmt::Debug for Buffer {
     }
 }
 
-impl Buffer {
+impl< const L: usize > Buffer< L > {
     pub const fn new() -> Self {
         unsafe {
             Self {
-                buffer: MaybeUninit::< [MaybeUninit< u8 >; STACK_BUFFER_LEN] >::uninit().assume_init(),
+                buffer: MaybeUninit::< [MaybeUninit< u8 >; L] >::uninit().assume_init(),
                 length: 0
             }
         }
@@ -82,7 +82,7 @@ impl Buffer {
     }
 
     pub fn from_slice( slice: &[u8] ) -> Option< Self > {
-        if slice.len() > STACK_BUFFER_LEN {
+        if slice.len() > L {
             return None;
         }
 
@@ -113,28 +113,28 @@ impl Buffer {
     }
 }
 
-impl std::ops::Deref for Buffer {
+impl< const L: usize > std::ops::Deref for Buffer< L > {
     type Target = [u8];
     fn deref( &self ) -> &Self::Target {
         self.as_slice()
     }
 }
 
-impl AsRef< OsStr > for Buffer {
+impl< const L: usize > AsRef< OsStr > for Buffer< L > {
     fn as_ref( &self ) -> &OsStr {
         OsStr::from_bytes( self.as_slice() )
     }
 }
 
-impl AsRef< Path > for Buffer {
+impl< const L: usize > AsRef< Path > for Buffer< L > {
     fn as_ref( &self ) -> &Path {
         Path::new( self )
     }
 }
 
-impl Write for Buffer {
+impl< const L: usize > Write for Buffer< L > {
     fn write( &mut self, input: &[u8] ) -> io::Result< usize > {
-        let count = std::cmp::min( input.len(), STACK_BUFFER_LEN - self.length );
+        let count = std::cmp::min( input.len(), L - self.length );
         unsafe {
             std::ptr::copy_nonoverlapping( input.as_ptr(), self.buffer[ self.length.. ].as_mut_ptr() as *mut u8, count );
         }
@@ -147,8 +147,8 @@ impl Write for Buffer {
     }
 }
 
-fn stack_format< R, F, G >( format_callback: F, use_callback: G ) -> R
-    where F: FnOnce( &mut Buffer ),
+fn stack_format< const L: usize, R, F, G >( format_callback: F, use_callback: G ) -> R
+    where F: FnOnce( &mut Buffer< L > ),
           G: FnOnce( &mut [u8] ) -> R
 {
     let mut buffer = Buffer::new();
@@ -158,7 +158,7 @@ fn stack_format< R, F, G >( format_callback: F, use_callback: G ) -> R
 
 #[test]
 fn test_stack_format_short() {
-    stack_format( |out| {
+    stack_format( |out: &mut Buffer< STACK_BUFFER_DEFAULT_LEN >| {
         write!( out, "foo = {}", "bar" ).unwrap();
         write!( out, ";" ).unwrap();
     }, |output| {
@@ -168,13 +168,13 @@ fn test_stack_format_short() {
 
 #[test]
 fn test_stack_format_long() {
-    stack_format( |out| {
-        for _ in 0..STACK_BUFFER_LEN {
+    stack_format( |out: &mut Buffer< STACK_BUFFER_DEFAULT_LEN >| {
+        for _ in 0..STACK_BUFFER_DEFAULT_LEN {
             write!( out, "X" ).unwrap();
         }
         assert!( write!( out, "Y" ).is_err() );
     }, |output| {
-        assert_eq!( output.len(), STACK_BUFFER_LEN );
+        assert_eq!( output.len(), STACK_BUFFER_DEFAULT_LEN );
         assert!( output.iter().all( |&byte| byte == b'X' ) );
     });
 }
@@ -182,7 +182,7 @@ fn test_stack_format_long() {
 pub fn stack_format_bytes< R, F >( args: fmt::Arguments, callback: F ) -> R
     where F: FnOnce( &mut [u8] ) -> R
 {
-    stack_format( |out| {
+    stack_format( |out: &mut Buffer< STACK_BUFFER_DEFAULT_LEN >| {
         let _ = out.write_fmt( args );
     }, callback )
 }
@@ -190,13 +190,13 @@ pub fn stack_format_bytes< R, F >( args: fmt::Arguments, callback: F ) -> R
 pub fn stack_null_terminate< R, F >( input: &[u8], callback: F ) -> R
     where F: FnOnce( &mut [u8] ) -> R
 {
-    stack_format( |out| {
+    stack_format( |out: &mut Buffer< STACK_BUFFER_DEFAULT_LEN >| {
         let _ = out.write_all( input );
         let _ = out.write_all( &[0] );
     }, callback )
 }
 
-pub fn generate_filename( pattern: &[u8], counter: Option< &AtomicUsize > ) -> Buffer {
+pub fn generate_filename( pattern: &[u8], counter: Option< &AtomicUsize > ) -> Buffer< STACK_BUFFER_DEFAULT_LEN > {
     let mut output = Buffer::new();
     let mut seen_percent = false;
     for &ch in pattern.as_ref() {
