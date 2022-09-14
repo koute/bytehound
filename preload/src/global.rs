@@ -883,10 +883,13 @@ fn acquire_slow() -> Option< RawThreadHandle > {
 
 #[inline(always)]
 pub fn acquire_any_thread_handle() -> Option< ThreadHandleKind > {
-    let state = STATE.load( Ordering::Relaxed );
+    let mut state = STATE.load( Ordering::Relaxed );
     if state != STATE_ENABLED {
         if !try_enable( state ) {
-            return None;
+            state = STATE.load( Ordering::Relaxed );
+            if state != STATE_STARTING && state != STATE_PARTIALLY_INITIALIZED {
+                return None;
+            }
         }
     }
 
