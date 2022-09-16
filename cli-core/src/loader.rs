@@ -25,7 +25,7 @@ use common::event::{
     FramesInvalidated,
     HEADER_FLAG_IS_LITTLE_ENDIAN
 };
-use common::range_map::RangeMap;
+use fast_range_map::RangeMap;
 
 use crate::frame::Frame;
 use crate::data::{

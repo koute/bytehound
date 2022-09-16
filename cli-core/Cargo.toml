@@ -31,6 +31,7 @@ derive_more = "0.99"
 
 common = { path = "../common" }
 lz4-compress = { path = "../lz4-compress" }
+fast_range_map = { path = "../fast_range_map" }
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"

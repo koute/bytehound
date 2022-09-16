@@ -1,5 +1,5 @@
 [workspace]
-members = ["common", "lz4-compress", "jemallocator/jemalloc-sys", "preload", "cli-core", "cli", "server-core", "gather", "integration-tests", "mimalloc_rust"]
+members = ["common", "lz4-compress", "jemallocator/jemalloc-sys", "preload", "cli-core", "cli", "server-core", "gather", "integration-tests", "mimalloc_rust", "fast_range_map"]
 resolver = "2"
 
 [profile.dev]
