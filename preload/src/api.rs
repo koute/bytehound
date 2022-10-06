@@ -915,13 +915,21 @@ pub unsafe extern "C" fn fork() -> libc::pid_t {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn memalign( _alignment: size_t, _size: size_t ) -> *mut c_void {
-    unimplemented!( "'memalign' is unimplemented!" );
+pub unsafe extern "C" fn memalign( alignment: size_t, size: size_t ) -> *mut c_void {
+    if !alignment.is_power_of_two() {
+        *libc::__errno_location() = libc::EINVAL;
+        return std::ptr::null_mut();
+    }
+    allocate( size, AllocationKind::Aligned( alignment ) )
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
-    unimplemented!( "'aligned_alloc' is unimplemented!" );
+pub unsafe extern "C" fn aligned_alloc( alignment: size_t, size: size_t ) -> *mut c_void {
+    if !alignment.is_power_of_two() || size % alignment != 0 {
+        *libc::__errno_location() = libc::EINVAL;
+        return std::ptr::null_mut();
+    }
+    allocate( size, AllocationKind::Aligned( alignment ) )
 }
 
 #[cfg_attr(not(test), no_mangle)]
