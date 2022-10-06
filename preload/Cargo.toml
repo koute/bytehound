@@ -1,6 +1,6 @@
 [package]
 name = "bytehound-preload"
-version = "0.9.0"
+version = "0.10.0"
 authors = ["Jan Bujak <j@exia.io>"]
 edition = "2018"
 rust-version = "1.62"
