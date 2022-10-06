@@ -848,13 +848,6 @@ impl ThreadHandleKind {
             ThreadHandleKind::Weak( WeakThreadHandle( ref handle ) ) => handle,
         }.thread_id
     }
-
-    pub fn decay( self ) -> WeakThreadHandle {
-        match self {
-            ThreadHandleKind::Strong( handle ) => handle.decay(),
-            ThreadHandleKind::Weak( handle ) => handle,
-        }
-    }
 }
 
 #[cold]
