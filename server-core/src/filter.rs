@@ -13,8 +13,8 @@ use cli_core::{
     Timestamp,
     Compile,
     TryMatch,
-    SMapId,
-    SMap,
+    MapId,
+    Map,
     EvalOutput,
 };
 
@@ -82,7 +82,7 @@ fn run_custom_allocation_filter( data: &Arc< Data >, custom_filter: &protocol::C
     }
 }
 
-fn run_custom_map_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< Arc< HashSet< SMapId > > >, cli_core::script::EvalError > {
+fn run_custom_map_filter( data: &Arc< Data >, custom_filter: &protocol::CustomFilter ) -> Result< Option< Arc< HashSet< MapId > > >, cli_core::script::EvalError > {
     match run_custom_filter( data, custom_filter )? {
         None => {
             Ok( None )
@@ -249,11 +249,11 @@ pub fn prepare_raw_allocation_filter( data: &Data, filter: &protocol::AllocFilte
 #[derive(Clone)]
 pub struct MapFilter {
     filter: cli_core::CompiledMapFilter,
-    custom_filter: Option< Arc< HashSet< SMapId > > >
+    custom_filter: Option< Arc< HashSet< MapId > > >
 }
 
 impl MapFilter {
-    pub fn try_match( &self, data: &Data, id: SMapId, allocation: &SMap ) -> bool {
+    pub fn try_match( &self, data: &Data, id: MapId, allocation: &Map ) -> bool {
         if let Some( ref custom_filter ) = self.custom_filter {
             if !custom_filter.contains( &id ) {
                 return false;

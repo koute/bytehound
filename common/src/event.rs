@@ -115,12 +115,28 @@ pub struct AllocBody {
 bitflags::bitflags! {
     #[derive(Readable, Writable)]
     #[repr(transparent)]
-    pub struct SMapFlags: u32 {
+    pub struct RegionFlags: u32 {
         const READABLE = 1 << 0;
         const WRITABLE = 1 << 1;
         const EXECUTABLE = 1 << 2;
         const SHARED = 1 << 3;
     }
+}
+
+#[derive(Clone, PartialEq, Debug, Readable, Writable)]
+pub struct RegionSource {
+    pub timestamp: Timestamp,
+    #[speedy(varint)]
+    pub backtrace: u64,
+    pub thread: u32
+}
+
+#[derive(Clone, PartialEq, Debug, Readable, Writable)]
+pub struct RegionTargetedSource {
+    pub address: u64,
+    #[speedy(varint)]
+    pub length: u64,
+    pub source: RegionSource,
 }
 
 #[derive(Clone, PartialEq, Debug, Readable, Writable)]
@@ -259,29 +275,43 @@ pub enum Event< 'a > {
         #[speedy(length_type = u64)]
         contents: Cow< 'a, [u8] >
     },
-    AddMap {
+    AddRegion {
         timestamp: Timestamp,
+        #[speedy(varint)]
+        map_id: u64,
         address: u64,
+        #[speedy(varint)]
         length: u64,
+
+        #[speedy(varint)]
         file_offset: u64,
+        #[speedy(varint)]
         inode: u64,
-        backtrace: u64,
-        thread: u32,
         major: u32,
         minor: u32,
-        flags: SMapFlags,
-        name: Cow< 'a, str >
+        flags: RegionFlags,
+        #[speedy(length_type = u64_varint)]
+        name: Cow< 'a, str >,
+        source: Option< RegionSource >
     },
-    RemoveMap {
+    RemoveRegion {
         timestamp: Timestamp,
+        #[speedy(varint)]
+        map_id: u64,
         address: u64,
+        #[speedy(varint)]
         length: u64,
-        backtrace: u64,
-        thread: u32
+
+        #[speedy(length_type = u64_varint)]
+        sources: Cow< 'a, [RegionTargetedSource] >,
     },
-    UpdateMapUsage {
+    UpdateRegionUsage {
         timestamp: Timestamp,
+        #[speedy(varint)]
+        map_id: u64,
         address: u64,
+        #[speedy(varint)]
+        length: u64,
 
         // NOTE: All of these are in kilobytes (base 1024).
         #[speedy(varint)]

@@ -498,32 +498,33 @@ export default class PageDataAllocations extends React.Component {
                     SubComponent={row => {
                         const q = _.omit( extract_query( this.props.location.search ), "count", "skip", "sort_by", "order" );
 
-                        const allocation_backtrace =
+                        const allocation_backtrace = (row.original.source && row.original.source.backtrace) ?
                             <div className="backtrace-cell" onContextMenu={event => {
                                     const lq = _.cloneDeep(q);
-                                    lq.backtraces = row.original.backtrace_id;
+                                    lq.backtraces = row.original.source.backtrace_id;
                                     const url = "/#" + this.props.location.pathname + "?" + create_query( lq ).toString();
 
                                     this.setState({
                                         showOnlyAllocationsUrl: url,
-                                        selectedBacktrace: row.original.backtrace_id
+                                        selectedBacktrace: row.original.source.backtrace_id
                                     });
                                     return this.allocation_menu_trigger.handleContextClick( event );
-                                }}>{backtrace_cell( show_full_backtraces, row.original.backtrace )}
-                            </div>;
+                                }}>{backtrace_cell( show_full_backtraces, row.original.source.backtrace )}
+                            </div>
+                            : null;
 
                         const deallocation_backtrace = (row.original.deallocation && row.original.deallocation.backtrace) ?
                             <div className="backtrace-cell" onContextMenu={event => {
                                     const lq = _.cloneDeep(q);
-                                    lq.deallocation_backtraces = row.original.deallocation.backtrace_id;
+                                    lq.deallocation_backtraces = row.original.deallocation.source.backtrace_id;
                                     const url = "/#" + this.props.location.pathname + "?" + create_query( lq ).toString();
 
                                     this.setState({
                                         showOnlyAllocationsUrl: url,
-                                        selectedBacktrace: row.original.deallocation.backtrace_id
+                                        selectedBacktrace: row.original.deallocation.source.backtrace_id
                                     });
                                     return this.deallocation_menu_trigger.handleContextClick( event );
-                                }}>{backtrace_cell( show_full_backtraces, row.original.deallocation.backtrace )}
+                                }}>{backtrace_cell( show_full_backtraces, row.original.deallocation.source.backtrace )}
                             </div>
                             : null;
 

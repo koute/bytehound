@@ -14,7 +14,8 @@ use common::Timestamp;
 
 use crate::InternalEvent;
 use crate::event::{InternalAllocation, InternalAllocationId, send_event, send_event_throttled};
-use crate::global::{MapSource, StrongThreadHandle, on_exit};
+use crate::global::{StrongThreadHandle, on_exit};
+use crate::smaps::MapSource;
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
@@ -62,7 +63,7 @@ extern "C" {
 
 #[no_mangle]
 pub unsafe extern "C" fn bytehound_jemalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off, b"jemalloc\0" )
+    mmap_internal( addr, length, prot, flags, fildes, off, "jemalloc" )
 }
 
 #[no_mangle]
@@ -72,10 +73,16 @@ pub unsafe extern "C" fn bytehound_jemalloc_raw_munmap( addr: *mut c_void, lengt
 
 #[no_mangle]
 pub unsafe extern "C" fn bytehound_mimalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    let _lock = crate::global::MMAP_LOCK.lock().unwrap();
+    use std::io::Write;
+    let id = crate::global::next_map_id();
+    let mut buffer = crate::utils::Buffer::< 64 >::new();
+    write!( &mut buffer, "bytehound::{}\0", id ).unwrap();
+    let name = buffer.as_slice();
+
+    let _lock = crate::global::MMAP_REGISTRY.lock().unwrap();
     let pointer = syscall::mmap( addr, length, prot | libc::PROT_READ | libc::PROT_WRITE, flags, fildes, off );
     if pointer != libc::MAP_FAILED {
-        crate::syscall::pr_set_vma_anon_name( pointer, length, b"bytehound\0" );
+        crate::syscall::pr_set_vma_anon_name( pointer, length, name );
     }
 
     pointer
@@ -791,54 +798,48 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, b"mmap\0" )
+    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, "mmap" )
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap64( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off, b"mmap\0" )
+    mmap_internal( addr, length, prot, flags, fildes, off, "mmap" )
 }
 
 pub unsafe extern "C" fn mmap_private( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, b"glibc\0" )
+    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, "glibc" )
 }
 
 #[inline(always)]
-unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, name: &[u8] ) -> *mut c_void {
+unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, raw_name: &str ) -> *mut c_void {
+    if !opt::get().gather_maps {
+        return syscall::mmap( addr, length, prot, flags, fildes, off );
+    }
+
+    use std::io::Write;
+    let id = crate::global::next_map_id();
+    let mut buffer = crate::utils::Buffer::< 64 >::new();
+    write!( &mut buffer, "{}::{}\0", raw_name, id ).unwrap();
+    let name = buffer.as_slice();
+
     if let Some( mut thread ) = crate::global::acquire_any_thread_handle() {
         if let Some( backtrace ) = unwind::grab_from_any( &mut thread ) {
-            let mut maps_registry = crate::global::MMAP_LOCK.lock().unwrap();
+            let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
             let timestamp = get_timestamp();
             let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
             if ptr != libc::MAP_FAILED {
-                maps_registry.mmap_source_by_address.insert( ptr as usize, MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() } );
-                maps_registry.munmap_source_by_address.remove( &(ptr as usize) );
+                let range = ptr as u64..ptr as u64 + length as u64;
+                let source = MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() };
+                maps_registry.on_mmap( id, range, source );
 
                 crate::syscall::pr_set_vma_anon_name( ptr, length, name );
             }
-
-            if !opt::get().gather_mmap_calls {
-                return ptr;
-            }
-
-            send_event_throttled( || InternalEvent::Mmap {
-                pointer: ptr as usize,
-                length: length as usize,
-                requested_address: addr as usize,
-                mmap_protection: prot as u32,
-                mmap_flags: flags as u32,
-                file_descriptor: fildes as u32,
-                offset: off as u64,
-                backtrace,
-                timestamp,
-                thread: thread.decay()
-            });
 
             return ptr;
         }
     }
 
-    let _lock = crate::global::MMAP_LOCK.lock().unwrap();
+    let _lock = crate::global::MMAP_REGISTRY.lock().unwrap();
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
     crate::syscall::pr_set_vma_anon_name( ptr, length, name );
 
@@ -847,33 +848,26 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
+    if !opt::get().gather_maps {
+        return syscall::munmap( ptr, length );
+    }
+
     if let Some( mut thread ) = crate::global::acquire_any_thread_handle() {
         if let Some( backtrace ) = unwind::grab_from_any( &mut thread ) {
-            let mut maps_registry = crate::global::MMAP_LOCK.lock().unwrap();
+            let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
             let timestamp = get_timestamp();
             let result = syscall::munmap( ptr, length );
             if result == 0 {
-                maps_registry.mmap_source_by_address.remove( &(ptr as usize) );
-                maps_registry.munmap_source_by_address.insert( ptr as usize, MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() } );
+                let range = ptr as u64..ptr as u64 + length as u64;
+                let source = MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() };
+                maps_registry.on_munmap( range, source );
             }
-
-            if !opt::get().gather_mmap_calls {
-                return result;
-            }
-
-            send_event_throttled( || InternalEvent::Munmap {
-                ptr: ptr as usize,
-                len: length as usize,
-                backtrace,
-                timestamp,
-                thread: thread.decay()
-            });
 
             return result;
         }
     }
 
-    let _lock = crate::global::MMAP_LOCK.lock().unwrap();
+    let _lock = crate::global::MMAP_REGISTRY.lock().unwrap();
     syscall::munmap( ptr, length )
 }
 

@@ -404,9 +404,9 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                 Event::String { .. } => {},
                 Event::DecodedFrame { .. } => {},
                 Event::DecodedBacktrace { .. } => {},
-                Event::AddMap { .. } => {},
-                Event::RemoveMap { .. } => {},
-                Event::UpdateMapUsage { .. } => {},
+                Event::AddRegion { .. } => {},
+                Event::RemoveRegion { .. } => {},
+                Event::UpdateRegionUsage { .. } => {},
             }
 
             event.write_to_stream( &mut ofp )?;

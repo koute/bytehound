@@ -33,7 +33,7 @@ mod timeline;
 pub mod script;
 mod script_virtual;
 
-pub use crate::data::{Data, DataId, CodePointer, DataPointer, BacktraceId, Timestamp, Operation, OperationId, StringId, Allocation, AllocationId, FrameId, Mallopt, MalloptKind, MmapOperation, MemoryMap, MemoryUnmap, CountAndSize, SMapId, SMap, SMapFlags, MapUsage};
+pub use crate::data::{Data, DataId, CodePointer, DataPointer, BacktraceId, Timestamp, Operation, OperationId, StringId, Allocation, AllocationId, FrameId, Mallopt, MalloptKind, CountAndSize, MapId, Map, RegionFlags, MapUsage, UsageDelta};
 pub use crate::loader::Loader;
 pub use crate::tree::{Tree, Node, NodeId};
 pub use crate::frame::Frame;

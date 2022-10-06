@@ -172,16 +172,16 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I, anonymize: 
                     write = false;
                 }
             },
-            Event::AddMap { ref mut name, .. } => {
+            Event::AddRegion { ref mut name, .. } => {
                 process = true;
                 if anonymize != Anonymize::None {
                     *name = Cow::Borrowed( "" );
                 }
             },
-            Event::RemoveMap { .. } => {
+            Event::RemoveRegion { .. } => {
                 process = true;
             },
-            Event::UpdateMapUsage { .. } => {
+            Event::UpdateRegionUsage { .. } => {
                 process = true;
             },
             Event::Header( ref mut body ) => {

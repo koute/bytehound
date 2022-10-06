@@ -1,6 +1,6 @@
 use std::cell::UnsafeCell;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::thread;
 
@@ -8,7 +8,7 @@ use crate::arc_lite::ArcLite;
 use crate::event::{InternalAllocationId, InternalEvent, send_event};
 use crate::spin_lock::{SpinLock, SpinLockGuard};
 use crate::{opt, syscall};
-use crate::unwind::{Backtrace, ThreadUnwindState, prepare_to_start_unwinding};
+use crate::unwind::{ThreadUnwindState, prepare_to_start_unwinding};
 use crate::timestamp::Timestamp;
 use crate::allocation_tracker::AllocationTracker;
 use thread_local_reentrant::AccessError as TlsAccessError;
@@ -67,22 +67,13 @@ pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u
 
 pub static mut INITIAL_TIMESTAMP: Timestamp = Timestamp::from_secs( 0 );
 
-#[derive(Clone)]
-pub struct MapSource {
-    pub timestamp: Timestamp,
-    pub backtrace: Backtrace,
-    pub tid: u32
+static NEXT_MAP_ID: AtomicU64 = AtomicU64::new( 1 );
+
+pub fn next_map_id() -> u64 {
+    NEXT_MAP_ID.fetch_add( 1, Ordering::Relaxed )
 }
 
-pub struct MapsRegistry {
-    pub mmap_source_by_address: crate::utils::HashMap< usize, MapSource >,
-    pub munmap_source_by_address: crate::utils::HashMap< usize, MapSource >,
-}
-
-pub static MMAP_LOCK: Mutex< MapsRegistry > = Mutex::new( MapsRegistry {
-    mmap_source_by_address: crate::utils::empty_hashmap(),
-    munmap_source_by_address: crate::utils::empty_hashmap(),
-});
+pub static MMAP_REGISTRY: Mutex< crate::smaps::MapsRegistry > = Mutex::new( crate::smaps::MapsRegistry::new() );
 
 #[cfg(feature = "jemalloc")]
 #[inline]

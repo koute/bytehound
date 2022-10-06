@@ -102,25 +102,6 @@ pub(crate) enum InternalEvent {
     SetMarker {
         value: u32
     },
-    Mmap {
-        pointer: usize,
-        requested_address: usize,
-        length: usize,
-        mmap_protection: u32,
-        mmap_flags: u32,
-        offset: u64,
-        backtrace: Backtrace,
-        file_descriptor: u32,
-        timestamp: Timestamp,
-        thread: WeakThreadHandle
-    },
-    Munmap {
-        ptr: usize,
-        len: usize,
-        backtrace: Backtrace,
-        timestamp: Timestamp,
-        thread: WeakThreadHandle
-    },
     Mallopt {
         param: i32,
         value: i32,

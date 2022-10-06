@@ -1,7 +1,7 @@
 use regex::Regex;
 use ahash::AHashMap as HashMap;
 use ahash::AHashSet as HashSet;
-use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer, SMap};
+use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer, Map};
 
 pub trait TryMatch {
     type Item;
@@ -895,15 +895,15 @@ impl TryMatch for RawCompiledAllocationFilter {
 }
 
 impl TryMatch for RawCompiledMapFilter {
-    type Item = SMap;
-    fn try_match( &self, data: &Data, map: &SMap ) -> bool {
+    type Item = Map;
+    fn try_match( &self, data: &Data, map: &Map ) -> bool {
         if self.is_impossible {
             return false;
         }
 
         if !self.common_filter.try_match( data, &CommonFilterArgs {
-            pointer: map.pointer,
-            size: map.size,
+            pointer: map.regions[ 0 ].pointer,
+            size: map.regions[ 0 ].size,
             timestamp: map.timestamp,
             deallocation_timestamp: map.deallocation.as_ref().map( |deallocation| deallocation.timestamp )
         }) {

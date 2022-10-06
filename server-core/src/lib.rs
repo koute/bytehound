@@ -54,13 +54,10 @@ use cli_core::{
     FrameId,
     MalloptKind,
     VecVec,
-    MmapOperation,
-    MemoryMap,
-    MemoryUnmap,
     CountAndSize,
-    SMap,
-    SMapId,
-    SMapFlags,
+    Map,
+    MapId,
+    RegionFlags,
     export_as_replay,
     export_as_heaptrack,
     export_as_flamegraph,
@@ -468,7 +465,7 @@ fn handler_timeline_leaked( req: HttpRequest ) -> Result< HttpResponse > {
 fn handler_timeline_maps( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let mut ops = Vec::new();
-    for map in data.smaps() {
+    for map in data.maps() {
         map.emit_ops( &mut ops );
     }
 
@@ -491,10 +488,10 @@ fn handler_timeline_maps( req: HttpRequest ) -> Result< HttpResponse > {
     for point in timeline {
         xs.push( point.timestamp / 1000 );
         address_space.push( point.address_space as i64 );
-        rss.push( point.rss as i64 );
+        rss.push( point.rss() as i64 );
         anonymous.push( point.anonymous as i64 );
-        dirty.push( point.dirty as i64 );
-        clean.push( point.clean as i64 );
+        dirty.push( point.dirty() as i64 );
+        clean.push( point.clean() as i64 );
         swap.push( point.swap as i64 );
     }
 
@@ -657,9 +654,9 @@ fn get_maps< 'a >(
     let order = params.order.unwrap_or( protocol::Order::Asc );
     let generate_graphs = params.generate_graphs.unwrap_or( false );
 
-    let mut list: Vec< _ > = data.smaps().par_iter().enumerate()
+    let mut list: Vec< _ > = data.maps().par_iter().enumerate()
         .map( |(index, map)| {
-            let id = SMapId( index as u64 );
+            let id = MapId( index as u64 );
             (id, map)
         })
         .filter( |(id, map)| {
@@ -671,37 +668,37 @@ fn get_maps< 'a >(
     let cmp = match sort_by {
         protocol::MapsSortBy::Timestamp => {
             if order == protocol::Order::Asc {
-                |a: &SMap, b: &SMap| a.timestamp.cmp( &b.timestamp )
+                |a: &Map, b: &Map| a.timestamp.cmp( &b.timestamp )
             } else {
-                |a: &SMap, b: &SMap| b.timestamp.cmp( &a.timestamp )
+                |a: &Map, b: &Map| b.timestamp.cmp( &a.timestamp )
             }
         },
         protocol::MapsSortBy::Address => {
             if order == protocol::Order::Asc {
-                |a: &SMap, b: &SMap| a.pointer.cmp( &b.pointer )
+                |a: &Map, b: &Map| a.regions[ 0 ].pointer.cmp( &b.regions[ 0 ].pointer )
             } else {
-                |a: &SMap, b: &SMap| b.pointer.cmp( &a.pointer )
+                |a: &Map, b: &Map| b.regions[ 0 ].pointer.cmp( &a.regions[ 0 ].pointer )
             }
         },
         protocol::MapsSortBy::Size => {
             if order == protocol::Order::Asc {
-                |a: &SMap, b: &SMap| a.size.cmp( &b.size )
+                |a: &Map, b: &Map| a.regions[ 0 ].size.cmp( &b.regions[ 0 ].size )
             } else {
-                |a: &SMap, b: &SMap| b.size.cmp( &a.size )
+                |a: &Map, b: &Map| b.regions[ 0 ].size.cmp( &a.regions[ 0 ].size )
             }
         },
         protocol::MapsSortBy::PeakRss => {
             if order == protocol::Order::Asc {
-                |a: &SMap, b: &SMap| a.peak_rss.cmp( &b.size )
+                |a: &Map, b: &Map| a.peak_rss.cmp( &b.peak_rss )
             } else {
-                |a: &SMap, b: &SMap| b.peak_rss.cmp( &a.size )
+                |a: &Map, b: &Map| b.peak_rss.cmp( &a.peak_rss )
             }
         }
     };
 
     list.par_sort_by( move |a, b| {
-        let a = &data.smaps()[ a.0 as usize ];
-        let b = &data.smaps()[ b.0 as usize ];
+        let a = &data.maps()[ a.0 as usize ];
+        let b = &data.maps()[ b.0 as usize ];
         cmp( a, b )
     });
 
@@ -714,11 +711,16 @@ fn get_maps< 'a >(
             .skip( skip )
             .take( remaining )
             .map( move |id| {
-                let map = &data.smaps()[ id.0 as usize ];
-                let backtrace_id = map.source.map( |source| source.backtrace );
-                let backtrace = backtrace_id.map( |backtrace_id|
-                    data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
-                ).unwrap_or( Vec::new() );
+                let map = &data.maps()[ id.0 as usize ];
+                let source = map.source.map( |source| {
+                    protocol::MapSource {
+                        timestamp: source.timestamp.into(),
+                        thread: source.thread,
+                        backtrace_id: source.backtrace.raw(),
+                        backtrace: data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
+                    }
+                });
+
                 let mut graph_preview_url = None;
                 let mut graph_url = None;
 
@@ -743,39 +745,77 @@ fn get_maps< 'a >(
                     graph_preview_url = urls.next();
                 }
 
+                let first_region = &map.regions[ 0 ];
                 protocol::Map {
                     id: id.0,
-                    address: map.pointer,
-                    address_s: format!( "{:016X}", map.pointer ),
+                    address: first_region.pointer,
+                    address_s: format!( "{:016X}", first_region.pointer ),
                     timestamp: map.timestamp.into(),
                     timestamp_relative: (map.timestamp - data.initial_timestamp()).into(),
                     timestamp_relative_p: timestamp_to_fraction( data, map.timestamp ),
-                    thread: map.source.map( |source| source.thread ),
-                    size: map.size,
-                    backtrace_id: backtrace_id.map( |id| id.raw() ),
+                    size: first_region.size,
+                    source,
                     deallocation: map.deallocation.as_ref().map( |deallocation| {
                         protocol::MapDeallocation {
                             timestamp: deallocation.timestamp.into(),
-                            thread: deallocation.source.map( |source| source.thread ),
-                            backtrace_id: deallocation.source.map( |source| source.backtrace.raw() ),
-                            backtrace: deallocation.source.map( |source|
-                                data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
-                            )
+                            source: deallocation.source.map( |source| {
+                                protocol::MapSource {
+                                    timestamp: source.timestamp.into(),
+                                    thread: source.thread,
+                                    backtrace_id: source.backtrace.raw(),
+                                    backtrace: data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
+                                }
+                            })
                         }
                     }),
-                    backtrace,
-                    file_offset: map.file_offset,
-                    inode: map.inode,
-                    major: map.major,
-                    minor: map.minor,
-                    name: (&*map.name).into(),
-                    is_readable: map.flags.contains( SMapFlags::READABLE ),
-                    is_writable: map.flags.contains( SMapFlags::WRITABLE ),
-                    is_executable: map.flags.contains( SMapFlags::EXECUTABLE ),
-                    is_shared: map.flags.contains( SMapFlags::SHARED ),
+                    file_offset: first_region.file_offset,
+                    inode: first_region.inode,
+                    major: first_region.major,
+                    minor: first_region.minor,
+                    name: (&*first_region.name).into(),
+                    is_readable: first_region.flags.contains( RegionFlags::READABLE ),
+                    is_writable: first_region.flags.contains( RegionFlags::WRITABLE ),
+                    is_executable: first_region.flags.contains( RegionFlags::EXECUTABLE ),
+                    is_shared: first_region.flags.contains( RegionFlags::SHARED ),
                     peak_rss: map.peak_rss,
                     graph_preview_url,
                     graph_url,
+                    regions: map.regions.iter().map( |region| {
+                        let region_source = region.source.map( |source| {
+                            protocol::MapSource {
+                                timestamp: source.timestamp.into(),
+                                thread: source.thread,
+                                backtrace_id: source.backtrace.raw(),
+                                backtrace: data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
+                            }
+                        });
+                        protocol::MapRegion {
+                            address: region.pointer,
+                            address_s: format!( "{:016X}", region.pointer ),
+                            timestamp: region.timestamp.into(),
+                            timestamp_relative: (region.timestamp - data.initial_timestamp()).into(),
+                            timestamp_relative_p: timestamp_to_fraction( data, region.timestamp ),
+                            size: region.size,
+                            source: region_source,
+                            deallocation: region.deallocation.as_ref().map( |deallocation| {
+                                protocol::MapRegionDeallocation {
+                                    timestamp: deallocation.timestamp.into(),
+                                    sources: deallocation.sources.iter().map( |source| {
+                                        protocol::MapRegionDeallocationSource {
+                                            address: source.address,
+                                            length: source.length,
+                                            source: protocol::MapSource {
+                                                timestamp: source.source.timestamp.into(),
+                                                thread: source.source.thread,
+                                                backtrace_id: source.source.backtrace.raw(),
+                                                backtrace: data.get_backtrace( source.source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
+                                            }
+                                        }
+                                    }).collect()
+                                }
+                            })
+                        }
+                    }).collect()
                 }
             })
     };
@@ -1182,103 +1222,6 @@ fn handler_tree( req: HttpRequest ) -> Result< HttpResponse > {
             let frame = get_frame( &data, &backtrace_format, frame );
             serde_json::to_writer( output, &frame ).map_err( |_| fmt::Error )
         }).unwrap();
-    })?;
-
-    Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
-}
-
-fn handler_mmaps( req: HttpRequest ) -> Result< HttpResponse > {
-    let backtrace_format: protocol::BacktraceFormat = query( &req )?;
-    let filter: protocol::MmapFilter = query( &req )?;
-    let body = async_data_handler( &req, move |data, tx| {
-        let factory = || {
-            data.mmap_operations().iter().flat_map( |op| {
-                match *op {
-                    MmapOperation::Mmap( MemoryMap {
-                        timestamp,
-                        pointer,
-                        length,
-                        backtrace: backtrace_id,
-                        requested_address,
-                        mmap_protection,
-                        mmap_flags,
-                        file_descriptor,
-                        thread,
-                        offset
-                    }) => {
-                        if let Some( min ) = filter.size_min {
-                            if length < min {
-                                return None;
-                            }
-                        }
-                        if let Some( max ) = filter.size_max {
-                            if length > max {
-                                return None;
-                            }
-                        }
-                        let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( &data, &backtrace_format, frame ) ).collect();
-                        Some( protocol::MmapOperation::Mmap {
-                            timestamp: timestamp.into(),
-                            pointer,
-                            pointer_s: format!( "{:016}", pointer ),
-                            length,
-                            backtrace,
-                            backtrace_id: backtrace_id.raw(),
-                            requested_address,
-                            requested_address_s: format!( "{:016}", requested_address ),
-                            is_readable: mmap_protection.is_readable(),
-                            is_writable: mmap_protection.is_writable(),
-                            is_executable: mmap_protection.is_executable(),
-                            is_semaphore: mmap_protection.is_semaphore(),
-                            grows_down: mmap_protection.grows_down(),
-                            grows_up: mmap_protection.grows_up(),
-                            is_shared: mmap_flags.is_shared(),
-                            is_private: mmap_flags.is_private(),
-                            is_fixed: mmap_flags.is_fixed(),
-                            is_anonymous: mmap_flags.is_anonymous(),
-                            is_uninitialized: mmap_flags.is_uninitialized(),
-                            offset,
-                            file_descriptor: file_descriptor as i32,
-                            thread
-                        })
-                    },
-                    MmapOperation::Munmap( MemoryUnmap {
-                        timestamp,
-                        pointer,
-                        length,
-                        backtrace: backtrace_id,
-                        thread
-                    }) => {
-                        if let Some( min ) = filter.size_min {
-                            if length < min {
-                                return None;
-                            }
-                        }
-                        if let Some( max ) = filter.size_max {
-                            if length > max {
-                                return None;
-                            }
-                        }
-                        let backtrace = data.get_backtrace( backtrace_id ).map( |(_, frame)| get_frame( &data, &backtrace_format, frame ) ).collect();
-                        Some(protocol::MmapOperation::Munmap {
-                            timestamp: timestamp.into(),
-                            pointer,
-                            pointer_s: format!( "{:016}", pointer ),
-                            length,
-                            backtrace,
-                            backtrace_id: backtrace_id.raw(),
-                            thread
-                        })
-                    }
-                }
-            })
-        };
-
-        let response = protocol::ResponseMmaps {
-            operations: StreamingSerializer::new( factory )
-        };
-
-        let _ = serde_json::to_writer( tx, &response );
     })?;
 
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
@@ -1858,7 +1801,6 @@ pub fn main( inputs: Vec< PathBuf >, debug_symbols: Vec< PathBuf >, load_in_para
                     .service( web::resource( "/data/{id}/backtraces" ).route( web::get().to( handler_backtraces ) ) )
                     .service( web::resource( "/data/{id}/raw_allocations" ).route( web::get().to( handler_raw_allocations ) ) )
                     .service( web::resource( "/data/{id}/tree" ).route( web::get().to( handler_tree ) ) )
-                    .service( web::resource( "/data/{id}/mmaps" ).route( web::get().to( handler_mmaps ) ) )
                     .service( web::resource( "/data/{id}/backtrace/{backtrace_id}" ).route( web::get().to( handler_backtrace ) ) )
                     .service( web::resource( "/data/{id}/regions" ).route( web::get().to( handler_regions ) ) )
                     .service( web::resource( "/data/{id}/mallopts" ).route( web::get().to( handler_mallopts ) ) )

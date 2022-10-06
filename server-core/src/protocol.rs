@@ -189,14 +189,45 @@ pub struct AllocationGroup< 'a > {
 }
 
 #[derive(Serialize)]
+pub struct MapSource< 'a > {
+    pub timestamp: Timeval,
+    pub thread: u32,
+    pub backtrace_id: u32,
+    pub backtrace: Vec< Frame< 'a > >
+}
+
+#[derive(Serialize)]
 pub struct MapDeallocation< 'a > {
     pub timestamp: Timeval,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option< u32 >,
+    pub source: Option< MapSource< 'a > >
+}
+
+#[derive(Serialize)]
+pub struct MapRegionDeallocationSource< 'a > {
+    pub address: u64,
+    pub length: u64,
+    pub source: MapSource< 'a >
+}
+
+#[derive(Serialize)]
+pub struct MapRegionDeallocation< 'a > {
+    pub timestamp: Timeval,
+    pub sources: Vec< MapRegionDeallocationSource< 'a > >
+}
+
+#[derive(Serialize)]
+pub struct MapRegion< 'a > {
+    pub address: u64,
+    pub address_s: String,
+    pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
+    pub size: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub backtrace_id: Option< u32 >,
+    pub source: Option< MapSource< 'a > >,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub backtrace: Option< Vec< Frame< 'a > > >
+    pub deallocation: Option< MapRegionDeallocation< 'a > >,
 }
 
 #[derive(Serialize)]
@@ -207,14 +238,11 @@ pub struct Map< 'a > {
     pub timestamp: Timeval,
     pub timestamp_relative: Timeval,
     pub timestamp_relative_p: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread: Option< u32 >,
     pub size: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub backtrace_id: Option< u32 >,
+    pub source: Option< MapSource< 'a > >,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deallocation: Option< MapDeallocation< 'a > >,
-    pub backtrace: Vec< Frame< 'a > >,
     pub is_readable: bool,
     pub is_writable: bool,
     pub is_executable: bool,
@@ -227,6 +255,7 @@ pub struct Map< 'a > {
     pub peak_rss: u64,
     pub graph_preview_url: Option< String >,
     pub graph_url: Option< String >,
+    pub regions: Vec< MapRegion< 'a > >,
 }
 
 #[derive(Serialize)]
@@ -240,45 +269,6 @@ pub struct Mallopt< 'a > {
     pub param: Option< String >,
     pub value: i32,
     pub result: i32
-}
-
-#[derive(Serialize)]
-pub enum MmapOperation< 'a > {
-    #[serde(rename = "mmap")]
-    Mmap {
-        timestamp: Timeval,
-        pointer: u64,
-        pointer_s: String,
-        length: u64,
-        backtrace_id: u32,
-        backtrace: Vec< Frame< 'a > >,
-        requested_address: u64,
-        requested_address_s: String,
-        is_readable: bool,
-        is_writable: bool,
-        is_executable: bool,
-        is_semaphore: bool,
-        grows_down: bool,
-        grows_up: bool,
-        is_shared: bool,
-        is_private: bool,
-        is_fixed: bool,
-        is_anonymous: bool,
-        is_uninitialized: bool,
-        offset: u64,
-        file_descriptor: i32,
-        thread: u32
-    },
-    #[serde(rename = "munmap")]
-    Munmap {
-        timestamp: Timeval,
-        pointer: u64,
-        pointer_s: String,
-        length: u64,
-        backtrace_id: u32,
-        backtrace: Vec< Frame< 'a > >,
-        thread: u32
-    }
 }
 
 #[derive(Serialize)]

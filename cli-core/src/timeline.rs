@@ -1,4 +1,4 @@
-use crate::{Data, OperationId, SMap, MapUsage};
+use crate::{Data, OperationId, Map, MapUsage, UsageDelta};
 use crate::Timestamp;
 
 #[derive(Copy, Clone, derive_more::Add, derive_more::Sub, Default, Debug)]
@@ -7,39 +7,27 @@ pub struct AllocationDelta {
     pub allocations: i64,
 }
 
-#[derive(Copy, Clone, derive_more::Add, derive_more::Sub, derive_more::Neg, Default, Debug)]
-pub struct MapDelta {
-    pub address_space: i64,
-    pub rss: i64,
-    pub anonymous: i64,
-    pub dirty: i64,
-    pub clean: i64,
-    pub swap: i64
-}
-
-impl< 'a > From< (&'a SMap, &'a MapUsage) > for MapDelta {
-    fn from( (map, usage): (&'a SMap, &'a MapUsage) ) -> Self {
-        MapDelta {
-            address_space: map.size as i64,
-            rss: usage.rss() as i64,
+impl< 'a > From< &'a MapUsage > for UsageDelta {
+    fn from( usage: &'a MapUsage ) -> Self {
+        UsageDelta {
+            address_space: usage.address_space as i64,
             anonymous: usage.anonymous as i64,
-            dirty: usage.shared_dirty as i64 + usage.private_dirty as i64,
-            clean: usage.shared_clean as i64 + usage.private_clean as i64,
+            shared_clean: usage.shared_clean as i64,
+            shared_dirty: usage.shared_dirty as i64,
+            private_clean: usage.private_clean as i64,
+            private_dirty: usage.private_dirty as i64,
             swap: usage.swap as i64
         }
     }
 }
 
-impl SMap {
-    pub fn emit_ops( &self, output: &mut Vec< (Timestamp, MapDelta) > ) {
-        let mut last = MapDelta::default();
+impl Map {
+    pub fn emit_ops( &self, output: &mut Vec< (Timestamp, UsageDelta) > ) {
+        let mut last = UsageDelta::default();
         for usage in &self.usage_history {
-            let current: MapDelta = (self, usage).into();
+            let current: UsageDelta = usage.into();
             output.push( (usage.timestamp, current - last) );
             last = current;
-        }
-        if let Some( ref deallocation ) = self.deallocation {
-            output.push( (deallocation.timestamp, -last) );
         }
     }
 }
@@ -82,25 +70,27 @@ impl Delta for AllocationDelta {
     }
 }
 
-impl Delta for MapDelta {
+impl Delta for UsageDelta {
     fn max( lhs: Self, rhs: Self ) -> Self {
-        MapDelta {
+        UsageDelta {
             address_space: std::cmp::max( lhs.address_space, rhs.address_space ),
-            rss: std::cmp::max( lhs.rss, rhs.rss ),
             anonymous: std::cmp::max( lhs.anonymous, rhs.anonymous ),
-            dirty: std::cmp::max( lhs.dirty, rhs.dirty ),
-            clean: std::cmp::max( lhs.clean, rhs.clean ),
+            shared_clean: std::cmp::max( lhs.shared_clean, rhs.shared_clean ),
+            shared_dirty: std::cmp::max( lhs.shared_dirty, rhs.shared_dirty ),
+            private_clean: std::cmp::max( lhs.private_clean, rhs.private_clean ),
+            private_dirty: std::cmp::max( lhs.private_dirty, rhs.private_dirty ),
             swap: std::cmp::max( lhs.swap, rhs.swap ),
         }
     }
 
     fn min( lhs: Self, rhs: Self ) -> Self {
-        MapDelta {
+        UsageDelta {
             address_space: std::cmp::min( lhs.address_space, rhs.address_space ),
-            rss: std::cmp::min( lhs.rss, rhs.rss ),
             anonymous: std::cmp::min( lhs.anonymous, rhs.anonymous ),
-            dirty: std::cmp::min( lhs.dirty, rhs.dirty ),
-            clean: std::cmp::min( lhs.clean, rhs.clean ),
+            shared_clean: std::cmp::min( lhs.shared_clean, rhs.shared_clean ),
+            shared_dirty: std::cmp::min( lhs.shared_dirty, rhs.shared_dirty ),
+            private_clean: std::cmp::min( lhs.private_clean, rhs.private_clean ),
+            private_dirty: std::cmp::min( lhs.private_dirty, rhs.private_dirty ),
             swap: std::cmp::min( lhs.swap, rhs.swap ),
         }
     }
@@ -147,8 +137,8 @@ pub fn build_allocation_timeline(
 pub fn build_map_timeline(
     timestamp_min: common::Timestamp,
     timestamp_max: common::Timestamp,
-    ops: &[(Timestamp, MapDelta)]
-) -> Vec< TimelinePoint< MapDelta > > {
+    ops: &[(Timestamp, UsageDelta)]
+) -> Vec< TimelinePoint< UsageDelta > > {
     build_timeline(
         timestamp_min,
         timestamp_max,

@@ -187,6 +187,76 @@ struct ResponseAllocations {
 }
 
 #[derive(PartialEq, Deserialize, Debug)]
+pub struct MapDeallocation {
+    pub timestamp: Timeval,
+    pub source: Option< MapSource >,
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct MapRegionDeallocationSource {
+    pub address: u64,
+    pub length: u64,
+    pub source: MapSource
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct MapRegionDeallocation {
+    pub timestamp: Timeval,
+    pub sources: Vec< MapRegionDeallocationSource >,
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct MapSource {
+    pub timestamp: Timeval,
+    pub thread: u32,
+    pub backtrace_id: u32,
+    pub backtrace: Vec< Frame >
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct MapRegion {
+    pub address: u64,
+    pub address_s: String,
+    pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
+    pub size: u64,
+    pub source: Option< MapSource >,
+    pub deallocation: Option< MapRegionDeallocation >,
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct Map {
+    pub id: u64,
+    pub address: u64,
+    pub address_s: String,
+    pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
+    pub size: u64,
+    pub source: Option< MapSource >,
+    pub deallocation: Option< MapDeallocation >,
+    pub is_readable: bool,
+    pub is_writable: bool,
+    pub is_executable: bool,
+    pub is_shared: bool,
+    pub file_offset: u64,
+    pub inode: u64,
+    pub major: u32,
+    pub minor: u32,
+    pub name: String,
+    pub peak_rss: u64,
+    pub regions: Vec< MapRegion >,
+}
+
+#[derive(Deserialize, Debug)]
+struct ResponseMaps {
+    pub maps: Vec< Map >,
+    #[allow(dead_code)]
+    pub total_count: u64
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
 pub struct AllocationGroupData {
     pub size: u64,
     pub min_size: u64,
@@ -218,7 +288,8 @@ pub struct ResponseAllocationGroups {
 
 struct Analysis {
     response: ResponseAllocations,
-    groups: ResponseAllocationGroups
+    groups: ResponseAllocationGroups,
+    response_maps: ResponseMaps,
 }
 
 fn is_from_source( alloc: &Allocation, expected: &str ) -> bool {
@@ -318,7 +389,12 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     assert_eq!( *groups.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
     let groups: ResponseAllocationGroups = serde_json::from_str( &groups.text().unwrap() ).unwrap();
 
-    Analysis { response, groups }
+    let maps = attohttpc::get( &format!( "http://localhost:{}/data/last/maps", port ) ).send().unwrap();
+    assert_eq!( maps.status(), attohttpc::StatusCode::OK );
+    assert_eq!( *maps.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
+    let response_maps: ResponseMaps = serde_json::from_str( &maps.text().unwrap() ).unwrap();
+
+    Analysis { response, groups, response_maps }
 }
 
 fn get_basename( path: &str ) -> &str {
@@ -470,6 +546,136 @@ fn test_basic() {
     ).assert_success();
 
     check_allocations_basic_program(&cwd.join( "memory-profiling-basic.dat" ));
+}
+
+#[test]
+fn test_mmap() {
+    let cwd = workdir();
+
+    compile( "mmap.c" );
+
+    run_on_target(
+        &cwd,
+        "./mmap",
+        EMPTY_ARGS,
+        &[
+            ("LD_PRELOAD", preload_path().into_os_string()),
+            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-mmap.dat".into())
+        ]
+    ).assert_success();
+
+    let analysis = analyze( "mmap", cwd.join( "memory-profiling-mmap.dat" ) );
+
+    let mut skipping = true;
+    let mut iter = analysis.response_maps.maps.into_iter().skip_while( |map| {
+        if map.size == 123 * 4096 {
+            skipping = false;
+        }
+        skipping
+    }).filter( |map| {
+        map.source.as_ref().map( |source| {
+            source.backtrace.iter().any( |frame| {
+                frame.source.as_ref().map( |source| {
+                    source.ends_with( "mmap.c" )
+                }).unwrap_or( false )
+            })
+        }).unwrap_or( false )
+    });
+
+    let a0 = iter.next().unwrap(); // Leaked, never touched.
+    let a1 = iter.next().unwrap(); // Leaked, touched.
+    let a2 = iter.next().unwrap(); // Fully deallocated.
+    let a3 = iter.next().unwrap(); // Partially deallocated at the start.
+    let a4 = iter.next().unwrap(); // Partially deallocated at the end.
+    let a5 = iter.next().unwrap(); // Partially deallocated in the middle.
+    let a6 = iter.next().unwrap(); // Partially deallocated with another mmap.
+    let a7 = iter.next().unwrap(); // The another mmap which partially deallocated the previous map.
+
+    // Leaked, never touched.
+    assert_eq!( a0.regions.len(), 1 );
+    assert_eq!( a0.size, 123 * 4096 );
+    assert_eq!( a0.name, "[anon:mmap]" );
+    assert!( a0.source.is_some() );
+    assert!( a0.deallocation.is_none() );
+    assert!( a0.is_readable );
+    assert!( a0.is_writable );
+    assert!( !a0.is_executable );
+    assert!( !a0.is_shared );
+    assert_eq!( a0.file_offset, 0 );
+    assert_eq!( a0.inode, 0 );
+    assert_eq!( a0.major, 0 );
+    assert_eq!( a0.minor, 0 );
+    assert_eq!( a0.peak_rss, 0 );
+
+    // Leaked, touched.
+    assert_eq!( a1.regions.len(), 1 );
+    assert_eq!( a1.size, 5 * 4096 );
+    assert_eq!( a1.peak_rss, 2 * 4096 );
+    assert!( !a1.source.is_none() );
+    assert!( a1.deallocation.is_none() );
+
+    // Fully deallocated.
+    assert_eq!( a2.regions.len(), 1 );
+    assert_eq!( a2.size, 6 * 4096 );
+    assert!( !a2.source.is_none() );
+    assert!( a2.deallocation.is_some() );
+
+    // Partially deallocated at the start.
+    assert_eq!( a3.regions.len(), 2 );
+
+    assert_eq!( a3.regions[ 0 ].size, 7 * 4096 ); // Original.
+    assert!( a3.regions[ 0 ].deallocation.is_some() );
+
+    assert_eq!( a3.regions[ 1 ].size, 1 * 4096 ); // After it was cut down. (The end part of the original.)
+    assert!( a3.regions[ 1 ].deallocation.is_none() );
+
+    assert_ne!( a3.regions[ 0 ].timestamp, a3.regions[ 1 ].timestamp );
+    assert_eq!( a3.regions[ 0 ].deallocation.as_ref().unwrap().timestamp, a3.regions[ 1 ].timestamp );
+    assert_eq!( a3.regions[ 0 ].address + 6 * 4096, a3.regions[ 1 ].address );
+
+    // Partially deallocated at the end.
+    assert_eq!( a4.regions.len(), 2 );
+
+    assert_eq!( a4.regions[ 0 ].size, 7 * 4096 ); // Original.
+    assert!( a4.regions[ 0 ].deallocation.is_some() );
+
+    assert_eq!( a4.regions[ 1 ].size, 1 * 4096 ); // After it was cut down. (The start part of the original.)
+    assert!( a4.regions[ 1 ].deallocation.is_none() );
+
+    assert_ne!( a4.regions[ 0 ].timestamp, a4.regions[ 1 ].timestamp );
+    assert_eq!( a4.regions[ 0 ].address, a4.regions[ 0 ].address );
+
+    // Partially deallocated in the middle.
+    assert_eq!( a5.regions.len(), 3 );
+
+    assert_eq!( a5.regions[ 0 ].size, 7 * 4096 ); // Original.
+    assert!( a5.regions[ 0 ].deallocation.is_some() );
+
+    assert_eq!( a5.regions[ 1 ].size, 3 * 4096 ); // Cut down (1).
+    assert_eq!( a5.regions[ 0 ].address, a5.regions[ 1 ].address );
+    assert!( a5.regions[ 1 ].deallocation.is_none() );
+
+    assert_eq!( a5.regions[ 2 ].size, 3 * 4096 ); // Cut down (2).
+    assert_eq!( a5.regions[ 0 ].address + 4 * 4096, a5.regions[ 2 ].address );
+    assert!( a5.regions[ 2 ].deallocation.is_none() );
+
+    // Partially deallocated with another mmap.
+    assert_eq!( a6.regions.len(), 2 );
+
+    assert_eq!( a6.regions[ 0 ].size, 7 * 4096 ); // Original.
+    assert!( a6.regions[ 0 ].deallocation.is_some() );
+
+    assert_eq!( a6.regions[ 1 ].size, 6 * 4096 ); // After it was cut down.
+    assert!( a6.regions[ 1 ].deallocation.is_none() );
+
+    assert_eq!( a6.regions[ 0 ].address, a6.regions[ 1 ].address );
+
+    // The map which triggered the deallocation.
+    assert_eq!( a7.regions.len(), 1 );
+    assert_eq!( a7.regions[ 0 ].size, 4096 );
+    assert_eq!( a6.regions[ 0 ].address + 6 * 4096, a7.regions[ 0 ].address );
+    assert_eq!( Some( &a6.regions[ 0 ].deallocation.as_ref().unwrap().sources[ 0 ].source ), a7.regions[ 0 ].source.as_ref() );
 }
 
 #[cfg(test)]

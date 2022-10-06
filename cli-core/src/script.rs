@@ -9,11 +9,11 @@ use ahash::AHashSet as HashSet;
 use rayon::prelude::*;
 use parking_lot::Mutex;
 use regex::Regex;
-use crate::{AllocationId, BacktraceId, Data, Loader, SMapId, Timestamp};
+use crate::{AllocationId, BacktraceId, Data, Loader, MapId, Timestamp, UsageDelta};
 use crate::data::OperationId;
 use crate::exporter_flamegraph_pl::dump_collation_from_iter;
 use crate::filter::{AllocationFilter, RawAllocationFilter, Duration, Filter, NumberOrFractionOfTotal, Compile, TryMatch, MapFilter, RawMapFilter};
-use crate::timeline::{MapDelta, build_allocation_timeline, build_map_timeline};
+use crate::timeline::{build_allocation_timeline, build_map_timeline};
 
 pub use rhai;
 pub use crate::script_virtual::VirtualEnvironment;
@@ -282,7 +282,7 @@ impl std::fmt::Debug for AllocationList {
 #[derive(Clone)]
 pub struct Map {
     data: DataRef,
-    id: SMapId
+    id: MapId
 }
 
 impl std::fmt::Debug for Map {
@@ -294,7 +294,7 @@ impl std::fmt::Debug for Map {
 #[derive(Clone)]
 pub struct MapList {
     data: DataRef,
-    map_ids: Option< Arc< Vec< SMapId > > >,
+    map_ids: Option< Arc< Vec< MapId > > >,
     filter: Option< MapFilter >
 }
 
@@ -643,7 +643,7 @@ trait List: Sized + Send + Sync {
 }
 
 impl List for MapList {
-    type Id = SMapId;
+    type Id = MapId;
     type RawFilter = RawMapFilter;
     type Item = Map;
 
@@ -679,16 +679,16 @@ impl List for MapList {
     }
 
     fn get_native_item( &self, id: Self::Id ) -> &<<Self::RawFilter as Compile>::Compiled as TryMatch>::Item {
-        &self.data.smaps()[ id.0 as usize ]
+        &self.data.0.maps()[ id.0 as usize ]
     }
 
     fn default_unfiltered_ids( data: &Data ) -> &[Self::Id] {
-        &data.smap_ids
+        &data.map_ids
     }
 
     fn list_by_backtrace( data: &Data, backtrace: BacktraceId ) -> Vec< Self::Id > {
         // TODO: Cache this.
-        data.smaps().iter().enumerate().filter( |(_, map)| map.source.map( |source| source.backtrace == backtrace ).unwrap_or( false ) ).map( |(index, _)| SMapId( index as u64 ) ).collect()
+        data.maps().iter().enumerate().filter( |(_, map)| map.source.map( |source| source.backtrace == backtrace ).unwrap_or( false ) ).map( |(index, _)| MapId( index as u64 ) ).collect()
     }
 }
 
@@ -831,7 +831,7 @@ impl AllocationList {
 }
 
 impl MapList {
-    pub fn map_ids( &mut self ) -> &[SMapId] {
+    pub fn map_ids( &mut self ) -> &[MapId] {
         self.apply_filter();
         self.unfiltered_ids()
     }
@@ -1079,7 +1079,7 @@ fn prepare_allocation_graph_datapoints( data: &Data, ops_for_list: &[Vec< Operat
     finalize_datapoints( xs.into_iter().collect(), datapoints_for_ops )
 }
 
-fn prepare_map_graph_datapoints( ops_for_list: &[Vec< (Timestamp, MapDelta) >], kind: MapGraphKind ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
+fn prepare_map_graph_datapoints( ops_for_list: &[Vec< (Timestamp, UsageDelta) >], kind: MapGraphKind ) -> (Vec< u64 >, Vec< Vec< (u64, u64) > >) {
     let timestamp_min = ops_for_list.iter().flat_map( |ops| ops.first() ).map( |(timestamp, _)| *timestamp ).min().unwrap_or( common::Timestamp::min() );
     let timestamp_max = ops_for_list.iter().flat_map( |ops| ops.last() ).map( |(timestamp, _)| *timestamp ).max().unwrap_or( common::Timestamp::min() );
 
@@ -1095,7 +1095,7 @@ fn prepare_map_graph_datapoints( ops_for_list: &[Vec< (Timestamp, MapDelta) >], 
             xs.insert( point.timestamp );
             let x = point.timestamp;
             let y = match kind {
-                MapGraphKind::RSS => point.rss
+                MapGraphKind::RSS => point.rss()
             } as u64;
             (x, y)
         }).collect();
@@ -1322,7 +1322,7 @@ impl Graph {
         Ok( ops_for_list )
     }
 
-    fn generate_map_ops( &mut self ) -> Result< Vec< Vec< (Timestamp, MapDelta) > >, Box< rhai::EvalAltResult > > {
+    fn generate_map_ops( &mut self ) -> Result< Vec< Vec< (Timestamp, UsageDelta) > >, Box< rhai::EvalAltResult > > {
         self.bail_unless_map_graph()?;
         let lists = &mut self.map_lists;
         if lists.is_empty() {
@@ -1820,7 +1820,7 @@ pub struct EngineArgs {
     pub argv: Vec< String >,
     pub data: Option< Arc< Data > >,
     pub allocation_ids: Option< Arc< Vec< AllocationId > > >,
-    pub map_ids: Option< Arc< Vec< SMapId > > >
+    pub map_ids: Option< Arc< Vec< MapId > > >
 }
 
 pub trait Environment {

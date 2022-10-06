@@ -25,6 +25,8 @@ smallvec = { version = "1", features = ["union"] }
 ahash = "0.8"
 hashbrown = "0.12"
 
+fast_range_map = { path = "../fast_range_map" }
+
 [dependencies.thread-local-reentrant]
 git = "https://github.com/koute/not-perf.git"
 rev = "18bd8d3"

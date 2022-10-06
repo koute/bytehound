@@ -17,7 +17,7 @@ use crate::util::{ReadableSize, table_to_string};
 
 pub use common::{Timestamp};
 pub use common::event::DataId;
-pub use common::event::SMapFlags;
+pub use common::event::RegionFlags;
 
 pub type StringInterner = string_interner::StringInterner< StringId >;
 
@@ -144,12 +144,11 @@ pub struct Data {
     pub(crate) total_freed: u64,
     pub(crate) total_freed_count: u64,
     pub(crate) mallopts: Vec< Mallopt >,
-    pub(crate) mmap_operations: Vec< MmapOperation >,
     pub(crate) maximum_backtrace_depth: u32,
     pub(crate) group_stats: Vec< GroupStatistics >,
     pub(crate) chains: HashMap< AllocationId, AllocationChain >,
-    pub(crate) smaps: Vec< SMap >,
-    pub(crate) smap_ids: Vec< SMapId >,
+    pub(crate) maps: Vec< Map >,
+    pub(crate) map_ids: Vec< MapId >,
 }
 
 pub type DataPointer = u64;
@@ -281,19 +280,62 @@ impl Default for GroupStatistics {
 
 #[derive(Copy, Clone, Debug)]
 pub struct MapSource {
+    // This is the time when `mmap`/`munmap` was accually called.
+    pub timestamp: Timestamp,
     pub backtrace: BacktraceId,
     pub thread: ThreadId
 }
 
-#[derive(Debug)]
-pub struct MapDeallocation {
-    pub timestamp: Timestamp,
-    pub source: Option< MapSource >,
+#[derive(Clone, Debug)]
+pub struct MapRegionDeallocationSource {
+    pub address: u64,
+    pub length: u64,
+    pub source: MapSource
 }
 
-#[derive(Debug)]
-pub struct MapUsage {
+#[derive(Clone, Debug)]
+pub struct MapRegionDeallocation {
+    // This is the time when smaps were read.
     pub timestamp: Timestamp,
+    pub sources: smallvec::SmallVec< [MapRegionDeallocationSource; 1] >,
+}
+
+#[derive(Clone, Debug)]
+pub struct MapDeallocation {
+    pub timestamp: Timestamp,
+    pub source: Option< MapSource >
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, derive_more::Add, derive_more::Sub, derive_more::Neg, derive_more::AddAssign, Default, Debug)]
+pub struct UsageDelta {
+    pub address_space: i64,
+    pub anonymous: i64,
+    pub shared_clean: i64,
+    pub shared_dirty: i64,
+    pub private_clean: i64,
+    pub private_dirty: i64,
+    pub swap: i64,
+}
+
+impl UsageDelta {
+    pub fn rss( &self ) -> i64 {
+        self.shared_clean + self.shared_dirty + self.private_clean + self.private_dirty
+    }
+
+    pub fn clean( &self ) -> i64 {
+        self.shared_clean + self.private_clean
+    }
+
+    pub fn dirty( &self ) -> i64 {
+        self.shared_dirty + self.private_dirty
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MapUsage {
+    // This is the time when smaps were read.
+    pub timestamp: Timestamp,
+    pub address_space: u64,
     pub anonymous: u64,
     pub shared_clean: u64,
     pub shared_dirty: u64,
@@ -309,26 +351,39 @@ impl MapUsage {
 }
 
 #[derive(Debug)]
-pub struct SMap {
-    pub pointer: DataPointer,
+pub struct MapRegion {
+    // This is the time when smaps were read.
     pub timestamp: Timestamp,
-    pub size: u64,
     pub source: Option< MapSource >,
-    pub deallocation: Option< MapDeallocation >,
-    pub flags: SMapFlags,
-    pub usage_history: Vec< MapUsage >,
+    pub pointer: DataPointer,
+    pub size: u64,
+    pub flags: RegionFlags,
     pub file_offset: u64,
     pub inode: u64,
     pub major: u32,
     pub minor: u32,
     pub name: Box< str >,
+    pub deallocation: Option< MapRegionDeallocation >,
+}
+
+#[derive(Debug)]
+pub struct Map {
+    pub id: MapId,
+    // This is the time when smaps were read.
+    pub timestamp: Timestamp,
+    pub source: Option< MapSource >,
+    pub regions: smallvec::SmallVec< [MapRegion; 1] >,
+    // This is only `Some` when the whole map was deallocated.
+    // It contains the very last deallocation.
+    pub deallocation: Option< MapDeallocation >,
+    pub usage_history: Vec< MapUsage >,
     pub peak_rss: u64,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct SMapId( pub u64 );
+pub struct MapId( pub u64 );
 
-impl SMapId {
+impl MapId {
     pub fn raw( self ) -> u64 {
         self.0
     }
@@ -467,89 +522,6 @@ pub enum Operation< 'a > {
         new_allocation: &'a Allocation,
         deallocation: &'a Deallocation,
         old_allocation: &'a Allocation
-    }
-}
-
-#[derive(Debug)]
-pub struct MemoryMap {
-    pub timestamp: Timestamp,
-    pub pointer: DataPointer,
-    pub length: u64,
-    pub backtrace: BacktraceId,
-    pub requested_address: u64,
-    pub mmap_protection: ProtectionFlags,
-    pub mmap_flags: MapFlags,
-    pub file_descriptor: u32,
-    pub thread: ThreadId,
-    pub offset: u64
-}
-
-#[derive(Debug)]
-pub struct MemoryUnmap {
-    pub timestamp: Timestamp,
-    pub pointer: DataPointer,
-    pub length: u64,
-    pub backtrace: BacktraceId,
-    pub thread: ThreadId
-}
-
-#[derive(Debug)]
-pub enum MmapOperation {
-    Mmap( MemoryMap ),
-    Munmap( MemoryUnmap )
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct ProtectionFlags( pub(crate) u32 );
-
-impl ProtectionFlags {
-    pub fn is_readable( &self ) -> bool {
-        self.0 & 0x1 != 0
-    }
-
-    pub fn is_writable( &self ) -> bool {
-        self.0 & 0x2 != 0
-    }
-
-    pub fn is_executable( &self ) -> bool {
-        self.0 & 0x4 != 0
-    }
-
-    pub fn is_semaphore( &self ) -> bool {
-        self.0 & 0x8 != 0
-    }
-
-    pub fn grows_down( &self ) -> bool {
-        self.0 & 0x01000000 != 0
-    }
-
-    pub fn grows_up( &self ) -> bool {
-        self.0 & 0x02000000 != 0
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct MapFlags( pub(crate) u32 );
-
-impl MapFlags {
-    pub fn is_shared( &self ) -> bool {
-        self.0 & 0x1 != 0
-    }
-
-    pub fn is_private( &self ) -> bool {
-        self.0 & 0x2 != 0
-    }
-
-    pub fn is_fixed( &self ) -> bool {
-        self.0 & 0x10 != 0
-    }
-
-    pub fn is_anonymous( &self ) -> bool {
-        self.0 & 0x20 != 0
-    }
-
-    pub fn is_uninitialized( &self ) -> bool {
-        self.0 & 0x4000000 != 0
     }
 }
 
@@ -717,8 +689,8 @@ impl Data {
         self.allocations.iter().enumerate().map( |(index, allocation)| (AllocationId::new( index as _ ), allocation) )
     }
 
-    pub fn smaps( &self ) -> &[SMap] {
-        &self.smaps
+    pub fn maps( &self ) -> &[Map] {
+        &self.maps
     }
 
     pub fn operation_ids( &self ) -> &[OperationId] {
@@ -853,8 +825,8 @@ impl Data {
         self.allocations_by_backtrace.get( id.raw() as _ )
     }
 
-    pub fn get_map( &self, id: SMapId ) -> &SMap {
-        &self.smaps[ id.raw() as usize ]
+    pub fn get_map( &self, id: MapId ) -> &Map {
+        &self.maps[ id.raw() as usize ]
     }
 
     pub fn get_backtrace< 'a >( &'a self, id: BacktraceId ) -> impl SliceLikeIterator< Item = (FrameId, &'a Frame) > + Clone {
@@ -953,10 +925,6 @@ impl Data {
 
     pub fn mallopts( &self ) -> &[Mallopt] {
         &self.mallopts
-    }
-
-    pub fn mmap_operations( &self ) -> &[MmapOperation] {
-        &self.mmap_operations
     }
 
     pub fn get_dynamic_constants( &self ) -> BTreeMap< String, BTreeMap< u32, CountAndSize > > {

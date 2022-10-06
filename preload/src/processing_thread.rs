@@ -724,56 +724,6 @@ pub(crate) fn thread_main() {
 
                     let _ = emit_allocation_bucket( bucket, &mut backtrace_cache, &mut *serializer );
                 },
-                InternalEvent::Mmap { pointer, length, backtrace, requested_address, mmap_protection, mmap_flags, file_descriptor, offset, mut timestamp, thread } => {
-                    let system_tid = thread.system_tid();
-                    mem::drop( thread );
-
-                    if skip {
-                        continue;
-                    }
-
-                    if timestamp == Timestamp::min() {
-                        timestamp = coarse_timestamp;
-                    }
-
-                    timestamp = timestamp_override.take().unwrap_or( timestamp );
-
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
-                        let event = Event::MemoryMap {
-                            timestamp,
-                            pointer: pointer as u64,
-                            length: length as u64,
-                            backtrace,
-                            thread: system_tid,
-                            requested_address: requested_address as u64,
-                            mmap_protection,
-                            mmap_flags,
-                            file_descriptor,
-                            offset
-                        };
-
-                        let _ = event.write_to_stream( &mut *serializer );
-                    }
-                },
-                InternalEvent::Munmap { ptr, len, backtrace, mut timestamp, thread } => {
-                    let system_tid = thread.system_tid();
-                    mem::drop( thread );
-
-                    if skip {
-                        continue;
-                    }
-
-                    if timestamp == Timestamp::min() {
-                        timestamp = coarse_timestamp;
-                    }
-
-                    let timestamp = timestamp_override.take().unwrap_or( timestamp );
-
-                    if let Ok( backtrace ) = writers::write_backtrace( &mut *serializer, backtrace, &mut backtrace_cache ) {
-                        let event = Event::MemoryUnmap { timestamp, pointer: ptr as u64, length: len as u64, backtrace, thread: system_tid };
-                        let _ = event.write_to_stream( &mut *serializer );
-                    }
-                },
                 InternalEvent::Mallopt { param, value, result, mut timestamp, backtrace, thread } => {
                     let system_tid = thread.system_tid();
                     mem::drop( thread );
@@ -839,22 +789,24 @@ pub(crate) fn thread_main() {
 
                     let _ = event.write_to_stream( &mut *serializer );
 
-                    update_smaps(
-                        timestamp,
-                        &mut smaps_state,
-                        &mut backtrace_cache,
-                        &mut *serializer,
-                        true
-                    );
+                    if opt::get().gather_maps {
+                        update_smaps(
+                            timestamp,
+                            &mut smaps_state,
+                            &mut backtrace_cache,
+                            &mut *serializer,
+                            true
+                        );
 
-                    last_smaps_update = timestamp;
-                    force_smaps_update = false;
+                        last_smaps_update = timestamp;
+                        force_smaps_update = false;
+                    }
                 }
             }
         }
 
         coarse_timestamp = get_timestamp();
-        let should_update_smaps = force_smaps_update || (coarse_timestamp - last_smaps_update).as_msecs() >= 1000;
+        let should_update_smaps = opt::get().gather_maps && (force_smaps_update || (coarse_timestamp - last_smaps_update).as_msecs() >= 1000);
         if should_update_smaps {
             let timestamp = get_timestamp();
             update_smaps(
@@ -875,14 +827,15 @@ pub(crate) fn thread_main() {
         }
     }
 
-    let timestamp = get_timestamp();
-    update_smaps(
-        timestamp,
-        &mut smaps_state,
-        &mut backtrace_cache,
-        &mut output_writer,
-        true
-    );
+    if opt::get().gather_maps {
+        update_smaps(
+            get_timestamp(),
+            &mut smaps_state,
+            &mut backtrace_cache,
+            &mut output_writer,
+            true
+        );
+    }
 
     let _ = output_writer.flush();
     for client in &mut output_writer.inner_mut_without_flush().clients {
