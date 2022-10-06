@@ -174,27 +174,29 @@ impl< K, V > LinkedHashMap< K, V > {
         self.insert_back( key, value )
     }
 
-    pub fn remove_and_get_next_index( &mut self, index: Index ) -> Option< Index > {
+    #[inline]
+    pub fn remove_and_get_next_index( &mut self, index: Index ) -> (Option< Index >, (K, V)) {
         let node = self.nodes.remove_entry( index.get(), eq!( index ) ).unwrap();
+        let entry = (node.key, node.value);
         match (node.prev, node.next) {
             (Some( prev_index ), Some( next_index )) => {
                 self.nodes.get_mut( prev_index.get(), eq!( prev_index ) ).unwrap().next = Some( next_index );
                 self.nodes.get_mut( next_index.get(), eq!( next_index ) ).unwrap().prev = Some( prev_index );
-                Some( next_index )
+                (Some( next_index ), entry)
             },
             (None, None) => {
                 self.first_and_last = None;
-                None
+                (None, entry)
             },
             (Some( prev_index ), None) => {
                 self.nodes.get_mut( prev_index.get(), eq!( prev_index ) ).unwrap().next = None;
                 self.first_and_last.as_mut().unwrap().1 = prev_index;
-                None
+                (None, entry)
             },
             (None, Some( next_index )) => {
                 self.nodes.get_mut( next_index.get(), eq!( next_index ) ).unwrap().prev = None;
                 self.first_and_last.as_mut().unwrap().0 = next_index;
-                Some( next_index )
+                (Some( next_index ), entry)
             }
         }
     }
@@ -227,6 +229,11 @@ impl< K, V > LinkedHashMap< K, V > {
         &mut self.nodes.get_mut( index.get(), eq!( index ) ).unwrap().value
     }
 
+    pub fn get( &self, index: Index ) -> (&K, &V) {
+        let entry = &self.nodes.get( index.get(), eq!( index ) ).unwrap();
+        (&entry.key, &entry.value)
+    }
+
     pub fn into_vec( mut self ) -> Vec< (K, V) > {
         let mut output = Vec::with_capacity( self.len() );
         let mut index_opt = self.first_index();
@@ -237,6 +244,11 @@ impl< K, V > LinkedHashMap< K, V > {
         }
 
         output
+    }
+
+    pub fn clear( &mut self ) {
+        self.nodes.clear();
+        self.first_and_last = None;
     }
 }
 
@@ -271,9 +283,9 @@ impl< V > RangeMap< V > {
         self.data.len()
     }
 
-    fn find_starting_index( &self, key: Range< u64 > ) -> Option< Index > {
+    fn find_starting_index( &self, key_start: u64 ) -> Option< Index > {
         // This finds the first entry where `entry.end > key.start`.
-        self.map.range( key.start + 1.. ).next().map( |(_, index)| *index )
+        self.map.range( key_start + 1.. ).next().map( |(_, index)| *index )
     }
 
     fn insert_at_starting_index( &mut self, mut index_opt: Option< Index >, key: Range< u64 >, value: V ) where V: Clone {
@@ -350,7 +362,9 @@ impl< V > RangeMap< V > {
                 //   |OOO|??    (old range is not kept; continue)
                 // |NNNNNNN|
 
-                index_opt = self.data.remove_and_get_next_index( index );
+                let (next_index, _) = self.data.remove_and_get_next_index( index );
+                index_opt = next_index;
+
                 self.map.remove( &old.end );
                 continue;
             }
@@ -407,6 +421,32 @@ impl< V > RangeMap< V > {
         }
     }
 
+    fn starting_index_for_removal( &self, key: Range< u64 > ) -> Option< Index > {
+        if key.start == key.end {
+            return None ;
+        }
+        assert!( key.start < key.end );
+
+        let (first_index, last_index) = self.data.first_and_last_index()?;
+        if key.start >= self.data.get_key( last_index ).end {
+            return None;
+        }
+        if key.end <= self.data.get_key( first_index ).start {
+            return None;
+        }
+
+        self.find_starting_index( key.start )
+    }
+
+    pub fn remove< 'a >( &'a mut self, key: Range< u64 > ) -> RemoveIter< 'a, V > where V: Clone {
+        let index_opt = self.starting_index_for_removal( key.clone() );
+        RemoveIter {
+            key,
+            range_map: self,
+            index_opt
+        }
+    }
+
     pub fn insert( &mut self, key: Range< u64 >, value: V ) where V: Clone {
         if key.start == key.end {
             return;
@@ -424,7 +464,7 @@ impl< V > RangeMap< V > {
                 return;
             }
 
-            let index = self.find_starting_index( key.clone() );
+            let index = self.find_starting_index( key.start );
             self.insert_at_starting_index( index, key, value );
         } else {
             let index = self.data.insert_back( key.clone(), value );
@@ -448,6 +488,10 @@ impl< V > RangeMap< V > {
     }
 
     pub fn get_value( &self, key: u64 ) -> Option< &V > {
+        self.get( key ).map( |(_, value)| value )
+    }
+
+    pub fn get( &self, key: u64 ) -> Option< (Range< u64 >, &V) > {
         let mut iter = self.map.range( key.. );
         let mut index = *iter.next()?.1;
         let mut range = self.data.get_key( index ).clone();
@@ -458,10 +502,65 @@ impl< V > RangeMap< V > {
         }
 
         if key >= range.start && key < range.end {
-            return Some( self.data.get_value( index ) );
+            let (key, value) = self.data.get( index );
+            return Some( (key.clone(), value) );
         }
 
         None
+    }
+
+    pub fn get_all_overlapping( &self, range: Range< u64 > ) -> impl Iterator< Item = (Range< u64 >, &V) > {
+        struct RangeIter< 'a, V > {
+            map: &'a RangeMap< V >,
+            index: Option< Index >,
+            end: u64
+        }
+
+        impl< 'a, V > Iterator for RangeIter< 'a, V > {
+            type Item = (Range< u64 >, &'a V);
+
+            fn next( &mut self ) -> Option< Self::Item > {
+                let index = self.index?;
+                self.index = self.map.data.next_index( index );
+                let (key, value) = self.map.data.get( index );
+                if key.start < self.end {
+                    Some( (key.clone(), value) )
+                } else {
+                    self.index = None;
+                    None
+                }
+            }
+        }
+
+        let index =
+            if let Some( index ) = if range.start < range.end { self.find_starting_index( range.start ) } else { None } {
+                let starting_range = self.data.get_key( index ).clone();
+                let matches =
+                    (range.start >= starting_range.start && range.start < starting_range.end) ||
+                    (range.end > starting_range.start && range.end <= starting_range.end) ||
+                    (range.start < starting_range.start && range.end >= starting_range.end )
+                ;
+
+                if matches {
+                    Some( index )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+        RangeIter {
+            map: self,
+            index,
+            end: range.end
+        }
+    }
+
+    pub fn get_in_range( &self, range: Range< u64 > ) -> impl Iterator< Item = (Range< u64 >, &V) > {
+        self.get_all_overlapping( range.clone() ).map( move |(key, value)| {
+            (std::cmp::max( range.start, key.start )..std::cmp::min( range.end, key.end ), value)
+        })
     }
 
     pub fn values( &self ) -> impl ExactSizeIterator< Item = &V > {
@@ -491,6 +590,133 @@ impl< V > RangeMap< V > {
             map: self,
             index: self.data.first_index(),
             remaining: self.data.len()
+        }
+    }
+
+    pub fn clear( &mut self ) {
+        self.map.clear();
+        self.data.clear();
+    }
+}
+
+pub struct RemoveIter< 'a, V > where V: Clone {
+    key: Range< u64 >,
+    range_map: &'a mut RangeMap< V >,
+    index_opt: Option< Index >
+}
+
+impl< 'a, V > Drop for RemoveIter< 'a, V > where V: Clone {
+    fn drop( &mut self ) {
+        while let Some( _ ) = self.next() {}
+    }
+}
+
+impl< 'a, V > Iterator for RemoveIter< 'a, V > where V: Clone {
+    type Item = (Range< u64 >, V);
+    fn next( &mut self ) -> Option< Self::Item > {
+        loop {
+            let index = match self.index_opt {
+                Some( index ) => index,
+                None => return None
+            };
+
+            let old = self.range_map.data.get_key( index ).clone();
+            if self.key.end <= old.start {
+                // The new key ends *before* this range starts, so there's no overlap.
+                //
+                //     |OOO|
+                // |NNN|
+                //
+                self.index_opt = None;
+                return None;
+            }
+
+
+            if old.start >= self.key.start && old.end <= self.key.end {
+                // The old range is completely covered by the new one.
+
+                if old.end == self.key.end {
+                    // |OOO|????    (old range is not kept; fin)
+                    // |NNN|
+                    let (_, entry) = self.range_map.data.remove_and_get_next_index( index );
+                    self.range_map.map.remove( &old.end );
+                    self.index_opt = None;
+                    return Some( entry );
+                }
+
+                // |OOO|????    (old range is not kept; continue)
+                // |NNNNNNN|
+                // ---------
+                //   |OOO|??    (old range is not kept; continue)
+                // |NNNNNNN|
+
+                let (next_index, entry) = self.range_map.data.remove_and_get_next_index( index );
+                self.range_map.map.remove( &old.end );
+                self.index_opt = next_index;
+                return Some( entry );
+            }
+
+            // The old range is partially covered by the new one.
+
+            if self.key.start > old.start && self.key.end < old.end {
+                // |OOOOOOO|    (old range is kept, but is chopped into two pieces; fin)
+                //   |NNN|
+                //
+
+                let value = self.range_map.data.get_value( index ).clone();
+                self.range_map.data.get_key_mut( index ).end = self.key.start;
+                self.range_map.map.remove( &old.end );
+                self.range_map.map.insert( self.key.start, index );
+                let new_index = self.range_map.data.insert_after( index, self.key.end..old.end, value.clone() );
+                self.range_map.map.insert( old.end, new_index );
+
+                self.index_opt = None;
+                return Some( (self.key.clone(), value) );
+            }
+
+            if self.key.start <= old.start && self.key.end > old.start {
+                //   |OOOOO|    (old range is kept, but is chopped at the start; fin)
+                // |NNN|
+                // ---------
+                // |OOOOO|      (old range is kept, but is chopped at the start; fin)
+                // |NNN|
+
+                let old_key = self.range_map.data.get_key_mut( index );
+                let chopped_key = old_key.start..self.key.end;
+                old_key.start = self.key.end;
+                let value = self.range_map.data.get_value( index ).clone();
+
+                self.index_opt = None;
+                return Some( (chopped_key, value) );
+            }
+
+            if self.key.end == old.end {
+                // |OOOOO|    (old range is kept, but is chopped at the end; fin)
+                //   |NNN|
+                let old_key = self.range_map.data.get_key_mut( index );
+                let chopped_key = self.key.start..old_key.end;
+                old_key.end = self.key.start;
+                self.range_map.map.remove( &old.end );
+                self.range_map.map.insert( self.key.start, index );
+                let value = self.range_map.data.get_value( index ).clone();
+
+                self.index_opt = None;
+                return Some( (chopped_key, value) );
+            }
+
+            // ---------
+            // |OOOOO|??    (old range is kept, but is chopped at the end; continue)
+            //     |NNN|
+
+            let old_key = self.range_map.data.get_key_mut( index );
+            let chopped_key = self.key.start..old_key.end;
+            old_key.end = self.key.start;
+            self.range_map.map.remove( &old.end );
+            self.range_map.map.insert( self.key.start, index );
+            let value = self.range_map.data.get_value( index ).clone();
+
+            self.index_opt = self.range_map.data.next_index( index );
+            return Some( (chopped_key, value) );
         }
     }
 }
@@ -613,4 +839,93 @@ fn test_get_value() {
     assert_eq!( map.get_value( 19 ).copied(), Some( 2 ) );
     assert_eq!( map.get_value( 27 ).copied(), Some( 2 ) );
     assert_eq!( map.get_value( 28 ).copied(), None );
+}
+
+#[test]
+fn test_get_all_overlapping() {
+    let mut map = RangeMap::new();
+    map.insert( 1..8, 0 );
+    map.insert( 10..18, 1 );
+    map.insert( 18..28, 2 );
+
+    assert_eq!( map.get_all_overlapping( 0..1 ).collect::< Vec< _ > >(), vec![] );
+    assert_eq!( map.get_all_overlapping( 0..2 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_all_overlapping( 1..8 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_all_overlapping( 2..7 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_all_overlapping( 2..2 ).collect::< Vec< _ > >(), vec![] );
+    assert_eq!( map.get_all_overlapping( 1..10 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_all_overlapping( 7..10 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_all_overlapping( 8..10 ).collect::< Vec< _ > >(), vec![] );
+    assert_eq!( map.get_all_overlapping( 7..11 ).collect::< Vec< _ > >(), vec![ (1..8, &0), (10..18, &1) ] );
+    assert_eq!( map.get_all_overlapping( 0..100 ).collect::< Vec< _ > >(), vec![ (1..8, &0), (10..18, &1), (18..28, &2) ] );
+
+    assert_eq!( map.get_in_range( 0..1 ).collect::< Vec< _ > >(), vec![] );
+    assert_eq!( map.get_in_range( 0..2 ).collect::< Vec< _ > >(), vec![ (1..2, &0) ] );
+    assert_eq!( map.get_in_range( 1..8 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_in_range( 2..7 ).collect::< Vec< _ > >(), vec![ (2..7, &0) ] );
+    assert_eq!( map.get_in_range( 2..2 ).collect::< Vec< _ > >(), vec![] );
+    assert_eq!( map.get_in_range( 1..10 ).collect::< Vec< _ > >(), vec![ (1..8, &0) ] );
+    assert_eq!( map.get_in_range( 7..10 ).collect::< Vec< _ > >(), vec![ (7..8, &0) ] );
+    assert_eq!( map.get_in_range( 8..10 ).collect::< Vec< _ > >(), vec![] );
+    assert_eq!( map.get_in_range( 7..11 ).collect::< Vec< _ > >(), vec![ (7..8, &0), (10..11, &1) ] );
+    assert_eq!( map.get_in_range( 0..100 ).collect::< Vec< _ > >(), vec![ (1..8, &0), (10..18, &1), (18..28, &2) ] );
+}
+
+#[test]
+fn test_remove_whole_exact_match() {
+    let mut map = RangeMap::new();
+    map.insert( 5..10, 1 );
+    assert_eq!(
+        map.remove( 5..10 ).collect::< Vec< _ > >(),
+        vec![ (5..10, 1) ]
+    );
+    assert_eq!( map.into_vec(), vec![] );
+}
+
+#[test]
+fn test_remove_whole_starting_earlier() {
+    let mut map = RangeMap::new();
+    map.insert( 5..10, 1 );
+    assert_eq!(
+        map.remove( 0..10 ).collect::< Vec< _ > >(),
+        vec![ (5..10, 1) ]
+    );
+    assert_eq!( map.into_vec(), vec![] );
+}
+
+#[test]
+fn test_remove_whole_starting_later() {
+    let mut map = RangeMap::new();
+    map.insert( 5..10, 1 );
+    assert_eq!(
+        map.remove( 5..15 ).collect::< Vec< _ > >(),
+        vec![ (5..10, 1) ]
+    );
+    assert_eq!( map.into_vec(), vec![] );
+}
+
+#[test]
+fn test_remove_whole_with_bigger_region() {
+    let mut map = RangeMap::new();
+    map.insert( 5..10, 1 );
+    assert_eq!(
+        map.remove( 0..15 ).collect::< Vec< _ > >(),
+        vec![ (5..10, 1) ]
+    );
+    assert_eq!( map.into_vec(), vec![] );
+}
+
+#[test]
+fn test_remove_middle() {
+    let mut map = RangeMap::new();
+    map.insert( 0..10, 1 );
+    assert_eq!(
+        map.remove( 4..6 ).collect::< Vec< _ > >(),
+        vec![ (4..6, 1) ]
+    );
+
+    assert_eq!( map.into_vec(), vec![
+        ((0..4), 1),
+        ((6..10), 1)
+    ]);
 }

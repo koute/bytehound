@@ -24,3 +24,9 @@ name = "fuzz_insert"
 path = "fuzz_targets/fuzz_insert.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_remove"
+path = "fuzz_targets/fuzz_remove.rs"
+test = false
+doc = false
