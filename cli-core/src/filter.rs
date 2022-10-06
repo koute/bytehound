@@ -117,6 +117,12 @@ pub struct RawMapFilter {
     pub only_not_jemalloc: bool,
     pub only_bytehound: bool,
     pub only_not_bytehound: bool,
+    pub only_readable: bool,
+    pub only_not_readable: bool,
+    pub only_writable: bool,
+    pub only_not_writable: bool,
+    pub only_executable: bool,
+    pub only_not_executable: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -207,6 +213,9 @@ pub struct RawCompiledMapFilter {
     only_peak_rss_at_most: Option< u64 >,
     jemalloc_filter: Option< bool >,
     bytehound_filter: Option< bool >,
+    readable_filter: Option< bool >,
+    writable_filter: Option< bool >,
+    executable_filter: Option< bool >,
 }
 
 impl< T > From< T > for Filter< T > {
@@ -592,11 +601,24 @@ impl Compile for RawMapFilter {
     fn compile( &self, data: &Data ) -> Self::Compiled {
         let mut is_impossible =
             (self.only_bytehound && self.only_not_bytehound) ||
-            (self.only_jemalloc && self.only_not_jemalloc);
+            (self.only_jemalloc && self.only_not_jemalloc) ||
+            (self.only_readable && self.only_not_readable) ||
+            (self.only_writable && self.only_not_writable) ||
+            (self.only_executable && self.only_not_executable);
 
         let only_backtraces = compile_backtrace_filter( data, &self.backtrace_filter );
         let common_filter = self.common_filter.compile( data );
         is_impossible = is_impossible || common_filter.is_impossible;
+
+        fn bool_filter( yes: bool, no: bool ) -> Option< bool > {
+            if yes {
+                Some( true )
+            } else if no {
+                Some( false )
+            } else {
+                None
+            }
+        }
 
         RawCompiledMapFilter {
             is_impossible,
@@ -613,22 +635,11 @@ impl Compile for RawMapFilter {
 
             only_peak_rss_at_least: self.only_peak_rss_at_least,
             only_peak_rss_at_most: self.only_peak_rss_at_most,
-            jemalloc_filter:
-                if self.only_jemalloc {
-                    Some( true )
-                } else if self.only_not_jemalloc {
-                    Some( false )
-                } else {
-                    None
-                },
-            bytehound_filter:
-                if self.only_bytehound {
-                    Some( true )
-                } else if self.only_not_bytehound {
-                    Some( false )
-                } else {
-                    None
-                }
+            jemalloc_filter: bool_filter( self.only_jemalloc, self.only_not_jemalloc ),
+            bytehound_filter:bool_filter( self.only_bytehound, self.only_not_bytehound ),
+            readable_filter:bool_filter( self.only_readable, self.only_not_readable ),
+            writable_filter:bool_filter( self.only_writable, self.only_not_writable ),
+            executable_filter:bool_filter( self.only_executable, self.only_not_executable ),
         }
     }
 }
@@ -962,6 +973,24 @@ impl TryMatch for RawCompiledMapFilter {
 
         if let Some( bytehound_filter ) = self.bytehound_filter {
             if (&*map.regions[ 0 ].name == "[anon:bytehound]") != bytehound_filter {
+                return false;
+            }
+        }
+
+        if let Some( readable ) = self.readable_filter {
+            if map.regions[ 0 ].flags.contains( crate::data::RegionFlags::READABLE ) != readable {
+                return false;
+            }
+        }
+
+        if let Some( writable ) = self.writable_filter {
+            if map.regions[ 0 ].flags.contains( crate::data::RegionFlags::WRITABLE ) != writable {
+                return false;
+            }
+        }
+
+        if let Some( executable ) = self.executable_filter {
+            if map.regions[ 0 ].flags.contains( crate::data::RegionFlags::EXECUTABLE ) != executable {
                 return false;
             }
         }

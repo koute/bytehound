@@ -154,6 +154,42 @@ const FIELDS = {
             only_false: "Only not Bytehound",
         }
     },
+    readable: {
+        ...RADIO_FIELD,
+        variants: {
+            "": "Show all",
+            only_true: "Only readable",
+            only_false: "Only not readable",
+        },
+        badge: {
+            only_true: "Only readable",
+            only_false: "Only not readable",
+        }
+    },
+    writable: {
+        ...RADIO_FIELD,
+        variants: {
+            "": "Show all",
+            only_true: "Only writable",
+            only_false: "Only not writable",
+        },
+        badge: {
+            only_true: "Only writable",
+            only_false: "Only not writable",
+        }
+    },
+    executable: {
+        ...RADIO_FIELD,
+        variants: {
+            "": "Show all",
+            only_true: "Only executable",
+            only_false: "Only not executable",
+        },
+        badge: {
+            only_true: "Only executable",
+            only_false: "Only not executable",
+        }
+    },
 };
 
 const EMPTY_CUSTOM_FILTER = "return maps();";
@@ -231,6 +267,13 @@ class FilterEditor extends FilterEditorBase {
                         {this.field("jemalloc")}
                         <div className="px-2" />
                         {this.field("bytehound")}
+                    </div>
+                    <div className="d-flex flex-row">
+                        {this.field("readable")}
+                        <div className="px-2" />
+                        {this.field("writable")}
+                        <div className="px-2" />
+                        {this.field("executable")}
                     </div>
                 </div>
                 <div title="Custom">

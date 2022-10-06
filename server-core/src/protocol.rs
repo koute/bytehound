@@ -752,7 +752,10 @@ pub struct MapFilter {
     pub alive_at: Option< TimestampFilter< OffsetMin > >,
     pub alive_at_2: Option< TimestampFilter< OffsetMin > >,
     pub jemalloc: Option< BoolFilter >,
-    pub bytehound: Option< BoolFilter >
+    pub bytehound: Option< BoolFilter >,
+    pub readable: Option< BoolFilter >,
+    pub writable: Option< BoolFilter >,
+    pub executable: Option< BoolFilter >,
 }
 
 #[derive(Deserialize, Debug)]

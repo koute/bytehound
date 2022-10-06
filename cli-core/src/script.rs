@@ -2275,6 +2275,12 @@ impl Engine {
         register_filter!( MapList, only_not_jemalloc, bool );
         register_filter!( MapList, only_bytehound, bool );
         register_filter!( MapList, only_not_bytehound, bool );
+        register_filter!( MapList, only_readable, bool );
+        register_filter!( MapList, only_not_readable, bool );
+        register_filter!( MapList, only_writable, bool );
+        register_filter!( MapList, only_not_writable, bool );
+        register_filter!( MapList, only_executable, bool );
+        register_filter!( MapList, only_not_executable, bool );
 
         let graph_counter = Arc::new( AtomicUsize::new( 1 ) );
         let flamegraph_counter = Arc::new( AtomicUsize::new( 1 ) );
@@ -3109,6 +3115,12 @@ impl ToCode for RawMapFilter {
             self.only_not_jemalloc
             self.only_bytehound
             self.only_not_bytehound
+            self.only_readable
+            self.only_not_readable
+            self.only_writable
+            self.only_not_writable
+            self.only_executable
+            self.only_not_executable
         }
     }
 }
