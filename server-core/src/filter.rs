@@ -355,6 +355,10 @@ pub fn prepare_raw_map_filter( data: &Data, filter: &protocol::MapFilter ) -> Re
 
     output.only_peak_rss_at_least = filter.peak_rss_min;
     output.only_peak_rss_at_most = filter.peak_rss_max;
+    output.only_jemalloc = filter.jemalloc == Some( protocol::BoolFilter::OnlyTrue );
+    output.only_not_jemalloc = filter.jemalloc == Some( protocol::BoolFilter::OnlyFalse );
+    output.only_bytehound = filter.bytehound == Some( protocol::BoolFilter::OnlyTrue );
+    output.only_not_bytehound = filter.bytehound == Some( protocol::BoolFilter::OnlyFalse );
 
     let output: cli_core::MapFilter = output.into();
     Ok( output )

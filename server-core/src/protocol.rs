@@ -721,6 +721,14 @@ pub struct BacktraceFormat {
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
+pub enum BoolFilter {
+    #[serde(rename = "only_true")]
+    OnlyTrue,
+    #[serde(rename = "only_false")]
+    OnlyFalse
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]
 pub struct MapFilter {
     pub from: Option< TimestampFilter< OffsetMin > >,
     pub to: Option< TimestampFilter< OffsetMax > >,
@@ -743,6 +751,8 @@ pub struct MapFilter {
     pub peak_rss_max: Option< u64 >,
     pub alive_at: Option< TimestampFilter< OffsetMin > >,
     pub alive_at_2: Option< TimestampFilter< OffsetMin > >,
+    pub jemalloc: Option< BoolFilter >,
+    pub bytehound: Option< BoolFilter >
 }
 
 #[derive(Deserialize, Debug)]

@@ -2271,6 +2271,10 @@ impl Engine {
 
         register_filter!( MapList, set_max, only_peak_rss_at_least, i64 => u64 );
         register_filter!( MapList, set_min, only_peak_rss_at_most, i64 => u64 );
+        register_filter!( MapList, only_jemalloc, bool );
+        register_filter!( MapList, only_not_jemalloc, bool );
+        register_filter!( MapList, only_bytehound, bool );
+        register_filter!( MapList, only_not_bytehound, bool );
 
         let graph_counter = Arc::new( AtomicUsize::new( 1 ) );
         let flamegraph_counter = Arc::new( AtomicUsize::new( 1 ) );
@@ -3098,6 +3102,13 @@ impl ToCode for RawMapFilter {
         out! { ctx =>
             self.only_peak_rss_at_least
             self.only_peak_rss_at_most
+        }
+
+        out_bool! { ctx =>
+            self.only_jemalloc
+            self.only_not_jemalloc
+            self.only_bytehound
+            self.only_not_bytehound
         }
     }
 }

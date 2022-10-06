@@ -129,7 +129,31 @@ const FIELDS = {
             only_leaked: "Only leaked",
             only_temporary: "Only temporary",
         }
-    }
+    },
+    jemalloc: {
+        ...RADIO_FIELD,
+        variants: {
+            "": "Show all",
+            only_true: "Only jemalloc",
+            only_false: "Only not jemalloc",
+        },
+        badge: {
+            only_true: "Only jemalloc",
+            only_false: "Only not jemalloc",
+        }
+    },
+    bytehound: {
+        ...RADIO_FIELD,
+        variants: {
+            "": "Show all",
+            only_true: "Only Bytehound",
+            only_false: "Only not Bytehound",
+        },
+        badge: {
+            only_true: "Only Bytehound",
+            only_false: "Only not Bytehound",
+        }
+    },
 };
 
 const EMPTY_CUSTOM_FILTER = "return maps();";
@@ -200,6 +224,13 @@ class FilterEditor extends FilterEditorBase {
                         {this.field("backtrace_depth_min")}
                         <div className="px-2" />
                         {this.field("backtrace_depth_max")}
+                    </div>
+                </div>
+                <div title="By type" className="d-flex flex-column">
+                    <div className="d-flex flex-row">
+                        {this.field("jemalloc")}
+                        <div className="px-2" />
+                        {this.field("bytehound")}
                     </div>
                 </div>
                 <div title="Custom">
