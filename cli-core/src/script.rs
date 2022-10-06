@@ -1338,10 +1338,14 @@ impl Graph {
             list.apply_filter();
         }
 
-        let ops_for_list: Vec< _ > = lists.par_iter().map( |list| {
+        let mut seen = HashSet::new();
+        let ops_for_list: Vec< _ > = lists.iter().map( |list| {
             let ids = list.unfiltered_ids_iter();
             let mut ops = Vec::with_capacity( ids.len() );
             for map_id in ids {
+                if !seen.insert( map_id ) {
+                    continue;
+                }
                 data.get_map( map_id ).emit_ops( &mut ops );
             }
 
