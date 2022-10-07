@@ -174,6 +174,7 @@ pub enum Event< 'a > {
     Marker {
         value: u32
     },
+    // This event is deprecated.
     MemoryMap {
         timestamp: Timestamp,
         pointer: u64,
@@ -186,6 +187,7 @@ pub enum Event< 'a > {
         thread: u32,
         offset: u64
     },
+    // This event is deprecated.
     MemoryUnmap {
         timestamp: Timestamp,
         pointer: u64,
