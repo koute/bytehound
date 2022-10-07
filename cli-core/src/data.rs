@@ -831,6 +831,10 @@ impl Data {
         &self.maps[ id.raw() as usize ]
     }
 
+    pub fn contains_map( &self, id: MapId ) -> bool {
+        (id.0 as usize) < self.maps.len()
+    }
+
     pub fn get_backtrace< 'a >( &'a self, id: BacktraceId ) -> impl SliceLikeIterator< Item = (FrameId, &'a Frame) > + Clone {
         self.get_frame_ids( id ).iter().rev().map( move |&frame_id| (frame_id, &self.frames[ frame_id ]) )
     }

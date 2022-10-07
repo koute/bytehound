@@ -824,4 +824,6 @@ pub struct RequestMaps {
     pub generate_graphs: Option< bool >,
     pub with_regions: Option< bool >,
     pub with_usage_history: Option< bool >,
+
+    pub id: Option< u64 >,
 }

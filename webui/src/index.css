@@ -369,3 +369,21 @@ div.-sort-asc {
 .stretch-child > div {
     width: 100%;
 }
+
+.PageDataMapDetails table {
+    font-size: 97%;
+}
+
+.PageDataMapDetails table th {
+    text-align: center;
+}
+
+.PageDataMapDetails table td, .PageDataMapDetails table th {
+    padding: 0.25rem 1rem;
+    vertical-align: top;
+    border-bottom: 1px solid #aaa;
+}
+
+.PageDataMapDetails .value-updated {
+    color: red;
+}

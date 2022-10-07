@@ -695,16 +695,24 @@ fn get_maps< 'a >(
     let order = params.order.unwrap_or( protocol::Order::Asc );
     let generate_graphs = params.generate_graphs.unwrap_or( false );
 
-    let mut list: Vec< _ > = data.maps().par_iter().enumerate()
-        .map( |(index, map)| {
-            let id = MapId( index as u64 );
-            (id, map)
-        })
-        .filter( |(id, map)| {
-            filter.try_match( data, *id, map )
-        })
-        .map( |(id, _)| id )
-        .collect();
+    let mut list = Vec::new();
+    if let Some( id ) = params.id {
+        let id = MapId( id as u64 );
+        if data.contains_map( id ) {
+            list.push( id );
+        }
+    } else {
+        list = data.maps().par_iter().enumerate()
+            .map( |(index, map)| {
+                let id = MapId( index as u64 );
+                (id, map)
+            })
+            .filter( |(id, map)| {
+                filter.try_match( data, *id, map )
+            })
+            .map( |(id, _)| id )
+            .collect();
+    }
 
     let cmp = match sort_by {
         protocol::MapsSortBy::Timestamp => {
