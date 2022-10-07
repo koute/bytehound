@@ -435,7 +435,9 @@ export default class PageDataAllocations extends React.Component {
             {
                 Header: "Thread",
                 Cell: cell => {
-                    return fmt_hex16( cell.value );
+                    if( cell.original.source ) {
+                        return fmt_hex16( cell.original.source.thread );
+                    }
                 },
                 accessor: "thread",
                 maxWidth: 60,
