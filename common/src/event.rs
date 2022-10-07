@@ -294,7 +294,6 @@ pub enum Event< 'a > {
         flags: RegionFlags,
         #[speedy(length_type = u64_varint)]
         name: Cow< 'a, str >,
-        source: Option< RegionSource >
     },
     RemoveRegion {
         timestamp: Timestamp,
@@ -329,6 +328,21 @@ pub enum Event< 'a > {
         #[speedy(varint)]
         swap: u64,
     },
+    MemoryMapEx {
+        #[speedy(varint)]
+        map_id: u64,
+        address: u64,
+        #[speedy(varint)]
+        requested_address: u64,
+        #[speedy(varint)]
+        requested_length: u64,
+        mmap_protection: u32,
+        mmap_flags: u32,
+        file_descriptor: u32,
+        #[speedy(varint)]
+        offset: u64,
+        source: RegionSource
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

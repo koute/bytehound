@@ -354,7 +354,6 @@ impl MapUsage {
 pub struct MapRegion {
     // This is the time when smaps were read.
     pub timestamp: Timestamp,
-    pub source: Option< MapSource >,
     pub pointer: DataPointer,
     pub size: u64,
     pub flags: RegionFlags,
@@ -369,7 +368,6 @@ pub struct MapRegion {
 #[derive(Debug)]
 pub struct Map {
     pub id: MapId,
-    // This is the time when smaps were read.
     pub timestamp: Timestamp,
     pub source: Option< MapSource >,
     pub regions: smallvec::SmallVec< [MapRegion; 1] >,
@@ -377,6 +375,10 @@ pub struct Map {
     // It contains the very last deallocation.
     pub deallocation: Option< MapDeallocation >,
     pub usage_history: Vec< MapUsage >,
+    pub pointer: DataPointer,
+    pub size: u64,
+    pub flags: RegionFlags,
+    pub name: Box< str >,
     pub peak_rss: u64,
 }
 

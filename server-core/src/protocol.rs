@@ -98,7 +98,7 @@ pub struct ResponseMapTimeline {
     pub swap: Vec< i64 >,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Frame< 'a > {
     pub address: u64,
     pub address_s: String,
@@ -188,35 +188,37 @@ pub struct AllocationGroup< 'a > {
     pub backtrace: Vec< Frame< 'a > >
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MapSource< 'a > {
     pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
     pub thread: u32,
     pub backtrace_id: u32,
     pub backtrace: Vec< Frame< 'a > >
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MapDeallocation< 'a > {
     pub timestamp: Timeval,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option< MapSource< 'a > >
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MapRegionDeallocationSource< 'a > {
     pub address: u64,
     pub length: u64,
     pub source: MapSource< 'a >
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MapRegionDeallocation< 'a > {
     pub timestamp: Timeval,
     pub sources: Vec< MapRegionDeallocationSource< 'a > >
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MapRegion< 'a > {
     pub address: u64,
     pub address_s: String,
@@ -225,9 +227,16 @@ pub struct MapRegion< 'a > {
     pub timestamp_relative_p: f32,
     pub size: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option< MapSource< 'a > >,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub deallocation: Option< MapRegionDeallocation< 'a > >,
+    pub is_readable: bool,
+    pub is_writable: bool,
+    pub is_executable: bool,
+    pub is_shared: bool,
+    pub file_offset: u64,
+    pub inode: u64,
+    pub major: u32,
+    pub minor: u32,
+    pub name: Cow< 'a, str >,
 }
 
 #[derive(Serialize)]
@@ -247,15 +256,29 @@ pub struct Map< 'a > {
     pub is_writable: bool,
     pub is_executable: bool,
     pub is_shared: bool,
-    pub file_offset: u64,
-    pub inode: u64,
-    pub major: u32,
-    pub minor: u32,
     pub name: Cow< 'a, str >,
     pub peak_rss: u64,
     pub graph_preview_url: Option< String >,
     pub graph_url: Option< String >,
-    pub regions: Vec< MapRegion< 'a > >,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regions: Option< Vec< MapRegion< 'a > > >,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_history: Option< Vec< MapUsage > >
+}
+
+#[derive(Serialize)]
+pub struct MapUsage {
+    pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
+    pub address_space: u64,
+    pub anonymous: u64,
+    pub shared_clean: u64,
+    pub shared_dirty: u64,
+    pub private_clean: u64,
+    pub private_dirty: u64,
+    pub swap: u64,
+    pub rss: u64,
 }
 
 #[derive(Serialize)]
@@ -798,5 +821,7 @@ pub struct RequestMaps {
     pub sort_by: Option< MapsSortBy >,
     pub order: Option< Order >,
 
-    pub generate_graphs: Option< bool >
+    pub generate_graphs: Option< bool >,
+    pub with_regions: Option< bool >,
+    pub with_usage_history: Option< bool >,
 }

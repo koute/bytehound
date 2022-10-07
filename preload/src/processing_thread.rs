@@ -791,7 +791,6 @@ pub(crate) fn thread_main() {
 
                     if opt::get().gather_maps {
                         update_smaps(
-                            timestamp,
                             &mut smaps_state,
                             &mut backtrace_cache,
                             &mut *serializer,
@@ -810,7 +809,6 @@ pub(crate) fn thread_main() {
         if should_update_smaps {
             let timestamp = get_timestamp();
             update_smaps(
-                timestamp,
                 &mut smaps_state,
                 &mut backtrace_cache,
                 &mut *serializer,
@@ -829,7 +827,6 @@ pub(crate) fn thread_main() {
 
     if opt::get().gather_maps {
         update_smaps(
-            get_timestamp(),
             &mut smaps_state,
             &mut backtrace_cache,
             &mut output_writer,

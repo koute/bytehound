@@ -938,8 +938,8 @@ impl TryMatch for RawCompiledMapFilter {
         }
 
         if !self.common_filter.try_match( data, &CommonFilterArgs {
-            pointer: map.regions[ 0 ].pointer,
-            size: map.regions[ 0 ].size,
+            pointer: map.pointer,
+            size: map.size,
             timestamp: map.timestamp,
             deallocation_timestamp: map.deallocation.as_ref().map( |deallocation| deallocation.timestamp )
         }) {
@@ -966,31 +966,31 @@ impl TryMatch for RawCompiledMapFilter {
         }
 
         if let Some( jemalloc_filter ) = self.jemalloc_filter {
-            if (&*map.regions[ 0 ].name == "[anon:jemalloc]") != jemalloc_filter {
+            if (&*map.name == "[anon:jemalloc]") != jemalloc_filter {
                 return false;
             }
         }
 
         if let Some( bytehound_filter ) = self.bytehound_filter {
-            if (&*map.regions[ 0 ].name == "[anon:bytehound]") != bytehound_filter {
+            if (&*map.name == "[anon:bytehound]") != bytehound_filter {
                 return false;
             }
         }
 
         if let Some( readable ) = self.readable_filter {
-            if map.regions[ 0 ].flags.contains( crate::data::RegionFlags::READABLE ) != readable {
+            if map.flags.contains( crate::data::RegionFlags::READABLE ) != readable {
                 return false;
             }
         }
 
         if let Some( writable ) = self.writable_filter {
-            if map.regions[ 0 ].flags.contains( crate::data::RegionFlags::WRITABLE ) != writable {
+            if map.flags.contains( crate::data::RegionFlags::WRITABLE ) != writable {
                 return false;
             }
         }
 
         if let Some( executable ) = self.executable_filter {
-            if map.regions[ 0 ].flags.contains( crate::data::RegionFlags::EXECUTABLE ) != executable {
+            if map.flags.contains( crate::data::RegionFlags::EXECUTABLE ) != executable {
                 return false;
             }
         }

@@ -221,8 +221,26 @@ pub struct MapRegion {
     pub timestamp_relative: Timeval,
     pub timestamp_relative_p: f32,
     pub size: u64,
-    pub source: Option< MapSource >,
     pub deallocation: Option< MapRegionDeallocation >,
+    pub file_offset: u64,
+    pub inode: u64,
+    pub major: u32,
+    pub minor: u32,
+}
+
+#[derive(PartialEq, Deserialize, Debug)]
+pub struct UsageHistory {
+    pub timestamp: Timeval,
+    pub timestamp_relative: Timeval,
+    pub timestamp_relative_p: f32,
+    pub address_space: u64,
+    pub anonymous: u64,
+    pub shared_clean: u64,
+    pub shared_dirty: u64,
+    pub private_clean: u64,
+    pub private_dirty: u64,
+    pub swap: u64,
+    pub rss: u64,
 }
 
 #[derive(PartialEq, Deserialize, Debug)]
@@ -240,13 +258,10 @@ pub struct Map {
     pub is_writable: bool,
     pub is_executable: bool,
     pub is_shared: bool,
-    pub file_offset: u64,
-    pub inode: u64,
-    pub major: u32,
-    pub minor: u32,
     pub name: String,
     pub peak_rss: u64,
     pub regions: Vec< MapRegion >,
+    pub usage_history: Vec< UsageHistory >,
 }
 
 #[derive(Deserialize, Debug)]
@@ -389,7 +404,7 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
     assert_eq!( *groups.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
     let groups: ResponseAllocationGroups = serde_json::from_str( &groups.text().unwrap() ).unwrap();
 
-    let maps = attohttpc::get( &format!( "http://localhost:{}/data/last/maps", port ) ).send().unwrap();
+    let maps = attohttpc::get( &format!( "http://localhost:{}/data/last/maps?with_regions=true&with_usage_history=true", port ) ).send().unwrap();
     assert_eq!( maps.status(), attohttpc::StatusCode::OK );
     assert_eq!( *maps.headers().get( attohttpc::header::CONTENT_TYPE ).unwrap(), "application/json" );
     let response_maps: ResponseMaps = serde_json::from_str( &maps.text().unwrap() ).unwrap();
@@ -602,11 +617,14 @@ fn test_mmap() {
     assert!( a0.is_writable );
     assert!( !a0.is_executable );
     assert!( !a0.is_shared );
-    assert_eq!( a0.file_offset, 0 );
-    assert_eq!( a0.inode, 0 );
-    assert_eq!( a0.major, 0 );
-    assert_eq!( a0.minor, 0 );
+    assert_eq!( a0.regions[ 0 ].file_offset, 0 );
+    assert_eq!( a0.regions[ 0 ].inode, 0 );
+    assert_eq!( a0.regions[ 0 ].major, 0 );
+    assert_eq!( a0.regions[ 0 ].minor, 0 );
     assert_eq!( a0.peak_rss, 0 );
+    assert_eq!( a0.usage_history.len(), 1 );
+    assert_eq!( a0.usage_history[ 0 ].address_space, 123 * 4096 );
+    assert_eq!( a0.usage_history[ 0 ].rss, 0 );
 
     // Leaked, touched.
     assert_eq!( a1.regions.len(), 1 );
@@ -614,12 +632,24 @@ fn test_mmap() {
     assert_eq!( a1.peak_rss, 2 * 4096 );
     assert!( !a1.source.is_none() );
     assert!( a1.deallocation.is_none() );
+    assert_eq!( a1.usage_history.len(), 2 );
+    assert_eq!( a1.usage_history[ 0 ].address_space, 5 * 4096 );
+    assert_eq!( a1.usage_history[ 0 ].rss, 0 );
+    assert_eq!( a1.usage_history[ 1 ].address_space, 5 * 4096 );
+    assert_eq!( a1.usage_history[ 1 ].rss, 8192 );
+    assert!( a1.usage_history[ 0 ].timestamp < a1.usage_history[ 1 ].timestamp );
 
     // Fully deallocated.
     assert_eq!( a2.regions.len(), 1 );
     assert_eq!( a2.size, 6 * 4096 );
     assert!( !a2.source.is_none() );
     assert!( a2.deallocation.is_some() );
+    assert_eq!( a2.usage_history.len(), 2 );
+    assert_eq!( a2.usage_history[ 0 ].address_space, 6 * 4096 );
+    assert_eq!( a2.usage_history[ 0 ].rss, 0 );
+    assert_eq!( a2.usage_history[ 1 ].address_space, 0 );
+    assert_eq!( a2.usage_history[ 1 ].rss, 0 );
+    assert!( a2.usage_history[ 0 ].timestamp < a2.usage_history[ 1 ].timestamp );
 
     // Partially deallocated at the start.
     assert_eq!( a3.regions.len(), 2 );
@@ -675,7 +705,7 @@ fn test_mmap() {
     assert_eq!( a7.regions.len(), 1 );
     assert_eq!( a7.regions[ 0 ].size, 4096 );
     assert_eq!( a6.regions[ 0 ].address + 6 * 4096, a7.regions[ 0 ].address );
-    assert_eq!( Some( &a6.regions[ 0 ].deallocation.as_ref().unwrap().sources[ 0 ].source ), a7.regions[ 0 ].source.as_ref() );
+    assert_eq!( Some( &a6.regions[ 0 ].deallocation.as_ref().unwrap().sources[ 0 ].source ), a7.source.as_ref() );
 }
 
 #[cfg(test)]

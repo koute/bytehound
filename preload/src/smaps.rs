@@ -62,9 +62,22 @@ struct MapBucket {
     source: MapSource
 }
 
+struct Mmap {
+    id: u64,
+    address: u64,
+    requested_address: u64,
+    requested_length: u64,
+    mmap_protection: u32,
+    mmap_flags: u32,
+    file_descriptor: u32,
+    offset: u64,
+    source: MapSource
+}
+
 pub struct MapsRegistry {
     mmap_by_address: fast_range_map::RangeMap< MapBucket >,
     munmap_by_address: fast_range_map::RangeMap< MapBucket >,
+    mmaps: HashMap< u64, Mmap >,
 }
 
 impl MapsRegistry {
@@ -72,10 +85,21 @@ impl MapsRegistry {
         MapsRegistry {
             mmap_by_address: fast_range_map::RangeMap::new(),
             munmap_by_address: fast_range_map::RangeMap::new(),
+            mmaps: crate::utils::empty_hashmap(),
         }
     }
 
-    pub fn on_mmap( &mut self, id: u64, range: Range< u64 >, source: MapSource ) {
+    pub fn on_mmap(
+        &mut self,
+        id: u64,
+        range: Range< u64 >,
+        source: MapSource,
+        requested_address: u64,
+        mmap_protection: u32,
+        mmap_flags: u32,
+        file_descriptor: u32,
+        offset: u64
+    ) {
         for (range_unmapped, original_bucket) in self.mmap_by_address.remove( range.clone() ) {
             // When called with MAP_FIXED the `mmap` can also act as an `munmap`.
 
@@ -97,11 +121,22 @@ impl MapsRegistry {
 
         let bucket = MapBucket {
             id,
-            source
+            source: source.clone()
         };
 
         trace!( "On mmap: 0x{:016X}..0x{:016X}, id = {}", range.start, range.end, id );
-        self.mmap_by_address.insert( range, bucket );
+        self.mmap_by_address.insert( range.clone(), bucket );
+        self.mmaps.insert( id, Mmap {
+            id,
+            address: range.start,
+            requested_address,
+            requested_length: range.end - range.start,
+            mmap_protection,
+            mmap_flags,
+            file_descriptor,
+            offset,
+            source
+        });
     }
 
     pub fn on_munmap( &mut self, range: Range< u64 >, source: MapSource ) {
@@ -121,6 +156,10 @@ struct Map {
 }
 
 enum PendingEvent {
+    Mmap {
+        epoch: u64,
+        mmap: Mmap
+    },
     AddRegion {
         timestamp: Timestamp,
         epoch: u64,
@@ -128,7 +167,6 @@ enum PendingEvent {
         info: RegionInfo,
         flags: RegionFlags,
         name: String,
-        source: Option< MapSource >
     },
     UpdateUsage {
         timestamp: Timestamp,
@@ -191,6 +229,7 @@ struct RegionRemovalSource {
 pub struct State {
     tmp_mmap_by_address: fast_range_map::RangeMap< MapBucket >,
     tmp_munmap_by_address: fast_range_map::RangeMap< MapBucket >,
+    tmp_mmaps: HashMap< u64, Mmap >,
     tmp_buffer: Vec< u8 >,
     tmp_found_maps: HashMap< u64, RegionVec >,
     tmp_new_map_by_id: HashMap< u64, Map >,
@@ -205,11 +244,37 @@ impl State {
     fn clear_ephemeral( &mut self ) {
         self.tmp_mmap_by_address.clear();
         self.tmp_munmap_by_address.clear();
+        self.tmp_mmaps.clear();
         self.tmp_buffer.clear();
         self.tmp_found_maps.clear();
         self.tmp_new_map_by_id.clear();
         self.tmp_all_new_events.clear();
     }
+}
+
+fn emit_mmap(
+    mmap: Mmap,
+    backtrace_cache: &mut BacktraceCache,
+    serializer: &mut impl Write
+) {
+    let backtrace = crate::writers::write_backtrace( &mut *serializer, mmap.source.backtrace.clone(), backtrace_cache ).ok().unwrap_or( 0 );
+    let source = common::event::RegionSource {
+        timestamp: mmap.source.timestamp,
+        backtrace,
+        thread: mmap.source.tid
+    };
+
+    let _ = Event::MemoryMapEx {
+        map_id: mmap.id,
+        address: mmap.address,
+        requested_address: mmap.requested_address,
+        requested_length: mmap.requested_length,
+        mmap_protection: mmap.mmap_protection,
+        mmap_flags: mmap.mmap_flags,
+        file_descriptor: mmap.file_descriptor,
+        offset: mmap.offset,
+        source
+    }.write_to_stream( &mut *serializer );
 }
 
 fn emit_add_region(
@@ -218,24 +283,12 @@ fn emit_add_region(
     info: &RegionInfo,
     flags: RegionFlags,
     name: &str,
-    source: Option< MapSource >,
-    backtrace_cache: &mut BacktraceCache,
     serializer: &mut impl Write
 ) {
-    let source = source.map( |source| {
-        let backtrace = crate::writers::write_backtrace( &mut *serializer, source.backtrace.clone(), backtrace_cache ).ok().unwrap_or( 0 );
-        common::event::RegionSource {
-            timestamp: source.timestamp,
-            backtrace,
-            thread: source.tid
-        }
-    });
-
     let _ = Event::AddRegion {
         timestamp,
         map_id,
         address: info.address,
-        source,
         length: info.length,
         file_offset: info.file_offset,
         inode: info.inode,
@@ -302,15 +355,20 @@ fn emit_remove_region(
 fn emit_events( backtrace_cache: &mut BacktraceCache, serializer: &mut impl Write, new_events: impl IntoIterator< Item = PendingEvent > ) {
     for event in new_events {
         match event {
-            PendingEvent::AddRegion { timestamp, id, ref info, flags, name, source, .. } => {
+            PendingEvent::Mmap { mmap, .. } => {
+                emit_mmap(
+                    mmap,
+                    backtrace_cache,
+                    serializer
+                );
+            },
+            PendingEvent::AddRegion { timestamp, id, ref info, flags, name, .. } => {
                 emit_add_region(
                     timestamp,
                     id,
                     info,
                     flags,
                     name.as_str(),
-                    source,
-                    backtrace_cache,
                     serializer
                 );
             },
@@ -374,7 +432,6 @@ fn generate_unmaps(
 }
 
 pub fn update_smaps(
-    timestamp: Timestamp,
     state: &mut State,
     backtrace_cache: &mut BacktraceCache,
     serializer: &mut impl Write,
@@ -383,13 +440,17 @@ pub fn update_smaps(
     state.clear_ephemeral();
     state.epoch += 1;
 
+    let timestamp;
     {
         let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
 
         maps_registry.mmap_by_address.clone_into( &mut state.tmp_mmap_by_address );
         std::mem::swap( &mut maps_registry.munmap_by_address, &mut state.tmp_munmap_by_address );
         maps_registry.munmap_by_address.clear();
+        std::mem::swap( &mut maps_registry.mmaps, &mut state.tmp_mmaps );
+        maps_registry.mmaps.clear();
 
+        timestamp = crate::timestamp::get_timestamp();
         let mut fp = std::fs::File::open( "/proc/self/smaps" ).expect( "failed to open smaps" );
         fp.read_to_end( &mut state.tmp_buffer ).expect( "failed to read smaps" );
 
@@ -549,8 +610,12 @@ pub fn update_smaps(
                         merged_regions.push( old_region );
                     } else {
                         // This is a brand new region.
-                        let source = state.tmp_mmap_by_address.get_value( new_region.info.address ).map( |bucket| bucket.source.clone() );
-                        trace!( "Found new region for an existing map: 0x{:016X}, id = {}, source = {}", new_region.info.address, id, source.is_some() );
+                        trace!(
+                            "Found new region for an existing map: 0x{:016X}, id = {}, source = {}",
+                            new_region.info.address,
+                            id,
+                            state.tmp_mmap_by_address.get_value( new_region.info.address ).is_some()
+                        );
 
                         new_events.push( PendingEvent::AddRegion {
                             timestamp,
@@ -559,7 +624,6 @@ pub fn update_smaps(
                             info: new_region.info.clone(),
                             flags: new_region.last_flags,
                             name: new_region.name.clone(),
-                            source,
                         });
                         new_events.push( PendingEvent::UpdateUsage {
                             epoch: state.epoch,
@@ -608,13 +672,16 @@ pub fn update_smaps(
                 let mut earliest_timestamp = timestamp;
                 let mut events = smallvec::SmallVec::new();
 
-                for region in &new_regions {
-                    let source = state.tmp_mmap_by_address.get_value( region.info.address ).map( |bucket| bucket.source.clone() );
-                    if let Some( ref source ) = source {
-                        earliest_timestamp = std::cmp::min( earliest_timestamp, source.timestamp );
-                    }
+                if let Some( mmap ) = state.tmp_mmaps.remove( &id ) {
+                    earliest_timestamp = mmap.source.timestamp;
+                    events.push( PendingEvent::Mmap {
+                        epoch: state.epoch,
+                        mmap
+                    });
+                }
 
-                    trace!( "Found new map: 0x{:016X}, id = {}, source = {}", region.info.address, id, source.is_some() );
+                for region in &new_regions {
+                    trace!( "Found new map: 0x{:016X}, id = {}, source = {}", region.info.address, id, state.tmp_mmap_by_address.get_value( region.info.address ).is_some() );
                     events.push( PendingEvent::AddRegion {
                         timestamp,
                         epoch: state.epoch,
@@ -622,7 +689,6 @@ pub fn update_smaps(
                         info: region.info.clone(),
                         flags: region.last_flags,
                         name: region.name.clone(),
-                        source
                     });
                     events.push( PendingEvent::UpdateUsage {
                         epoch: state.epoch,
@@ -665,8 +731,9 @@ pub fn update_smaps(
     // Make sure any pending events are emitted in the proper order, and that the removals are prioritized.
     state.tmp_all_new_events.sort_unstable_by_key( |event| {
         match event {
-            PendingEvent::AddRegion { epoch, id, info: RegionInfo { address, .. }, .. } => (*epoch, 1, *id, *address),
-            PendingEvent::UpdateUsage { epoch, id, address, .. } => (*epoch, 2, *id, *address),
+            PendingEvent::Mmap { epoch, mmap: Mmap { id, address, .. }, .. } => (*epoch, 1, *id, *address),
+            PendingEvent::AddRegion { epoch, id, info: RegionInfo { address, .. }, .. } => (*epoch, 2, *id, *address),
+            PendingEvent::UpdateUsage { epoch, id, address, .. } => (*epoch, 3, *id, *address),
             PendingEvent::RemoveRegion { epoch, id, address, .. } => (*epoch, 0, *id, *address),
         }
     });

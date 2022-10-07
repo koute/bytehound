@@ -17,6 +17,7 @@ use common::event::{
     Event,
     AllocBody,
     HeaderBody,
+    RegionSource,
 };
 
 use common::lz4_stream::{
@@ -172,18 +173,33 @@ pub fn postprocess< F, G, D, I  >( ifp: F, ofp: G, debug_symbols: I, anonymize: 
                     write = false;
                 }
             },
-            Event::AddRegion { ref mut name, .. } => {
-                process = true;
-                if anonymize != Anonymize::None {
-                    *name = Cow::Borrowed( "" );
+            Event::MemoryMapEx { source: RegionSource { ref mut backtrace, .. }, .. } => {
+                if let Some( target_backtrace ) = loader.lookup_backtrace( *backtrace ) {
+                    *backtrace = target_backtrace.raw() as _;
+                } else {
+                    *backtrace = u64::MAX;
                 }
             },
-            Event::RemoveRegion { .. } => {
-                process = true;
+            Event::AddRegion { ref mut name, .. } => {
+                if anonymize != Anonymize::None {
+                    if name != "[anon:mmap]" && name != "[anon:bytehound]" && name != "[anon:glibc]" {
+                        *name = Cow::Borrowed( "" );
+                    }
+                }
             },
-            Event::UpdateRegionUsage { .. } => {
-                process = true;
+            Event::RemoveRegion { ref mut sources, .. } => {
+                let mut sources_owned = std::mem::take( sources ).into_owned();
+                for source in sources_owned.iter_mut() {
+                    if let Some( target_backtrace ) = loader.lookup_backtrace( source.source.backtrace ) {
+                        source.source.backtrace = target_backtrace.raw() as _;
+                    } else {
+                        source.source.backtrace = u64::MAX;
+                    }
+                }
+
+                *sources = sources_owned.into();
             },
+            Event::UpdateRegionUsage { .. } => {},
             Event::Header( ref mut body ) => {
                 anonymize_header( anonymize, body );
             },

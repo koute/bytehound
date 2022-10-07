@@ -57,6 +57,7 @@ use crate::data::{
     MapRegionDeallocationSource,
     MapUsage,
     MapSource,
+    RegionFlags,
 };
 use crate::vecvec::DenseVecVec;
 use crate::reader::parse_events;
@@ -130,6 +131,7 @@ pub struct Loader {
     map_index_map: HashMap< u64, MapId >,
     delta_list_for_map: HashMap< MapId, Vec< (Timestamp, UsageDelta) > >,
     last_usage_for_region: HashMap< (MapId, usize), MapUsage >,
+    freshly_mmaped: HashSet< MapId >,
 }
 
 fn address_to_frame< F: FnMut( Frame ) >( address_space: &dyn IAddressSpace, interner: &mut StringInterner, address: u64, mut callback: F ) {
@@ -261,6 +263,7 @@ impl Loader {
             map_index_map: Default::default(),
             delta_list_for_map: Default::default(),
             last_usage_for_region: Default::default(),
+            freshly_mmaped: Default::default(),
         };
 
         loader.update_timestamp_to_wall_clock( timestamp, wall_clock_secs, wall_clock_nsecs );
@@ -808,35 +811,108 @@ impl Loader {
                 self.pending_address_space_maps = parse_maps( &contents );
                 self.address_space_needs_reloading = true;
             },
-            Event::AddRegion { timestamp, map_id, address, length, source, file_offset, inode, major, minor, flags, name } => {
-                let timestamp = self.shift_timestamp( timestamp );
-                self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
+            Event::MemoryMapEx { map_id, address, requested_length, mmap_protection, mmap_flags, source, requested_address: _, file_descriptor: _, offset: _ } => {
+                let backtrace = self.lookup_backtrace( source.backtrace ).unwrap();
+                let source = MapSource {
+                    timestamp: self.shift_timestamp( source.timestamp ),
+                    backtrace,
+                    thread: source.thread
+                };
 
-                let source = source.map( |source| {
-                    let backtrace = self.lookup_backtrace( source.backtrace ).unwrap();
-                    MapSource {
-                        timestamp: source.timestamp,
-                        backtrace,
-                        thread: source.thread
-                    }
-                });
+                self.last_timestamp = std::cmp::max( self.last_timestamp, source.timestamp );
+
+                let mut flags = RegionFlags::empty();
+                if mmap_protection & 0x1 != 0 {
+                    flags.insert( RegionFlags::READABLE );
+                }
+                if mmap_protection & 0x2 != 0 {
+                    flags.insert( RegionFlags::WRITABLE );
+                }
+                if mmap_protection & 0x4 != 0 {
+                    flags.insert( RegionFlags::EXECUTABLE );
+                }
+                if mmap_flags & 0x1 != 0 {
+                    flags.insert( RegionFlags::SHARED );
+                }
+
+                let id = MapId( self.maps.len() as _ );
+                self.map_index_map.insert( map_id, id );
+
+                let map = Map {
+                    id,
+                    timestamp: source.timestamp,
+                    source: Some( source ),
+                    deallocation: None,
+                    regions: Default::default(), // This will get populated later.
+                    usage_history: Default::default(),
+                    pointer: address,
+                    size: requested_length,
+                    flags,
+                    name: Default::default(), // This will get populated later.
+                    peak_rss: 0, // This will get populated later.
+                };
+
+                self.maps.push( map );
+                self.freshly_mmaped.insert( id );
+                self.delta_list_for_map.insert( id, vec![ (source.timestamp, UsageDelta {
+                    address_space: requested_length as i64,
+                    anonymous: 0,
+                    shared_clean: 0,
+                    shared_dirty: 0,
+                    private_clean: 0,
+                    private_dirty: 0,
+                    swap: 0
+                })]);
+            },
+            Event::AddRegion { timestamp, map_id, address, length, file_offset, inode, major, minor, flags, name } => {
+                let mut timestamp = self.shift_timestamp( timestamp );
+                self.last_timestamp = std::cmp::max( self.last_timestamp, timestamp );
 
                 let map: &mut Map;
                 let delta_list;
                 if let Some( &existing_id ) = self.map_index_map.get( &map_id ) {
                     map = &mut self.maps[ existing_id.0 as usize ];
                     delta_list = self.delta_list_for_map.get_mut( &existing_id ).unwrap();
+
+                    if self.freshly_mmaped.remove( &existing_id ) {
+                        // The region matches what we've mmaped; correct the timestamp.
+                        if map.pointer == address && map.size == length && map.flags == flags {
+                            assert!( timestamp >= map.timestamp );
+                            timestamp = map.timestamp;
+                        }
+
+                        // Revert the delta we've added when handling `MemoryMapEx`.
+                        //
+                        // If the regions did not actually change this will essentially be a no-op
+                        // since we'll be adding the address space substracted here again during all
+                        // of these `AddRegion`s.
+                        delta_list.push( (timestamp, UsageDelta {
+                            address_space: map.size as i64 * -1,
+                            anonymous: 0,
+                            shared_clean: 0,
+                            shared_dirty: 0,
+                            private_clean: 0,
+                            private_dirty: 0,
+                            swap: 0
+                        }));
+
+                        map.name = (&*name).into();
+                    }
                 } else {
                     let id = MapId( self.maps.len() as _ );
                     self.map_index_map.insert( map_id, id );
                     self.maps.push( Map {
                         id,
                         timestamp,
-                        source,
+                        source: None,
                         deallocation: None,
                         regions: Default::default(),
-                        usage_history: Vec::new(),
+                        usage_history: Default::default(),
                         peak_rss: 0,
+                        pointer: address,
+                        size: length,
+                        flags,
+                        name: (&*name).into()
                     });
                     map = self.maps.last_mut().unwrap();
                     delta_list = self.delta_list_for_map.entry( id ).or_insert_with( Vec::new );
@@ -844,7 +920,6 @@ impl Loader {
 
                 let region = MapRegion {
                     timestamp,
-                    source,
                     pointer: address,
                     size: length,
                     flags,
@@ -867,7 +942,7 @@ impl Loader {
                     swap: 0
                 };
 
-                trace!( "Add region: id = {} ({}), address = 0x{:016X}, length = {}, source = {}", self.map_index_map.get( &map_id ).unwrap().raw(), map_id, address, length, region.source.is_some() );
+                trace!( "Add region: id = {} ({}), address = 0x{:016X}, length = {}, source = {}", self.map_index_map.get( &map_id ).unwrap().raw(), map_id, address, length, map.source.is_some() );
 
                 self.last_usage_for_region.insert( (map.id, map.regions.len()), usage );
                 map.regions.push( region );
@@ -899,7 +974,7 @@ impl Loader {
                         address: source.address,
                         length: source.length,
                         source: MapSource {
-                            timestamp: source.source.timestamp,
+                            timestamp: self.shift_timestamp( source.source.timestamp ),
                             backtrace,
                             thread: source.source.thread
                         }
@@ -1278,9 +1353,18 @@ impl Loader {
 
         self.maps.par_iter_mut().for_each( |map| {
             let raw_delta_list = delta_list_for_map.get( &map.id ).unwrap();
-            let delta_list: Cow< [(Timestamp, UsageDelta)] >;
+            let mut new_delta_list = raw_delta_list.clone();
+            new_delta_list.sort_by_key( |(timestamp, _)| *timestamp );
+            for index in 0..new_delta_list.len() - 1 {
+                if new_delta_list[ index ].0 == new_delta_list[ index + 1 ].0 {
+                    let delta = std::mem::take( &mut new_delta_list[ index ].1 );
+                    new_delta_list[ index + 1 ].1 += delta;
+                }
+            }
+
+            new_delta_list.retain( |(_, delta)| *delta != UsageDelta::default() );
+
             if map.regions.len() == 1 {
-                delta_list = Cow::Borrowed( &raw_delta_list );
                 map.deallocation = map.regions[ 0 ].deallocation.as_ref().map( |deallocation| {
                     MapDeallocation {
                         timestamp: deallocation.timestamp,
@@ -1288,18 +1372,6 @@ impl Loader {
                     }
                 });
             } else {
-                let mut new_delta_list = raw_delta_list.clone();
-                new_delta_list.sort_by_key( |(timestamp, _)| *timestamp );
-                for index in 0..new_delta_list.len() - 1 {
-                    if new_delta_list[ index ].0 == new_delta_list[ index + 1 ].0 {
-                        let delta = std::mem::take( &mut new_delta_list[ index ].1 );
-                        new_delta_list[ index + 1 ].1 += delta;
-                    }
-                }
-
-                new_delta_list.retain( |(_, delta)| *delta != UsageDelta::default() );
-                delta_list = Cow::Owned( new_delta_list );
-
                 if map.regions.iter().all( |region| region.deallocation.is_some() ) {
                     let deallocation = map.regions.iter().map( |region| region.deallocation.as_ref().unwrap() ).max_by_key( |deallocation| deallocation.timestamp ).unwrap();
                     map.deallocation = Some( MapDeallocation {
@@ -1321,10 +1393,10 @@ impl Loader {
             };
 
             let mut peak_rss = 0;
-            let mut usage_history = Vec::with_capacity( delta_list.len() );
-            for (timestamp, delta) in delta_list.into_iter() {
+            let mut usage_history = Vec::with_capacity( new_delta_list.len() );
+            for (timestamp, delta) in new_delta_list.into_iter() {
                 let usage = MapUsage {
-                    timestamp: *timestamp,
+                    timestamp,
                     address_space: (last_usage.address_space as i64 + delta.address_space) as u64,
                     anonymous: (last_usage.anonymous as i64 + delta.anonymous) as u64,
                     shared_clean: (last_usage.shared_clean as i64 + delta.shared_clean) as u64,

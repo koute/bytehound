@@ -830,7 +830,16 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
             if ptr != libc::MAP_FAILED {
                 let range = ptr as u64..ptr as u64 + length as u64;
                 let source = MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() };
-                maps_registry.on_mmap( id, range, source );
+                maps_registry.on_mmap(
+                    id,
+                    range,
+                    source,
+                    addr as u64,
+                    prot as u32,
+                    flags as u32,
+                    fildes as u32,
+                    off as u64
+                );
 
                 crate::syscall::pr_set_vma_anon_name( ptr, length, name );
             }

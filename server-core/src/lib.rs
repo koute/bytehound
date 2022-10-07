@@ -641,6 +641,47 @@ fn handler_allocations( req: HttpRequest ) -> Result< HttpResponse > {
     Ok( HttpResponse::Ok().content_type( "application/json" ).body( body ) )
 }
 
+fn get_regions< 'a >( data: &'a Data, backtrace_format: &protocol::BacktraceFormat, map: &'a Map ) -> Vec< protocol::MapRegion< 'a > > {
+    map.regions.iter().map( |region| {
+        protocol::MapRegion {
+            address: region.pointer,
+            address_s: format!( "{:016X}", region.pointer ),
+            timestamp: region.timestamp.into(),
+            timestamp_relative: (region.timestamp - data.initial_timestamp()).into(),
+            timestamp_relative_p: timestamp_to_fraction( data, region.timestamp ),
+            size: region.size,
+            deallocation: region.deallocation.as_ref().map( |deallocation| {
+                protocol::MapRegionDeallocation {
+                    timestamp: deallocation.timestamp.into(),
+                    sources: deallocation.sources.iter().map( |source| {
+                        protocol::MapRegionDeallocationSource {
+                            address: source.address,
+                            length: source.length,
+                            source: protocol::MapSource {
+                                timestamp: source.source.timestamp.into(),
+                                timestamp_relative: (source.source.timestamp - data.initial_timestamp()).into(),
+                                timestamp_relative_p: timestamp_to_fraction( data, source.source.timestamp ),
+                                thread: source.source.thread,
+                                backtrace_id: source.source.backtrace.raw(),
+                                backtrace: data.get_backtrace( source.source.backtrace ).map( |(_, frame)| get_frame( data, backtrace_format, frame ) ).collect()
+                            }
+                        }
+                    }).collect()
+                }
+            }),
+            file_offset: region.file_offset,
+            inode: region.inode,
+            major: region.major,
+            minor: region.minor,
+            name: (&*region.name).into(),
+            is_readable: region.flags.contains( RegionFlags::READABLE ),
+            is_writable: region.flags.contains( RegionFlags::WRITABLE ),
+            is_executable: region.flags.contains( RegionFlags::EXECUTABLE ),
+            is_shared: region.flags.contains( RegionFlags::SHARED ),
+        }
+    }).collect()
+}
+
 fn get_maps< 'a >(
     state: Arc< State >,
     data: &'a Arc< Data >,
@@ -675,16 +716,16 @@ fn get_maps< 'a >(
         },
         protocol::MapsSortBy::Address => {
             if order == protocol::Order::Asc {
-                |a: &Map, b: &Map| a.regions[ 0 ].pointer.cmp( &b.regions[ 0 ].pointer )
+                |a: &Map, b: &Map| a.pointer.cmp( &b.pointer )
             } else {
-                |a: &Map, b: &Map| b.regions[ 0 ].pointer.cmp( &a.regions[ 0 ].pointer )
+                |a: &Map, b: &Map| b.pointer.cmp( &a.pointer )
             }
         },
         protocol::MapsSortBy::Size => {
             if order == protocol::Order::Asc {
-                |a: &Map, b: &Map| a.regions[ 0 ].size.cmp( &b.regions[ 0 ].size )
+                |a: &Map, b: &Map| a.size.cmp( &b.size )
             } else {
-                |a: &Map, b: &Map| b.regions[ 0 ].size.cmp( &a.regions[ 0 ].size )
+                |a: &Map, b: &Map| b.size.cmp( &a.size )
             }
         },
         protocol::MapsSortBy::PeakRss => {
@@ -715,6 +756,8 @@ fn get_maps< 'a >(
                 let source = map.source.map( |source| {
                     protocol::MapSource {
                         timestamp: source.timestamp.into(),
+                        timestamp_relative: (source.timestamp - data.initial_timestamp()).into(),
+                        timestamp_relative_p: timestamp_to_fraction( data, source.timestamp ),
                         thread: source.thread,
                         backtrace_id: source.backtrace.raw(),
                         backtrace: data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
@@ -745,15 +788,43 @@ fn get_maps< 'a >(
                     graph_preview_url = urls.next();
                 }
 
-                let first_region = &map.regions[ 0 ];
+                let regions =
+                    if !params.with_regions.unwrap_or( false ) {
+                        None
+                    } else {
+                        Some( get_regions( &data, &backtrace_format, map ) )
+                    };
+
+                let usage_history =
+                    if !params.with_usage_history.unwrap_or( false ) {
+                        None
+                    } else {
+                        Some( map.usage_history.iter().map( |usage| {
+                            protocol::MapUsage {
+                                timestamp: usage.timestamp.into(),
+                                timestamp_relative: (usage.timestamp - data.initial_timestamp()).into(),
+                                timestamp_relative_p: timestamp_to_fraction( data, usage.timestamp ),
+                                address_space: usage.address_space,
+                                anonymous: usage.anonymous,
+                                shared_clean: usage.shared_clean,
+                                shared_dirty: usage.shared_dirty,
+                                private_clean: usage.private_clean,
+                                private_dirty: usage.private_dirty,
+                                swap: usage.swap,
+                                rss: usage.rss(),
+                            }
+                        }).collect() )
+                    };
+
                 protocol::Map {
                     id: id.0,
-                    address: first_region.pointer,
-                    address_s: format!( "{:016X}", first_region.pointer ),
+
+                    address: map.pointer,
+                    address_s: format!( "{:016X}", map.pointer ),
                     timestamp: map.timestamp.into(),
                     timestamp_relative: (map.timestamp - data.initial_timestamp()).into(),
                     timestamp_relative_p: timestamp_to_fraction( data, map.timestamp ),
-                    size: first_region.size,
+                    size: map.size,
                     source,
                     deallocation: map.deallocation.as_ref().map( |deallocation| {
                         protocol::MapDeallocation {
@@ -761,6 +832,8 @@ fn get_maps< 'a >(
                             source: deallocation.source.map( |source| {
                                 protocol::MapSource {
                                     timestamp: source.timestamp.into(),
+                                    timestamp_relative: (source.timestamp - data.initial_timestamp()).into(),
+                                    timestamp_relative_p: timestamp_to_fraction( data, source.timestamp ),
                                     thread: source.thread,
                                     backtrace_id: source.backtrace.raw(),
                                     backtrace: data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
@@ -768,54 +841,17 @@ fn get_maps< 'a >(
                             })
                         }
                     }),
-                    file_offset: first_region.file_offset,
-                    inode: first_region.inode,
-                    major: first_region.major,
-                    minor: first_region.minor,
-                    name: (&*first_region.name).into(),
-                    is_readable: first_region.flags.contains( RegionFlags::READABLE ),
-                    is_writable: first_region.flags.contains( RegionFlags::WRITABLE ),
-                    is_executable: first_region.flags.contains( RegionFlags::EXECUTABLE ),
-                    is_shared: first_region.flags.contains( RegionFlags::SHARED ),
+                    name: (&*map.name).into(),
+                    is_readable: map.flags.contains( RegionFlags::READABLE ),
+                    is_writable: map.flags.contains( RegionFlags::WRITABLE ),
+                    is_executable: map.flags.contains( RegionFlags::EXECUTABLE ),
+                    is_shared: map.flags.contains( RegionFlags::SHARED ),
+
                     peak_rss: map.peak_rss,
                     graph_preview_url,
                     graph_url,
-                    regions: map.regions.iter().map( |region| {
-                        let region_source = region.source.map( |source| {
-                            protocol::MapSource {
-                                timestamp: source.timestamp.into(),
-                                thread: source.thread,
-                                backtrace_id: source.backtrace.raw(),
-                                backtrace: data.get_backtrace( source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
-                            }
-                        });
-                        protocol::MapRegion {
-                            address: region.pointer,
-                            address_s: format!( "{:016X}", region.pointer ),
-                            timestamp: region.timestamp.into(),
-                            timestamp_relative: (region.timestamp - data.initial_timestamp()).into(),
-                            timestamp_relative_p: timestamp_to_fraction( data, region.timestamp ),
-                            size: region.size,
-                            source: region_source,
-                            deallocation: region.deallocation.as_ref().map( |deallocation| {
-                                protocol::MapRegionDeallocation {
-                                    timestamp: deallocation.timestamp.into(),
-                                    sources: deallocation.sources.iter().map( |source| {
-                                        protocol::MapRegionDeallocationSource {
-                                            address: source.address,
-                                            length: source.length,
-                                            source: protocol::MapSource {
-                                                timestamp: source.source.timestamp.into(),
-                                                thread: source.source.thread,
-                                                backtrace_id: source.source.backtrace.raw(),
-                                                backtrace: data.get_backtrace( source.source.backtrace ).map( |(_, frame)| get_frame( data, &backtrace_format, frame ) ).collect()
-                                            }
-                                        }
-                                    }).collect()
-                                }
-                            })
-                        }
-                    }).collect()
+                    regions,
+                    usage_history
                 }
             })
     };

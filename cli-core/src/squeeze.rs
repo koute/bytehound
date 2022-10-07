@@ -404,6 +404,7 @@ pub fn squeeze_data< F, G >( input_fp: F, output_fp: G, threshold: Option< u64 >
                 Event::String { .. } => {},
                 Event::DecodedFrame { .. } => {},
                 Event::DecodedBacktrace { .. } => {},
+                Event::MemoryMapEx { .. } => {},
                 Event::AddRegion { .. } => {},
                 Event::RemoveRegion { .. } => {},
                 Event::UpdateRegionUsage { .. } => {},
