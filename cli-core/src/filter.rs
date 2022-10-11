@@ -972,7 +972,7 @@ impl TryMatch for RawCompiledMapFilter {
         }
 
         if let Some( bytehound_filter ) = self.bytehound_filter {
-            if (&*map.name == "[anon:bytehound]") != bytehound_filter {
+            if map.is_from_bytehound() != bytehound_filter {
                 return false;
             }
         }

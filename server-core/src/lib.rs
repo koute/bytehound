@@ -466,6 +466,10 @@ fn handler_timeline_maps( req: HttpRequest ) -> Result< HttpResponse > {
     let data = get_data( &req )?;
     let mut ops = Vec::new();
     for map in data.maps() {
+        if map.is_from_bytehound() {
+            continue;
+        }
+
         map.emit_ops( &mut ops );
     }
 

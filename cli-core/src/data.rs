@@ -382,6 +382,12 @@ pub struct Map {
     pub peak_rss: u64,
 }
 
+impl Map {
+    pub fn is_from_bytehound( &self ) -> bool {
+        &*self.name == "[anon:bytehound]"
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct MapId( pub u64 );
 
