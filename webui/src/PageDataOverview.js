@@ -364,7 +364,7 @@ export default class PageDataOverview extends React.Component {
                                 <a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics_ascii_tree/dynamic_statics_" + this.props.id + ".txt"}>Dynamically allocated statics</a>
                                 &nbsp;(<a href={(this.props.sourceUrl || "") + "/data/" + this.props.id + "/dynamic_statics/dynamic_statics_" + this.props.id + ".json"}>.json</a>)
                             </div>
-                            <div><Link to={"/maps/" + this.props.id}>Maps over time</Link></div>
+                            <div><Link to={"/maps/" + this.props.id + "?bytehound=only_false"}>Maps over time</Link></div>
                         </div>
                     </div>
                     <br />
@@ -405,7 +405,7 @@ export default class PageDataOverview extends React.Component {
         }
 
         const x = Math.floor( this.state.context_x );
-        return "/maps/" + this.props.id + "?alive_at=" + x
+        return "/maps/" + this.props.id + "?alive_at=" + x + "&bytehound=only_false";
     }
 
     allocationsAliveInRangeLink() {
