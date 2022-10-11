@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::cmp::max;
+use std::ops::Range;
 use ctrlc;
 
 #[derive(Clone)]
@@ -144,4 +145,11 @@ pub fn table_to_string( table: &[ Vec< String > ] ) -> String {
     }
 
     output
+}
+
+pub(crate) fn overlaps( a: Range< u64 >, b: Range< u64 > ) -> bool {
+    (a.end > b.start && a.end <= b.end) ||      // A's end is inside B
+    (a.start >= b.start && a.start < b.end) ||  // A's start is inside B
+    (b.end > a.start && b.end <= a.end) ||      // B's end is inside A
+    (b.start >= a.start && b.start < a.end)     // B's start is inside A
 }

@@ -152,6 +152,10 @@ pub fn prepare_raw_allocation_filter( data: &Data, filter: &protocol::AllocFilte
         output.common_filter.only_alive_at.push( only_alive_at );
     }
 
+    if let Some( from_map ) = filter.from_map {
+        output.only_from_maps = Some( std::iter::once( MapId( from_map ) ).collect() );
+    }
+
     output.common_filter.only_alive_for_at_least = filter.lifetime_min.map( |interval| Duration( interval.0 ) );
     output.common_filter.only_alive_for_at_most = filter.lifetime_max.map( |interval| Duration( interval.0 ) );
 

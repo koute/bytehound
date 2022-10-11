@@ -2124,6 +2124,29 @@ impl Engine {
             Ok(())
         }
 
+        fn gather_map_ids(
+            set: &mut HashSet< MapId >,
+            arg: rhai::Dynamic
+        ) -> Result< (), Box< rhai::EvalAltResult > > {
+            if let Some( id ) = arg.clone().try_cast::< i64 >() {
+                set.insert( MapId( id as u64 ) );
+            } else if let Some( obj ) = arg.clone().try_cast::< Map >() {
+                set.insert( obj.id );
+            } else if let Some( mut obj ) = arg.clone().try_cast::< MapList >() {
+                obj.apply_filter();
+                set.par_extend( obj.unfiltered_ids_par_iter() );
+            } else if let Some( obj ) = arg.clone().try_cast::< rhai::Array >() {
+                for subobj in obj {
+                    gather_map_ids( set, subobj )?;
+                }
+            } else {
+                let error = error( format!( "expected a raw map ID, 'Map' object, 'MapList' object, or an array of any of them, got {}", arg.type_name() ) );
+                return Err( error );
+            }
+
+            Ok(())
+        }
+
         macro_rules! register_filter {
             ($ty_name:ident, $setter:ident, $field:ident.$name:ident, $src_ty:ty => $dst_ty:ty) => {
                 engine.register_fn( stringify!( $name ), |list: &mut $ty_name, value: $src_ty|
@@ -2598,6 +2621,19 @@ impl Engine {
             }};
         }
 
+        engine.register_result_fn( "only_from_maps", |list: &mut AllocationList, ids: rhai::Dynamic| {
+            let mut set = HashSet::new();
+            gather_map_ids( &mut set, ids )?;
+
+            Ok( list.add_filter( |filter| {
+                if let Some( ref mut existing ) = filter.only_from_maps {
+                    *existing = existing.intersection( &set ).copied().collect();
+                } else {
+                    filter.only_from_maps = Some( set );
+                }
+            }))
+        });
+
         register_list!( AllocationList );
         register_list!( MapList );
 
@@ -2964,6 +3000,22 @@ impl ToCode for HashSet< BacktraceId > {
     }
 }
 
+impl ToCode for HashSet< MapId > {
+    fn to_code_impl( &self, ctx: &mut ToCodeContext ) {
+        ctx.output.push_str( "[" );
+        let mut is_first = true;
+        for item in self {
+            if is_first {
+                is_first = false;
+            } else {
+                ctx.output.push_str( ", " );
+            }
+            write!( &mut ctx.output, "{}", item.raw() ).unwrap();
+        }
+        ctx.output.push_str( "]" );
+    }
+}
+
 macro_rules! out {
     ($ctx:expr => $($field:ident.$name:ident)+) => {
         $(
@@ -3084,6 +3136,8 @@ impl ToCode for RawAllocationFilter {
             self.only_group_leaked_allocations_at_most
 
             self.only_with_marker
+
+            self.only_from_maps
         }
 
         out_bool! { ctx =>

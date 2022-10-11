@@ -533,6 +533,12 @@ export default class PageDataAllocations extends React.Component {
             </MenuItem>
         );
 
+        context_menu_items.push(
+            <MenuItem>
+                <Link to={this.state.allocations_url || "#"}>Allocations from this map...</Link>
+            </MenuItem>
+        );
+
         if( this.state.show_only_with_allocation_backtrace_url ) {
             context_menu_items.push(
                 <MenuItem>
@@ -597,6 +603,7 @@ export default class PageDataAllocations extends React.Component {
                     SubComponent={row => {
                         const q = _.omit( extract_query( this.props.location.search ), "count", "skip", "sort_by", "order" );
                         const details_url = "/map_details/" + this.props.id + "/" + row.original.id;
+                        const allocations_url = "/allocations/" + this.props.id + "?from_map=" + row.original.id;
 
                         let allocation_backtrace = null;
                         let deallocation_backtrace = null;
@@ -646,7 +653,8 @@ export default class PageDataAllocations extends React.Component {
                             this.setState({
                                 show_only_with_allocation_backtrace_url,
                                 show_only_with_dealloation_backtrace_url,
-                                details_url
+                                details_url,
+                                allocations_url
                             });
                             return this.menu_trigger.handleContextClick( event );
                         };

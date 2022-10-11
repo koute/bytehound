@@ -1,7 +1,7 @@
 use regex::Regex;
 use ahash::AHashMap as HashMap;
 use ahash::AHashSet as HashSet;
-use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer, Map};
+use crate::{Allocation, BacktraceId, Data, Timestamp, DataPointer, Map, MapId};
 
 pub trait TryMatch {
     type Item;
@@ -103,7 +103,9 @@ pub struct RawAllocationFilter {
     pub only_ptmalloc_not_from_main_arena: bool,
     pub only_jemalloc: bool,
     pub only_not_jemalloc: bool,
-    pub only_with_marker: Option< u32 >
+    pub only_with_marker: Option< u32 >,
+
+    pub only_from_maps: Option< HashSet< MapId > >,
 }
 
 #[derive(Clone, Default)]
@@ -199,7 +201,9 @@ pub struct RawCompiledAllocationFilter {
     only_ptmalloc_mmaped: Option< bool >,
     only_ptmalloc_from_main_arena: Option< bool >,
     only_jemalloc: Option< bool >,
-    only_with_marker: Option< u32 >
+    only_with_marker: Option< u32 >,
+
+    only_from_maps: Option< Vec< MapId > >
 }
 
 #[derive(Clone)]
@@ -444,7 +448,7 @@ impl Compile for RawAllocationFilter {
     fn compile( &self, data: &Data ) -> Self::Compiled {
         let mut is_impossible = false;
         let only_backtraces = compile_backtrace_filter( data, &self.backtrace_filter );
-        let common_filter = self.common_filter.compile( data );
+        let mut common_filter = self.common_filter.compile( data );
         is_impossible = is_impossible || common_filter.is_impossible;
 
         let mut only_first_size_larger_or_equal = self.only_first_size_larger_or_equal.unwrap_or( 0 );
@@ -493,6 +497,37 @@ impl Compile for RawAllocationFilter {
 
         if self.only_jemalloc && self.only_not_jemalloc {
             is_impossible = true;
+        }
+
+        if let Some( ref map_ids ) = self.only_from_maps {
+            if map_ids.is_empty() {
+                is_impossible = true;
+            } else {
+                let mut iter = map_ids.iter().copied().map( |map_id| {
+                    let map = &data.maps[ map_id.raw() as usize ];
+                    (
+                        map.pointer,
+                        map.pointer + map.size,
+                        map.source.as_ref().map( |source| source.timestamp ).unwrap_or( map.timestamp ),
+                        map.deallocation.as_ref().map( |deallocation| {
+                            deallocation.source.as_ref().map( |source| source.timestamp ).unwrap_or( deallocation.timestamp )
+                        }).unwrap_or( data.last_timestamp )
+                    )
+                });
+
+                let (mut address_min, mut address_max, mut timestamp_min, mut timestamp_max) = iter.next().unwrap();
+                for (new_address_min, new_address_max, new_timestamp_min, new_timestamp_max) in iter {
+                    address_min = std::cmp::min( address_min, new_address_min );
+                    address_max = std::cmp::max( address_max, new_address_max );
+                    timestamp_min = std::cmp::min( timestamp_min, new_timestamp_min );
+                    timestamp_max = std::cmp::max( timestamp_max, new_timestamp_max );
+                }
+
+                common_filter.only_address_at_least = std::cmp::max( common_filter.only_address_at_least, address_min );
+                common_filter.only_address_at_most = std::cmp::min( common_filter.only_address_at_most, address_max );
+                common_filter.only_allocated_after_at_least = std::cmp::max( common_filter.only_allocated_after_at_least, timestamp_min );
+                common_filter.only_allocated_until_at_most = std::cmp::min( common_filter.only_allocated_until_at_most, timestamp_max );
+            }
         }
 
         let enable_chain_filter =
@@ -591,7 +626,9 @@ impl Compile for RawAllocationFilter {
                 } else {
                     None
                 },
-            only_with_marker: self.only_with_marker
+            only_with_marker: self.only_with_marker,
+
+            only_from_maps: self.only_from_maps.as_ref().map( |only_from_maps| only_from_maps.iter().copied().collect() ),
         }
     }
 }
@@ -922,6 +959,12 @@ impl TryMatch for RawCompiledAllocationFilter {
 
         if let Some( marker ) = self.only_with_marker {
             if allocation.marker != marker {
+                return false;
+            }
+        }
+
+        if let Some( ref only_from_maps ) = self.only_from_maps {
+            if !only_from_maps.iter().any( |&map_id| data.maps[ map_id.raw() as usize ].try_match_allocation( allocation ) ) {
                 return false;
             }
         }

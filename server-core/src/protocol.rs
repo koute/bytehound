@@ -726,6 +726,7 @@ pub struct AllocFilter {
     pub position_in_chain_max: Option< u32 >,
     pub alive_at: Option< TimestampFilter< OffsetMin > >,
     pub alive_at_2: Option< TimestampFilter< OffsetMin > >,
+    pub from_map: Option< u64 >,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Debug, Hash)]

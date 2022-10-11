@@ -386,6 +386,39 @@ impl Map {
     pub fn is_from_bytehound( &self ) -> bool {
         &*self.name == "[anon:bytehound]"
     }
+
+    #[inline]
+    pub fn try_match_allocation( &self, allocation: &Allocation ) -> bool {
+        let map_timestamp = self.source.as_ref().map( |source| source.timestamp ).unwrap_or( self.timestamp );
+        let map_timestamp_end = self.deallocation.as_ref().map( |deallocation| deallocation.source.as_ref().map( |source| source.timestamp ).unwrap_or( deallocation.timestamp ) );
+
+        if !crate::util::overlaps( allocation.pointer..allocation.pointer + allocation.size, self.pointer..self.pointer + self.size ) {
+            return false;
+        }
+
+        if allocation.timestamp < map_timestamp || map_timestamp_end.map( |map_timestamp_end| allocation.timestamp >= map_timestamp_end ).unwrap_or( false ) {
+            return false;
+        }
+
+        if self.regions.len() > 1 {
+            for region in &self.regions {
+                if let Some( deallocation ) = region.deallocation.as_ref() {
+                    for source in &deallocation.sources {
+                        if source.address <= allocation.pointer && source.address + source.length >= allocation.pointer + allocation.size {
+                            if allocation.timestamp >= source.source.timestamp {
+                                return false;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
