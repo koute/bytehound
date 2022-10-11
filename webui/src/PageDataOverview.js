@@ -119,7 +119,7 @@ export default class PageDataOverview extends React.Component {
                     <Switcher key="s1">
                         <Graph
                             key="memory"
-                            title="Memory usage"
+                            title="Memory allocated"
                             data={this.state.timeline}
                             y_accessor="allocated_size"
                             y_label=""
@@ -132,7 +132,7 @@ export default class PageDataOverview extends React.Component {
                         />
                         <Graph
                             key="size_delta"
-                            title="Memory usage delta"
+                            title="Memory allocated delta"
                             data={this.state.timeline}
                             y_accessor="size_delta"
                             y_label=""
@@ -206,7 +206,7 @@ export default class PageDataOverview extends React.Component {
                     <Switcher key="s3">
                         <Graph
                             key="leaked_size"
-                            title="Leaked memory usage"
+                            title="Memory allocated (never deallocated)"
                             data={this.state.timeline_leaked}
                             y_accessor="allocated_size"
                             y_label=""
@@ -219,7 +219,7 @@ export default class PageDataOverview extends React.Component {
                         />
                         <Graph
                             key="leaked_count"
-                            title="Leaked live allocations"
+                            title="Live allocations (never deallocated)"
                             data={this.state.timeline_leaked}
                             y_accessor="allocated_count"
                             y_label=""
@@ -345,7 +345,7 @@ export default class PageDataOverview extends React.Component {
                             <div style={{marginLeft: "1rem"}}>
                                 <div><Link to={"/allocations/" + this.props.id}>Everything</Link></div>
                                 <div>
-                                    <Link to={"/allocations/" + this.props.id + "?lifetime=only_leaked"}>Only leaked</Link>
+                                    <Link to={"/allocations/" + this.props.id + "?lifetime=only_leaked"}>Never deallocated</Link>
                                     &nbsp;(<a href={prefix + "/export/flamegraph/flame.svg?lifetime=only_leaked"}>flamegraph</a>)
                                 </div>
                                 <div>

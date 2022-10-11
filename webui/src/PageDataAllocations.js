@@ -202,16 +202,16 @@ const FIELDS = {
         ...RADIO_FIELD,
         variants: {
             "": "Show all",
-            only_leaked: "Only leaked",
-            only_chain_leaked: "Only chain leaked",
+            only_leaked: "Only never deallocated",
+            only_chain_leaked: "Only chain never deallocated",
             only_temporary: "Only temporary",
-            only_whole_group_leaked: "Only whole group leaked"
+            only_whole_group_leaked: "Only whole group never deallocated"
         },
         badge: {
-            only_leaked: "Only leaked",
-            only_chain_leaked: "Only chain leaked",
+            only_leaked: "Only never deallocated",
+            only_chain_leaked: "Only chain never deallocated",
             only_temporary: "Only temporary",
-            only_whole_group_leaked: "Only whole group leaked"
+            only_whole_group_leaked: "Only whole group never deallocated"
         }
     },
     arena: {
