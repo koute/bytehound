@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import Feather from "./Feather.js";
-import { timestamp_cell } from "./list-common.js";
+import { timestamp_cell, backtrace_cell } from "./list-common.js";
 import { fmt_size, fmt_hex16, fmt_uptime_timeval } from "./utils.js";
 
 function size_cell( size, last_size ) {
@@ -126,6 +126,17 @@ export default class PageDataMapDetails extends React.Component {
                 last_usage = usage;
             }
 
+            let backtrace = null;
+            if( this.state.details.source ) {
+                backtrace = (
+                    <div>
+                        <div className="mt-4"></div>
+                        <h5>Backtrace</h5>
+                        <div className="backtrace-cell">{backtrace_cell( true, this.state.details.source.backtrace )}</div>
+                    </div>
+                );
+            }
+
             contents = (
                 <div>
                     <h5>Regions</h5>
@@ -152,6 +163,8 @@ export default class PageDataMapDetails extends React.Component {
                         </tr>
                         {usage_history_rows}
                     </table>
+
+                    {backtrace}
                 </div>
             );
         }
