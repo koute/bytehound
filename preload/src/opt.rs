@@ -156,8 +156,6 @@ pub unsafe fn initialize() {
 #[inline]
 pub fn get() -> &'static Opts {
     let opts = unsafe { &OPTS };
-    debug_assert!( opts.is_initialized );
-
     opts
 }
 
