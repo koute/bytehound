@@ -210,6 +210,11 @@ malloc_initialized(void) {
 	return (malloc_init_state == malloc_init_initialized);
 }
 
+JEMALLOC_EXPORT bool JEMALLOC_NOTHROW
+je_is_initialized() {
+	return malloc_initialized();
+}
+
 JEMALLOC_ALWAYS_INLINE bool
 malloc_init_a0(void) {
 	if (unlikely(malloc_init_state == malloc_init_uninitialized)) {

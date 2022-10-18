@@ -576,6 +576,10 @@ extern "C" {
     /// have raw string values.
     #[cfg_attr(prefixed, link_name = "_rjem_mp_malloc_conf")]
     pub static malloc_conf: Option<&'static c_char>;
+
+    /// Checks whether jemalloc was initialized already.
+    #[cfg_attr(prefixed, link_name = "_rjem_mp_is_initialized")]
+    pub fn is_initialized() -> bool;
 }
 
 /// Extent lifetime management functions.
