@@ -195,7 +195,7 @@ fn build_timeline< T >(
 
     if output.is_empty() {
         output.push( TimelinePoint {
-            timestamp: current_time * granularity.saturating_sub( 1 ),
+            timestamp: (current_time * granularity).saturating_sub( 1 ),
             value: Default::default(),
             positive_change: Default::default(),
             negative_change: Default::default(),
@@ -232,6 +232,39 @@ impl< T > std::ops::Deref for TimelinePoint< T > {
     fn deref( &self ) -> &Self::Target {
         &self.value
     }
+}
+
+#[test]
+fn test_build_timeline_one_point() {
+    let output = build_timeline::< i64 >(
+        Timestamp::from_usecs( 10000 ),
+        Timestamp::from_usecs( 10000 ),
+        100,
+        vec![
+            (Timestamp::from_usecs( 10000 ), 100)
+        ].into_iter()
+    );
+
+    assert_eq!( output, vec![
+        TimelinePoint {
+            timestamp: 9999,
+            value: 0,
+            positive_change: 0,
+            negative_change: 0,
+        },
+        TimelinePoint {
+            timestamp: 10000,
+            value: 100,
+            positive_change: 100,
+            negative_change: 0,
+        },
+        TimelinePoint {
+            timestamp: 10001,
+            value: 100,
+            positive_change: 0,
+            negative_change: 0,
+        },
+    ]);
 }
 
 #[test]
