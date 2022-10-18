@@ -61,6 +61,7 @@ fn lock_thread_registry< R >( callback: impl FnOnce( &mut ThreadRegistry ) -> R 
 }
 
 static PROCESSING_THREAD_HANDLE: SpinLock< Option< libc::pthread_t > > = SpinLock::new( None );
+static mut PROCESSING_THREAD_TID: u32 = 0;
 
 pub static mut SYM_REGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
 pub static mut SYM_DEREGISTER_FRAME: Option< unsafe extern "C" fn( fde: *const u8 ) > = None;
@@ -207,20 +208,26 @@ pub unsafe extern fn on_fork() {
 }
 
 fn spawn_processing_thread() {
-    info!( "Spawning event processing thread..." );
+    info!( "Will spawn the event processing thread..." );
 
     let mut thread_handle = PROCESSING_THREAD_HANDLE.lock();
     assert!( !THREAD_RUNNING.load( Ordering::SeqCst ) );
 
     extern "C" fn thread_main( _: *mut libc::c_void ) -> *mut libc::c_void {
+        info!( "Processing thread created!" );
+
+        unsafe {
+            PROCESSING_THREAD_TID = syscall::gettid();
+        }
+
+        THREAD_RUNNING.store( true, Ordering::SeqCst );
+
         TLS.try_with( |tls| {
             unsafe {
                 *tls.is_internal.get() = true;
             }
             assert!( !tls.is_enabled() );
         }).unwrap();
-
-        THREAD_RUNNING.store( true, Ordering::SeqCst );
 
         let result = std::panic::catch_unwind( || {
             crate::processing_thread::thread_main();
@@ -254,6 +261,7 @@ fn spawn_processing_thread() {
         std::ptr::null_mut()
     }
 
+    info!( "Creating the event processing thread..." );
     let mut thread: libc::pthread_t;
     unsafe {
         thread = std::mem::zeroed();
@@ -265,11 +273,13 @@ fn spawn_processing_thread() {
         }
     }
 
+    info!( "Waiting for the event processing thread..." );
     while THREAD_RUNNING.load( Ordering::SeqCst ) == false {
         thread::yield_now();
     }
 
     *thread_handle = Some( thread );
+    info!( "Event processing thread created!" );
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -1003,7 +1013,7 @@ impl ThreadData {
     #[inline(always)]
     pub fn is_internal( &self ) -> bool {
         unsafe {
-            *self.is_internal.get()
+            *self.is_internal.get() || PROCESSING_THREAD_TID == self.thread_id
         }
     }
 
@@ -1052,7 +1062,7 @@ thread_local_reentrant! {
                 internal_thread_id,
                 is_internal: UnsafeCell::new( false ),
                 is_dead: AtomicBool::new( false ),
-                enabled: AtomicBool::new( registry.enabled_for_new_threads ),
+                enabled: AtomicBool::new( registry.enabled_for_new_threads && thread_id != unsafe { PROCESSING_THREAD_TID } ),
                 is_unwinding: UnsafeCell::new( false ),
                 unwind_state: UnsafeCell::new( ThreadUnwindState::new() ),
                 allocation_counter: UnsafeCell::new( 1 ),
