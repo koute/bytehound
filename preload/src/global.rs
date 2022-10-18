@@ -612,7 +612,7 @@ fn hook_private_mmap() {
 
     if let Some( address ) = address {
         info!( "Found __mmap at: 0x{:016X}", address as usize );
-        hook_symbols( &["__mmap"], &[address as usize], &[crate::api::mmap_private as usize] );
+        hook_symbols( &["__mmap"], &[address as usize], &[crate::api::__mmap as usize] );
     }
 }
 

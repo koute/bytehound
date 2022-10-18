@@ -842,7 +842,7 @@ pub unsafe extern "C" fn mmap64( addr: *mut c_void, length: size_t, prot: c_int,
     mmap_internal( addr, length, prot, flags, fildes, off, MapKind::Mmap )
 }
 
-pub unsafe extern "C" fn mmap_private( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
+pub unsafe extern "C" fn __mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
     mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, MapKind::Glibc )
 }
 
