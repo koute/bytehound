@@ -1191,6 +1191,7 @@ fn test_throw() {
     let a3 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123459 ).unwrap();
 
     assert_allocation_backtrace( a0, &[
+        "malloc",
         "foobar_0",
         "foobar_1",
         "foobar_2",
@@ -1201,6 +1202,7 @@ fn test_throw() {
     ]);
 
     assert_allocation_backtrace( a1, &[
+        "malloc",
         "foobar_3",
         "foobar_4",
         "foobar_5",
@@ -1208,11 +1210,13 @@ fn test_throw() {
     ]);
 
     assert_allocation_backtrace( a2, &[
+        "malloc",
         "foobar_5",
         "main"
     ]);
 
     assert_allocation_backtrace( a3, &[
+        "malloc",
         "main"
     ]);
 }
@@ -1240,6 +1244,7 @@ fn test_longjmp() {
     let a3 = analysis.response.allocations.iter().find( |alloc| alloc.size == 123459 ).unwrap();
 
     assert_allocation_backtrace( a0, &[
+        "malloc",
         "foobar_0",
         "foobar_1",
         "foobar_2",
@@ -1250,6 +1255,7 @@ fn test_longjmp() {
     ]);
 
     assert_allocation_backtrace( a1, &[
+        "malloc",
         "foobar_3",
         "foobar_4",
         "foobar_5",
@@ -1257,11 +1263,13 @@ fn test_longjmp() {
     ]);
 
     assert_allocation_backtrace( a2, &[
+        "malloc",
         "foobar_5",
         "main"
     ]);
 
     assert_allocation_backtrace( a3, &[
+        "malloc",
         "main"
     ]);
 }
@@ -1538,7 +1546,10 @@ fn check_allocations_basic_program(path: &Path) {
     assert_eq!( a3.thread, a4.thread );
     assert_eq!( a4.thread, a5.thread );
 
-    assert_eq!( a0.backtrace.last().unwrap().line.unwrap() + 1, a1.backtrace.last().unwrap().line.unwrap() );
+    assert_eq!(
+        a0.backtrace.iter().rev().skip( 1 ).next().unwrap().line.unwrap() + 1,
+        a1.backtrace.iter().rev().skip( 1 ).next().unwrap().line.unwrap()
+    );
 
     assert_eq!( a0.chain_length, 1 );
     assert_eq!( a1.chain_length, 1 );

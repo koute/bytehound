@@ -658,7 +658,7 @@ impl Loader {
         self.reload_address_space();
 
         let mut is_call_to_new = false;
-        let to_skip = addresses.iter().take_while( |&&address| {
+        let mut to_skip = addresses.iter().take_while( |&&address| {
             let address = address - 1;
             for range in &self.frame_skip_ranges {
                 if address >= range.start && address <= range.end {
@@ -674,6 +674,10 @@ impl Loader {
             false
         }).count();
 
+        if to_skip > 0 {
+            to_skip -= 1;
+        }
+
         if let Some( target_id ) = self.backtrace_to_id.get( &addresses[ to_skip.. ] ).cloned() {
             self.backtrace_remappings.insert( raw_id, target_id );
             return None;
@@ -688,7 +692,8 @@ impl Loader {
         let frame_to_id = &mut self.frame_to_id;
         let mut interner = self.interner.get_mut();
 
-        for &address in &addresses {
+        for (index, &address) in addresses.iter().enumerate() {
+            let is_bytehound_tail = index == 0 && self.frame_skip_ranges.iter().any( |range| address >= range.start && address <= range.end );
             let address = if address > 0 { address - 1 } else { 0 };
             if let Some( range ) = self.frames_by_address.get( &address ).cloned() {
                 for index in range {
@@ -711,6 +716,10 @@ impl Loader {
                     callback( frame_id, is_new );
                     backtrace_storage.push( frame_id );
                 });
+
+                if is_bytehound_tail && backtrace_storage.len() > offset {
+                    backtrace_storage.drain( offset..backtrace_storage.len() - 1 );
+                }
 
                 self.frames_by_address.insert( address, offset..backtrace_storage.len() );
             }
