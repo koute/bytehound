@@ -15,7 +15,7 @@ use common::Timestamp;
 use crate::InternalEvent;
 use crate::event::{InternalAllocation, InternalAllocationId, send_event, send_event_throttled};
 use crate::global::{StrongThreadHandle, on_exit};
-use crate::smaps::MapSource;
+use crate::smaps::{MapSource, MapKind};
 use crate::opt;
 use crate::syscall;
 use crate::timestamp::get_timestamp;
@@ -50,6 +50,7 @@ use tikv_jemalloc_sys::mallctlnametomib as jem_mallctlnametomib_real;
 use tikv_jemalloc_sys::mallctlbymib as jem_mallctlbymib_real;
 use tikv_jemalloc_sys::malloc_stats_print as jem_malloc_stats_print_real;
 use tikv_jemalloc_sys::free as jem_free_real;
+use tikv_jemalloc_sys::is_initialized as jem_is_initialized;
 
 extern "C" {
     #[link_name = "_rjem_mp_memalign"]
@@ -63,33 +64,68 @@ extern "C" {
 
 #[no_mangle]
 pub unsafe extern "C" fn bytehound_jemalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off, "jemalloc" )
+    if !jem_is_initialized() {
+        let id = crate::global::next_map_id();
+        let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
+        let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
+        if ptr != libc::MAP_FAILED {
+            maps_registry.set_vma_name( ptr, length, id, MapKind::Jemalloc );
+        }
+
+        return ptr;
+    }
+
+    mmap_internal( addr, length, prot, flags, fildes, off, MapKind::Jemalloc )
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn bytehound_jemalloc_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+    if !jem_is_initialized() {
+        let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
+        let result = syscall::munmap( addr, length );
+        maps_registry.clear_vma_name( addr, length );
+        return result;
+    }
+
     munmap( addr, length )
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn bytehound_mimalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    use std::io::Write;
-    let id = crate::global::next_map_id();
-    let mut buffer = crate::utils::Buffer::< 64 >::new();
-    write!( &mut buffer, "bytehound::{}\0", id ).unwrap();
-    let name = buffer.as_slice();
+pub unsafe extern "C" fn bytehound_mimalloc_raw_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, mut fildes: c_int, off: off_t ) -> *mut c_void {
+    assert_eq!( fildes, -1 );
+    assert_eq!( off, 0 );
 
-    let _lock = crate::global::MMAP_REGISTRY.lock().unwrap();
-    let pointer = syscall::mmap( addr, length, prot | libc::PROT_READ | libc::PROT_WRITE, flags, fildes, off );
-    if pointer != libc::MAP_FAILED {
-        crate::syscall::pr_set_vma_anon_name( pointer, length, name );
+    let id = crate::global::next_map_id();
+    let name = crate::smaps::construct_name( id, "bytehound" );
+
+    if crate::global::is_pr_set_vma_anon_name_supported() {
+        if let Ok( lock ) = crate::global::MMAP_REGISTRY.try_lock() {
+            let pointer = syscall::mmap( addr, length, prot | libc::PROT_READ | libc::PROT_WRITE, flags, fildes, off );
+            if pointer != libc::MAP_FAILED {
+                crate::syscall::pr_set_vma_anon_name( pointer, length, &name );
+            }
+
+            std::mem::drop( lock );
+            return pointer;
+        }
     }
 
+    // Here we abuse the fact that an memfd-based map will have its name displayed in maps.
+    //
+    // It's nasty, but it works.
+    let fd = libc::memfd_create( name.as_ptr().cast(), libc::MFD_CLOEXEC );
+    assert!( fd >= 0 );
+    libc::ftruncate( fd, length as _ );
+    fildes = fd;
+
+    let pointer = syscall::mmap( addr, length, prot | libc::PROT_READ | libc::PROT_WRITE, flags & (!libc::MAP_ANONYMOUS) | libc::MAP_SHARED, fildes, off );
+    libc::close( fildes );
     pointer
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn bytehound_mimalloc_raw_munmap( addr: *mut c_void, length: size_t ) -> c_int {
+    let _lock = crate::global::MMAP_REGISTRY.try_lock();
     syscall::munmap( addr, length )
 }
 
@@ -798,30 +834,25 @@ pub unsafe extern "C" fn posix_memalign( memptr: *mut *mut c_void, alignment: si
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, "mmap" )
+    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, MapKind::Mmap )
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap64( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off, "mmap" )
+    mmap_internal( addr, length, prot, flags, fildes, off, MapKind::Mmap )
 }
 
 pub unsafe extern "C" fn mmap_private( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: off_t ) -> *mut c_void {
-    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, "glibc" )
+    mmap_internal( addr, length, prot, flags, fildes, off as libc::off64_t, MapKind::Glibc )
 }
 
 #[inline(always)]
-unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, raw_name: &str ) -> *mut c_void {
+unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, kind: MapKind ) -> *mut c_void {
     if !opt::get().gather_maps {
         return syscall::mmap( addr, length, prot, flags, fildes, off );
     }
 
-    use std::io::Write;
     let id = crate::global::next_map_id();
-    let mut buffer = crate::utils::Buffer::< 64 >::new();
-    write!( &mut buffer, "{}::{}\0", raw_name, id ).unwrap();
-    let name = buffer.as_slice();
-
     if let Some( mut thread ) = crate::global::acquire_any_thread_handle() {
         if let Some( backtrace ) = unwind::grab_from_any( &mut thread ) {
             let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
@@ -841,16 +872,16 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
                     off as u64
                 );
 
-                crate::syscall::pr_set_vma_anon_name( ptr, length, name );
+                maps_registry.set_vma_name( ptr, length, id, kind );
             }
 
             return ptr;
         }
     }
 
-    let _lock = crate::global::MMAP_REGISTRY.lock().unwrap();
+    let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
     let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
-    crate::syscall::pr_set_vma_anon_name( ptr, length, name );
+    maps_registry.set_vma_name( ptr, length, id, kind );
 
     ptr
 }
@@ -870,14 +901,17 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
                 let range = ptr as u64..ptr as u64 + length as u64;
                 let source = MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() };
                 maps_registry.on_munmap( range, source );
+                maps_registry.clear_vma_name( ptr, length );
             }
 
             return result;
         }
     }
 
-    let _lock = crate::global::MMAP_REGISTRY.lock().unwrap();
-    syscall::munmap( ptr, length )
+    let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
+    let result = syscall::munmap( ptr, length );
+    maps_registry.clear_vma_name( ptr, length );
+    result
 }
 
 #[cfg_attr(not(test), no_mangle)]

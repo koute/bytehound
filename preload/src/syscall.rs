@@ -156,12 +156,14 @@ fn test_getenv() {
     assert_eq!( unsafe { getenv( b"GETENV_TEST_VAR" ) }.unwrap().to_str().unwrap(), "1234" );
 }
 
-pub unsafe fn pr_set_vma_anon_name( addr: *mut libc::c_void, length: usize, name: &[u8] ) {
-    libc::prctl(
+pub unsafe fn pr_set_vma_anon_name( addr: *mut libc::c_void, length: usize, name: &[u8] ) -> bool {
+    let errcode = libc::prctl(
         libc::PR_SET_VMA,
         libc::PR_SET_VMA_ANON_NAME,
         addr,
         length,
         name.as_ptr()
     );
+
+    errcode >= 0
 }

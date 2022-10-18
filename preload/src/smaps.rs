@@ -11,6 +11,59 @@ use crate::timestamp::Timestamp;
 use crate::processing_thread::BacktraceCache;
 use crate::unwind::Backtrace;
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum MapKind {
+    Mmap = 0,
+    Jemalloc = 1,
+    Glibc = 2
+}
+
+impl MapKind {
+    fn as_str( self ) -> &'static str {
+        match self {
+            MapKind::Mmap => "mmap",
+            MapKind::Jemalloc => "jemalloc",
+            MapKind::Glibc => "glibc"
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(transparent)]
+struct CompactName( u64 );
+
+impl CompactName {
+    fn new( id: u64, kind: MapKind ) -> Self {
+        Self( (id << 2) | (kind as u8 as u64) )
+    }
+
+    fn id( self ) -> u64 {
+        self.0 >> 2
+    }
+
+    fn kind( self ) -> MapKind {
+        unsafe { std::mem::transmute( (self.0 & 0b11) as u8 ) }
+    }
+}
+
+#[test]
+fn test_compact_name() {
+    assert_eq!( CompactName::new( 0x1234FF, MapKind::Mmap ).id(), 0x1234FF );
+    assert_eq!( CompactName::new( 0x1234FF, MapKind::Mmap ).kind(), MapKind::Mmap );
+    assert_eq!( CompactName::new( 0x1234FF, MapKind::Mmap ).kind().as_str(), "mmap" );
+    assert_eq!( CompactName::new( 0x1234FF, MapKind::Jemalloc ).id(), 0x1234FF );
+    assert_eq!( CompactName::new( 0x1234FF, MapKind::Jemalloc ).kind(), MapKind::Jemalloc );
+    assert_eq!( CompactName::new( 0x1234FF, MapKind::Jemalloc ).kind().as_str(), "jemalloc" );
+}
+
+#[inline(always)]
+pub fn construct_name( id: u64, kind: &str ) -> crate::utils::Buffer< 32 > {
+    let mut buffer = crate::utils::Buffer::< 32 >::new();
+    write!( &mut buffer, "{}::{}\0", kind, id ).unwrap();
+    buffer
+}
+
 const CULLING_THRESHOLD: Timestamp = Timestamp::from_secs( 1 );
 
 fn get_until< 'a >( p: &mut &'a str, delimiter: char ) -> &'a str {
@@ -75,6 +128,8 @@ struct Mmap {
 }
 
 pub struct MapsRegistry {
+    emulated_vma_name_map: fast_range_map::RangeMap< CompactName >,
+
     mmap_by_address: fast_range_map::RangeMap< MapBucket >,
     munmap_by_address: fast_range_map::RangeMap< MapBucket >,
     mmaps: HashMap< u64, Mmap >,
@@ -83,9 +138,32 @@ pub struct MapsRegistry {
 impl MapsRegistry {
     pub const fn new() -> Self {
         MapsRegistry {
+            emulated_vma_name_map: fast_range_map::RangeMap::new(),
             mmap_by_address: fast_range_map::RangeMap::new(),
             munmap_by_address: fast_range_map::RangeMap::new(),
             mmaps: crate::utils::empty_hashmap(),
+        }
+    }
+
+    pub fn set_vma_name( &mut self, pointer: *mut libc::c_void, length: usize, id: u64, kind: MapKind ) {
+        if crate::global::is_pr_set_vma_anon_name_supported() {
+            let name = construct_name( id, kind.as_str() );
+
+            unsafe {
+                crate::syscall::pr_set_vma_anon_name( pointer, length, &name );
+            }
+        } else {
+            self.set_vma_name_slow( pointer, length, CompactName::new( id, kind ) );
+        }
+    }
+
+    fn set_vma_name_slow( &mut self, pointer: *const libc::c_void, length: usize, name: CompactName ) {
+        self.emulated_vma_name_map.insert( pointer as u64..pointer as u64 + length as u64, name );
+    }
+
+    pub fn clear_vma_name( &mut self, pointer: *mut libc::c_void, length: usize ) {
+        if !crate::global::is_pr_set_vma_anon_name_supported() {
+            self.emulated_vma_name_map.remove( pointer as u64..pointer as u64 + length as u64 );
         }
     }
 
@@ -141,6 +219,11 @@ impl MapsRegistry {
 
     pub fn on_munmap( &mut self, range: Range< u64 >, source: MapSource ) {
         trace!( "On mummap: 0x{:016X}..0x{:016X}", range.start, range.end );
+
+        if !crate::global::is_pr_set_vma_anon_name_supported() {
+            self.emulated_vma_name_map.remove( range.clone() );
+        }
+
         for (removed_range, bucket) in self.mmap_by_address.remove( range ) {
             trace!( "  Removed chunk: 0x{:016X}..0x{:016X}, id = {}", removed_range.start, removed_range.end, bucket.id );
             self.munmap_by_address.insert( removed_range, MapBucket { id: bucket.id, source: source.clone() } );
@@ -234,6 +317,7 @@ pub struct State {
     tmp_found_maps: HashMap< u64, RegionVec >,
     tmp_new_map_by_id: HashMap< u64, Map >,
     tmp_all_new_events: Vec< PendingEvent >,
+    tmp_emulated_vma_name_map: fast_range_map::RangeMap< CompactName >,
 
     map_by_id: HashMap< u64, Map >,
     pending: HashMap< u64, PendingMap >,
@@ -249,6 +333,7 @@ impl State {
         self.tmp_found_maps.clear();
         self.tmp_new_map_by_id.clear();
         self.tmp_all_new_events.clear();
+        self.tmp_emulated_vma_name_map.clear();
     }
 }
 
@@ -450,6 +535,8 @@ pub fn update_smaps(
         std::mem::swap( &mut maps_registry.mmaps, &mut state.tmp_mmaps );
         maps_registry.mmaps.clear();
 
+        maps_registry.emulated_vma_name_map.clone_into( &mut state.tmp_emulated_vma_name_map );
+
         timestamp = crate::timestamp::get_timestamp();
         let mut fp = std::fs::File::open( "/proc/self/smaps" ).expect( "failed to open smaps" );
         fp.read_to_end( &mut state.tmp_buffer ).expect( "failed to read smaps" );
@@ -489,8 +576,11 @@ pub fn update_smaps(
         let mut name = Cow::Borrowed( line );
         let mut id: Option< u64 > = None;
 
+        const BYTEHOUND_MEMFD_PREFIX: &str = "/memfd:bytehound::";
+
         // Try to extract the ID we've packed into the name.
-        if name.starts_with( "[anon:" ) {
+        if crate::global::is_pr_set_vma_anon_name_supported() && name.starts_with( "[anon:" ) {
+            // A name set with PR_SET_VMA_ANON_NAME.
             if let Some( index_1 ) = name.find( "::" ) {
                 if let Some( length ) = name[ index_1 + 2.. ].find( "]" ) {
                     let index_2 = index_1 + 2 + length;
@@ -505,6 +595,16 @@ pub fn update_smaps(
                     }
                 }
             }
+        } else if name.starts_with( BYTEHOUND_MEMFD_PREFIX ) {
+            let index_1 = BYTEHOUND_MEMFD_PREFIX.len();
+            let index_2 = name[ index_1.. ].find( " " ).map( |index_2| index_1 + index_2 ).unwrap_or( name.len() );
+            if let Ok( value ) = name[ index_1..index_2 ].parse() {
+                id = Some( value );
+                name = Cow::Borrowed( "[anon:bytehound]" );
+            }
+        } else if let Some( (_, compact_name) ) = state.tmp_emulated_vma_name_map.get( address ) {
+            name = Cow::Owned( format!( "[anon:{}]", compact_name.kind().as_str() ) );
+            id = Some( compact_name.id() );
         }
 
         let info = RegionInfo {

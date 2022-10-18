@@ -75,6 +75,12 @@ pub fn next_map_id() -> u64 {
 }
 
 pub static MMAP_REGISTRY: Mutex< crate::smaps::MapsRegistry > = Mutex::new( crate::smaps::MapsRegistry::new() );
+static mut PR_SET_VMA_ANON_NAME_SUPPORTED: bool = true;
+
+#[inline(always)]
+pub fn is_pr_set_vma_anon_name_supported() -> bool {
+    unsafe { crate::global::PR_SET_VMA_ANON_NAME_SUPPORTED }
+}
 
 #[cfg(feature = "jemalloc")]
 #[inline]
@@ -551,6 +557,21 @@ fn resolve_original_syms() {
     }
 }
 
+fn check_set_vma_anon_name() {
+    unsafe {
+        let pointer = crate::syscall::mmap( std::ptr::null_mut(), 4096, 0, libc::MAP_PRIVATE | libc::MAP_ANONYMOUS, -1, 0 );
+        assert_ne!( pointer, libc::MAP_FAILED );
+
+        let is_supported = crate::syscall::pr_set_vma_anon_name( pointer, 4096, b"test\0" );
+        crate::syscall::munmap( pointer, 4096 );
+
+        if !is_supported {
+            warn!( "PR_SET_VMA_ANON_NAME is not supported (Linux 5.17+ required); will try to emulate in userspace" );
+            PR_SET_VMA_ANON_NAME_SUPPORTED = false;
+        }
+    }
+}
+
 fn initialize_stage_1() {
     unsafe {
         INITIAL_TIMESTAMP = crate::timestamp::get_timestamp();
@@ -562,6 +583,8 @@ fn initialize_stage_1() {
     unsafe {
         crate::opt::initialize();
     }
+
+    check_set_vma_anon_name();
 
     if !crate::opt::get().disabled_by_default {
         toggle();
