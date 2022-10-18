@@ -39,6 +39,7 @@ mod ordered_map;
 mod nohash;
 mod allocation_tracker;
 mod smaps;
+mod elf;
 
 use crate::event::InternalEvent;
 use crate::utils::read_file;

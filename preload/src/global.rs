@@ -563,14 +563,31 @@ fn initialize_stage_1() {
     info!( "Stage 1 initialization finished" );
 }
 
+#[cfg(target_arch = "x86_64")]
+fn hook_private_mmap() {
+    use std::ops::ControlFlow;
+
+    let address = crate::elf::ObjectInfo::each( |info| {
+        if info.name_contains( "libc.so" ) {
+            if let Some( address ) = info.dlsym( "__mmap" ) {
+                return ControlFlow::Break( address );
+            }
+        }
+
+        ControlFlow::Continue(())
+    });
+
+    if let Some( address ) = address {
+        info!( "Found __mmap at: 0x{:016X}", address as usize );
+        hook_symbols( &["__mmap"], &[address as usize], &[crate::api::mmap_private as usize] );
+    }
+}
+
 fn initialize_stage_2() {
     info!( "Initializing stage 2..." );
 
     #[cfg(target_arch = "x86_64")]
-    {
-        let mmap_address = unsafe { libc::dlsym( libc::RTLD_NEXT, b"__mmap\0".as_ptr() as *const libc::c_char ) };
-        hook_symbols( &["__mmap"], &[mmap_address as usize], &[crate::api::mmap_private as usize] );
-    }
+    hook_private_mmap();
 
     crate::init::initialize_atexit_hook();
     crate::init::initialize_signal_handlers();
