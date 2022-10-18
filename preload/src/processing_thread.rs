@@ -562,7 +562,7 @@ pub(crate) fn thread_main() {
     let mut poll_fds = Vec::new();
     let mut backtrace_cache = BacktraceCache::new( opt::get().backtrace_cache_size_level_2 );
     let mut thread_gc = crate::global::ThreadGarbageCollector::default();
-    let mut smaps_state = Default::default();
+    let mut smaps_state = crate::smaps::State::new_preallocated();
     loop {
         timed_recv_all_events( &mut events, Duration::from_millis( 250 ) );
 

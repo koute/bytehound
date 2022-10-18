@@ -325,6 +325,12 @@ pub struct State {
 }
 
 impl State {
+    pub fn new_preallocated() -> Self {
+        let mut state = Self::default();
+        state.tmp_buffer.reserve( 64 * 1024 );
+        state
+    }
+
     fn clear_ephemeral( &mut self ) {
         self.tmp_mmap_by_address.clear();
         self.tmp_munmap_by_address.clear();
