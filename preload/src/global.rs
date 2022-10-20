@@ -593,6 +593,9 @@ fn initialize_stage_1() {
     #[cfg(target_arch = "x86_64")]
     hook_jemalloc();
 
+    #[cfg(target_arch = "x86_64")]
+    hook_private_mmap();
+
     info!( "Stage 1 initialization finished" );
 }
 
@@ -618,9 +621,6 @@ fn hook_private_mmap() {
 
 fn initialize_stage_2() {
     info!( "Initializing stage 2..." );
-
-    #[cfg(target_arch = "x86_64")]
-    hook_private_mmap();
 
     crate::init::initialize_atexit_hook();
     crate::init::initialize_signal_handlers();
