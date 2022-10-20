@@ -913,8 +913,15 @@ pub fn acquire_any_thread_handle() -> Option< ThreadHandleKind > {
     if state != STATE_ENABLED {
         if !try_enable( state ) {
             state = STATE.load( Ordering::Relaxed );
-            if state != STATE_STARTING && state != STATE_PARTIALLY_INITIALIZED {
-                return None;
+            match state {
+                | STATE_UNINITIALIZED
+                | STATE_INITIALIZING_STAGE_1
+                    => return None,
+                _ => {
+                    if DESIRED_STATE.load( Ordering::SeqCst ) != DESIRED_STATE_ENABLED {
+                        return None;
+                    }
+                }
             }
         }
     }
