@@ -378,7 +378,7 @@ fn analyze( name: &str, path: impl AsRef< Path > ) -> Analysis {
 
     let start = Instant::now();
     let mut found = false;
-    while start.elapsed() < Duration::from_secs( 10 ) {
+    while start.elapsed() < Duration::from_secs( 20 ) {
         thread::sleep( Duration::from_millis( 100 ) );
         if let Some( response ) = attohttpc::get( &format!( "http://localhost:{}/list", port ) ).send().ok() {
             assert_eq!( response.status(), attohttpc::StatusCode::OK );
