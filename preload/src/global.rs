@@ -677,14 +677,6 @@ fn try_enable( mut state: usize ) -> bool {
         return false;
     }
 
-    static LOCK: SpinLock< () > = SpinLock::new(());
-    let mut _lock = match LOCK.try_lock() {
-        Some( guard ) => guard,
-        None => {
-            return false;
-        }
-    };
-
     lock_thread_registry( |thread_registry| {
         assert!( !thread_registry.enabled_for_new_threads );
     });
