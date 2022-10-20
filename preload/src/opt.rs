@@ -154,8 +154,26 @@ pub unsafe fn initialize() {
 }
 
 #[inline]
+pub fn is_initialized() -> bool {
+    unsafe { OPTS.is_initialized }
+}
+
+#[inline(never)]
+#[cold]
+fn crash() {
+    crate::logger::raw_eprint( b"bytehound: fatal error: opts accessed before they're initialized\n" );
+    unsafe {
+        libc::abort();
+    }
+}
+
+#[inline]
 pub fn get() -> &'static Opts {
     let opts = unsafe { &OPTS };
+    if !opts.is_initialized {
+        crash();
+    }
+
     opts
 }
 

@@ -848,7 +848,7 @@ pub unsafe extern "C" fn __mmap( addr: *mut c_void, length: size_t, prot: c_int,
 
 #[inline(always)]
 unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, kind: MapKind ) -> *mut c_void {
-    if !opt::get().gather_maps {
+    if !opt::is_initialized() || !opt::get().gather_maps {
         return syscall::mmap( addr, length, prot, flags, fildes, off );
     }
 
@@ -888,7 +888,7 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
-    if !opt::get().gather_maps {
+    if !opt::is_initialized() || !opt::get().gather_maps {
         return syscall::munmap( ptr, length );
     }
 

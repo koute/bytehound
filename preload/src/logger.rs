@@ -49,7 +49,7 @@ fn filter( record: &Record ) -> bool {
     true
 }
 
-fn raw_eprint( buffer: &[u8] ) {
+pub fn raw_eprint( buffer: &[u8] ) {
     syscall::write( 2, buffer );
 }
 
