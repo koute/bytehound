@@ -603,20 +603,33 @@ fn initialize_stage_1() {
 fn hook_private_mmap() {
     use std::ops::ControlFlow;
 
-    let address = crate::elf::ObjectInfo::each( |info| {
+    let mut address_mmap = std::ptr::null_mut();
+    let mut address_munmap = std::ptr::null_mut();
+    crate::elf::ObjectInfo::each( |info| {
         if info.name_contains( "libc.so" ) {
             if let Some( address ) = info.dlsym( "__mmap" ) {
-                return ControlFlow::Break( address );
+                address_mmap = address;
+
             }
+            if let Some( address ) = info.dlsym( "__munmap" ) {
+                address_munmap = address;
+            }
+
+            return ControlFlow::Break(());
         }
 
         ControlFlow::Continue(())
     });
 
-    if let Some( address ) = address {
-        info!( "Found __mmap at: 0x{:016X}", address as usize );
-        hook_symbols( &["__mmap"], &[address as usize], &[crate::api::__mmap as usize] );
+    if !address_mmap.is_null() {
+        info!( "Found __mmap at: 0x{:016X}", address_mmap as usize );
     }
+
+    if !address_munmap.is_null() {
+        info!( "Found __munmap at: 0x{:016X}", address_munmap as usize );
+    }
+
+    hook_symbols( &["__mmap", "__munmap"], &[address_mmap as usize, address_munmap as usize], &[crate::api::__mmap as usize, crate::api::__munmap as usize] );
 }
 
 fn initialize_stage_2() {

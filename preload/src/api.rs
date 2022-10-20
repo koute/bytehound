@@ -886,8 +886,8 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
     ptr
 }
 
-#[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
+#[inline(always)]
+unsafe extern "C" fn munmap_internal( ptr: *mut c_void, length: size_t ) -> c_int {
     if !opt::is_initialized() || !opt::get().gather_maps {
         return syscall::munmap( ptr, length );
     }
@@ -912,6 +912,16 @@ pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
     let result = syscall::munmap( ptr, length );
     maps_registry.clear_vma_name( ptr, length );
     result
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn munmap( ptr: *mut c_void, length: size_t ) -> c_int {
+    munmap_internal( ptr, length )
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn __munmap( ptr: *mut c_void, length: size_t ) -> c_int {
+    munmap_internal( ptr, length )
 }
 
 #[cfg_attr(not(test), no_mangle)]
