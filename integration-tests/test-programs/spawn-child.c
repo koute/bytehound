@@ -9,7 +9,7 @@ int main() {
     pid_t pid = fork();
     if( pid == 0 ) {
         // Child
-        if (execl("./basic", "./basic", NULL) == -1) {
+        if (execl("./basic-from-spawn-child", "./basic-from-spawn-child", NULL) == -1) {
             return 1;
         }
         return 0;

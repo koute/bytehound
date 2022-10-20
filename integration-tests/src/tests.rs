@@ -560,7 +560,7 @@ fn test_basic() {
         ]
     ).assert_success();
 
-    check_allocations_basic_program(&cwd.join( "memory-profiling-basic.dat" ));
+    check_allocations_basic_program( "basic", &cwd.join( "memory-profiling-basic.dat" ) );
 }
 
 #[test]
@@ -1487,7 +1487,7 @@ fn test_cross_thread_alloc_non_culled() {
 fn test_track_spawned_children() {
     let cwd = workdir();
 
-    compile_with_flags( "basic.c", &["-o", "basic"] );
+    compile_with_flags( "basic.c", &["-o", "basic-from-spawn-child"] );
     compile_with_flags( "spawn-child.c", &["-o", "spawn-child"] );
 
     run_on_target(
@@ -1502,9 +1502,9 @@ fn test_track_spawned_children() {
         ]
     ).assert_success();
 
-    check_allocations_basic_program(&cwd.join( "memory-profiling-basic.dat" ));
+    check_allocations_basic_program( "basic-from-spawn-child", &cwd.join( "memory-profiling-basic-from-spawn-child.dat" ) );
 
-    let analysis = analyze( "spawn-child", cwd.join( "memory-profiling-spawn-child.dat" ));
+    let analysis = analyze( "spawn-child", cwd.join( "memory-profiling-spawn-child.dat" ) );
     let mut iter = analysis.allocations_from_source( "spawn-child.c" );
 
     let a0 = iter.next().unwrap();
@@ -1514,8 +1514,8 @@ fn test_track_spawned_children() {
     assert_eq!(a1.size, 10003);
 }
 
-fn check_allocations_basic_program(path: &Path) {
-    let analysis = analyze( "basic", path );
+fn check_allocations_basic_program( name: &str, path: &Path ) {
+    let analysis = analyze( name, path );
     let mut iter = analysis.allocations_from_source( "basic.c" );
 
     let a0 = iter.next().unwrap(); // malloc, leaked
