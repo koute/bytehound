@@ -598,16 +598,8 @@ fn test_mmap() {
         }).unwrap_or( false )
     });
 
-    let a0 = iter.next().unwrap(); // Leaked, never touched.
-    let a1 = iter.next().unwrap(); // Leaked, touched.
-    let a2 = iter.next().unwrap(); // Fully deallocated.
-    let a3 = iter.next().unwrap(); // Partially deallocated at the start.
-    let a4 = iter.next().unwrap(); // Partially deallocated at the end.
-    let a5 = iter.next().unwrap(); // Partially deallocated in the middle.
-    let a6 = iter.next().unwrap(); // Partially deallocated with another mmap.
-    let a7 = iter.next().unwrap(); // The another mmap which partially deallocated the previous map.
-
     // Leaked, never touched.
+    let a0 = iter.next().unwrap();
     assert_eq!( a0.regions.len(), 1 );
     assert_eq!( a0.size, 123 * 4096 );
     assert_eq!( a0.name, "[anon:mmap]" );
@@ -627,6 +619,7 @@ fn test_mmap() {
     assert_eq!( a0.usage_history[ 0 ].rss, 0 );
 
     // Leaked, touched.
+    let a1 = iter.next().unwrap();
     assert_eq!( a1.regions.len(), 1 );
     assert_eq!( a1.size, 5 * 4096 );
     assert_eq!( a1.peak_rss, 2 * 4096 );
@@ -640,6 +633,7 @@ fn test_mmap() {
     assert!( a1.usage_history[ 0 ].timestamp < a1.usage_history[ 1 ].timestamp );
 
     // Fully deallocated.
+    let a2 = iter.next().unwrap();
     assert_eq!( a2.regions.len(), 1 );
     assert_eq!( a2.size, 6 * 4096 );
     assert!( !a2.source.is_none() );
@@ -652,6 +646,7 @@ fn test_mmap() {
     assert!( a2.usage_history[ 0 ].timestamp < a2.usage_history[ 1 ].timestamp );
 
     // Partially deallocated at the start.
+    let a3 = iter.next().unwrap();
     assert_eq!( a3.regions.len(), 2 );
 
     assert_eq!( a3.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -665,6 +660,7 @@ fn test_mmap() {
     assert_eq!( a3.regions[ 0 ].address + 6 * 4096, a3.regions[ 1 ].address );
 
     // Partially deallocated at the end.
+    let a4 = iter.next().unwrap();
     assert_eq!( a4.regions.len(), 2 );
 
     assert_eq!( a4.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -677,6 +673,7 @@ fn test_mmap() {
     assert_eq!( a4.regions[ 0 ].address, a4.regions[ 0 ].address );
 
     // Partially deallocated in the middle.
+    let a5 = iter.next().unwrap();
     assert_eq!( a5.regions.len(), 3 );
 
     assert_eq!( a5.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -691,6 +688,7 @@ fn test_mmap() {
     assert!( a5.regions[ 2 ].deallocation.is_none() );
 
     // Partially deallocated with another mmap.
+    let a6 = iter.next().unwrap();
     assert_eq!( a6.regions.len(), 2 );
 
     assert_eq!( a6.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -701,7 +699,8 @@ fn test_mmap() {
 
     assert_eq!( a6.regions[ 0 ].address, a6.regions[ 1 ].address );
 
-    // The map which triggered the deallocation.
+    // Another mmap which partially deallocated the previous map.
+    let a7 = iter.next().unwrap();
     assert_eq!( a7.regions.len(), 1 );
     assert_eq!( a7.regions[ 0 ].size, 4096 );
     assert_eq!( a6.regions[ 0 ].address + 6 * 4096, a7.regions[ 0 ].address );
