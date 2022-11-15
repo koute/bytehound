@@ -558,6 +558,15 @@ fn resolve_original_syms() {
 }
 
 fn check_set_vma_anon_name() {
+    if crate::opt::get().disable_pr_set_vma_anon_name {
+        warn!( "PR_SET_VMA_ANON_NAME forcibly disabled!" );
+        unsafe {
+            PR_SET_VMA_ANON_NAME_SUPPORTED = false;
+        }
+
+        return;
+    }
+
     unsafe {
         let pointer = crate::syscall::mmap( std::ptr::null_mut(), 4096, 0, libc::MAP_PRIVATE | libc::MAP_ANONYMOUS, -1, 0 );
         assert_ne!( pointer, libc::MAP_FAILED );

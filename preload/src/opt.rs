@@ -23,7 +23,8 @@ pub struct Opts {
     pub cull_temporary_allocations: bool,
     pub temporary_allocation_lifetime_threshold: u64,
     pub temporary_allocation_pending_threshold: Option< usize >,
-    pub track_child_processes: bool
+    pub track_child_processes: bool,
+    pub disable_pr_set_vma_anon_name: bool,
 }
 
 static mut OPTS: Opts = Opts {
@@ -49,7 +50,8 @@ static mut OPTS: Opts = Opts {
     cull_temporary_allocations: false,
     temporary_allocation_lifetime_threshold: 10000,
     temporary_allocation_pending_threshold: None,
-    track_child_processes: false
+    track_child_processes: false,
+    disable_pr_set_vma_anon_name: false,
 };
 
 trait ParseVar: Sized {
@@ -147,7 +149,9 @@ pub unsafe fn initialize() {
         "MEMORY_PROFILER_TEMPORARY_ALLOCATION_PENDING_THRESHOLD"
             => &mut opts.temporary_allocation_pending_threshold,
         "MEMORY_PROFILER_TRACK_CHILD_PROCESSES"
-            => &mut opts.track_child_processes
+            => &mut opts.track_child_processes,
+        "MEMORY_PROFILER_DISABLE_PR_SET_VMA_ANON_NAME"
+            => &mut opts.disable_pr_set_vma_anon_name
     }
 
     opts.is_initialized = true;
