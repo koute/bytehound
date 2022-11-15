@@ -986,7 +986,8 @@ enum AllocationGraphKind {
 
 #[derive(Copy, Clone)]
 enum MapGraphKind {
-    RSS
+    RSS,
+    AddressSpace
 }
 
 #[derive(Copy, Clone)]
@@ -1095,7 +1096,8 @@ fn prepare_map_graph_datapoints( ops_for_list: &[Vec< (Timestamp, UsageDelta) >]
             xs.insert( point.timestamp );
             let x = point.timestamp;
             let y = match kind {
-                MapGraphKind::RSS => point.rss()
+                MapGraphKind::RSS => point.rss(),
+                MapGraphKind::AddressSpace => point.address_space,
             } as u64;
             (x, y)
         }).collect();
@@ -1279,6 +1281,14 @@ impl Graph {
         self.bail_unless_map_graph()?;
         let mut cloned = self.clone();
         cloned.kind = Some( GraphKind::Map( MapGraphKind::RSS ) );
+        cloned.cached_datapoints = None;
+        Ok( cloned )
+    }
+
+    fn show_address_space( &mut self ) -> Result< Self, Box< rhai::EvalAltResult > > {
+        self.bail_unless_map_graph()?;
+        let mut cloned = self.clone();
+        cloned.kind = Some( GraphKind::Map( MapGraphKind::AddressSpace ) );
         cloned.cached_datapoints = None;
         Ok( cloned )
     }
@@ -1646,6 +1656,7 @@ impl Graph {
                 GraphKind::Allocation( AllocationGraphKind::NewAllocations ) => "New allocations",
                 GraphKind::Allocation( AllocationGraphKind::Deallocations ) => "Deallocations",
                 GraphKind::Map( MapGraphKind::RSS ) => "RSS",
+                GraphKind::Map( MapGraphKind::AddressSpace ) => "Address space",
             };
             mesh = mesh.x_desc( "Time" ).y_desc( label );
         }
@@ -2050,6 +2061,7 @@ impl Engine {
         engine.register_result_fn( "show_new_allocations", Graph::show_new_allocations );
         engine.register_result_fn( "show_deallocations", Graph::show_deallocations );
         engine.register_result_fn( "show_rss", Graph::show_rss );
+        engine.register_result_fn( "show_address_space", Graph::show_address_space );
 
         engine.register_result_fn( "with_gradient_color_scheme", Graph::with_gradient_color_scheme );
         engine.register_fn( "allocations", DataRef::allocations );
