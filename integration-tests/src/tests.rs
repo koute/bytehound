@@ -600,9 +600,9 @@ fn test_mmap() {
 
     // Leaked, never touched.
     let a0 = iter.next().unwrap();
+    assert_eq!( a0.name, "[anon:mmap]" );
     assert_eq!( a0.regions.len(), 1 );
     assert_eq!( a0.size, 123 * 4096 );
-    assert_eq!( a0.name, "[anon:mmap]" );
     assert!( a0.source.is_some() );
     assert!( a0.deallocation.is_none() );
     assert!( a0.is_readable );
@@ -620,6 +620,7 @@ fn test_mmap() {
 
     // Leaked, touched.
     let a1 = iter.next().unwrap();
+    assert_eq!( a1.name, "[anon:mmap]" );
     assert_eq!( a1.regions.len(), 1 );
     assert_eq!( a1.size, 5 * 4096 );
     assert_eq!( a1.peak_rss, 2 * 4096 );
@@ -634,6 +635,7 @@ fn test_mmap() {
 
     // Fully deallocated.
     let a2 = iter.next().unwrap();
+    assert_eq!( a2.name, "[anon:mmap]" );
     assert_eq!( a2.regions.len(), 1 );
     assert_eq!( a2.size, 6 * 4096 );
     assert!( !a2.source.is_none() );
@@ -647,6 +649,7 @@ fn test_mmap() {
 
     // Partially deallocated at the start.
     let a3 = iter.next().unwrap();
+    assert_eq!( a3.name, "[anon:mmap]" );
     assert_eq!( a3.regions.len(), 2 );
 
     assert_eq!( a3.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -661,6 +664,7 @@ fn test_mmap() {
 
     // Partially deallocated at the end.
     let a4 = iter.next().unwrap();
+    assert_eq!( a4.name, "[anon:mmap]" );
     assert_eq!( a4.regions.len(), 2 );
 
     assert_eq!( a4.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -674,6 +678,7 @@ fn test_mmap() {
 
     // Partially deallocated in the middle.
     let a5 = iter.next().unwrap();
+    assert_eq!( a5.name, "[anon:mmap]" );
     assert_eq!( a5.regions.len(), 3 );
 
     assert_eq!( a5.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -689,6 +694,7 @@ fn test_mmap() {
 
     // Partially deallocated with another mmap.
     let a6 = iter.next().unwrap();
+    assert_eq!( a6.name, "[anon:mmap]" );
     assert_eq!( a6.regions.len(), 2 );
 
     assert_eq!( a6.regions[ 0 ].size, 7 * 4096 ); // Original.
@@ -701,6 +707,7 @@ fn test_mmap() {
 
     // Another mmap which partially deallocated the previous map.
     let a7 = iter.next().unwrap();
+    assert_eq!( a7.name, "[anon:mmap]" );
     assert_eq!( a7.regions.len(), 1 );
     assert_eq!( a7.regions[ 0 ].size, 4096 );
     assert_eq!( a6.regions[ 0 ].address + 6 * 4096, a7.regions[ 0 ].address );
