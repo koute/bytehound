@@ -22,7 +22,7 @@ mimalloc = { path = "../mimalloc_rust", default-features = false }
 goblin = "0.0.24"
 smallvec = { version = "1", features = ["union"] }
 ahash = "0.8"
-hashbrown = "0.12"
+hashbrown = "0.13"
 
 fast_range_map = { path = "../fast_range_map" }
 
