@@ -28,17 +28,17 @@ fast_range_map = { path = "../fast_range_map" }
 
 [dependencies.thread-local-reentrant]
 git = "https://github.com/koute/not-perf.git"
-rev = "18bd8d3"
+rev = "911723c"
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"
-rev = "18bd8d3"
+rev = "911723c"
 features = ["log", "local-unwinding"]
 default-features = false
 
 [dependencies.perf_event_open]
 git = "https://github.com/koute/not-perf.git"
-rev = "18bd8d3"
+rev = "911723c"
 
 [dependencies.common]
 path = "../common"

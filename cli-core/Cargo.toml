@@ -35,7 +35,7 @@ fast_range_map = { path = "../fast_range_map" }
 
 [dependencies.nwind]
 git = "https://github.com/koute/not-perf.git"
-rev = "18bd8d3"
+rev = "911723c"
 
 [dev-dependencies]
 quickcheck = "0.9"
