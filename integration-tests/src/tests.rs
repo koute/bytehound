@@ -567,11 +567,22 @@ fn test_basic() {
     check_allocations_basic_program( "basic", &cwd.join( "memory-profiling-basic.dat" ) );
 }
 
-#[test]
-fn test_mmap() {
+fn test_mmap_impl( use_set_vma_anon_name: bool ) {
     let cwd = workdir();
 
-    compile( "mmap.c" );
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once( || compile( "mmap.c" ) );
+
+    let env_disable_pr_set_vma_anon_name;
+    let output_filename;
+
+    if use_set_vma_anon_name {
+        env_disable_pr_set_vma_anon_name = "0";
+        output_filename = "memory-profiling-mmap.dat";
+    } else {
+        env_disable_pr_set_vma_anon_name = "1";
+        output_filename = "memory-profiling-mmap-without-set-vma-anon-name.dat";
+    }
 
     run_on_target(
         &cwd,
@@ -580,11 +591,12 @@ fn test_mmap() {
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
             ("MEMORY_PROFILER_LOG", get_log_level()),
-            ("MEMORY_PROFILER_OUTPUT", "memory-profiling-mmap.dat".into())
+            ("MEMORY_PROFILER_OUTPUT", output_filename.into()),
+            ("MEMORY_PROFILER_DISABLE_PR_SET_VMA_ANON_NAME", env_disable_pr_set_vma_anon_name.into())
         ]
     ).assert_success();
 
-    let analysis = analyze( "mmap", cwd.join( "memory-profiling-mmap.dat" ) );
+    let analysis = analyze( "mmap", cwd.join( output_filename ) );
 
     let mut skipping = true;
     let mut iter = analysis.response_maps.maps.into_iter().skip_while( |map| {
@@ -716,6 +728,16 @@ fn test_mmap() {
     assert_eq!( a7.regions[ 0 ].size, 4096 );
     assert_eq!( a6.regions[ 0 ].address + 6 * 4096, a7.regions[ 0 ].address );
     assert_eq!( Some( &a6.regions[ 0 ].deallocation.as_ref().unwrap().sources[ 0 ].source ), a7.source.as_ref() );
+}
+
+#[test]
+fn test_mmap_with_set_vma_anon_name() {
+    test_mmap_impl( true );
+}
+
+#[test]
+fn test_mmap_without_set_vma_anon_name() {
+    test_mmap_impl( false );
 }
 
 #[cfg(test)]
