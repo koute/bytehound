@@ -40,7 +40,7 @@ void __attribute__ ((noinline)) foobar() {
     munmap( a4 + 4096, 6 * 4096 );
     munmap( a5 + 3 * 4096, 4096 );
 
-    mmap( a6 + 6 * 4096, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0 );
+    mmap( a6 + 6 * 4096, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0 );
 }
 
 int main() {
