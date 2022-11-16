@@ -202,7 +202,7 @@ impl MapsRegistry {
             source: source.clone()
         };
 
-        trace!( "On mmap: 0x{:016X}..0x{:016X}, id = {}", range.start, range.end, id );
+        trace!( "On mmap: 0x{:016X}..0x{:016X}, id = {}, pages = {}", range.start, range.end, id, (range.end - range.start) / 4096 );
         self.mmap_by_address.insert( range.clone(), bucket );
         self.mmaps.insert( id, Mmap {
             id,
@@ -218,14 +218,14 @@ impl MapsRegistry {
     }
 
     pub fn on_munmap( &mut self, range: Range< u64 >, source: MapSource ) {
-        trace!( "On mummap: 0x{:016X}..0x{:016X}", range.start, range.end );
+        trace!( "On mummap: 0x{:016X}..0x{:016X}, pages = {}", range.start, range.end, (range.end - range.start) / 4096 );
 
         if !crate::global::is_pr_set_vma_anon_name_supported() {
             self.emulated_vma_name_map.remove( range.clone() );
         }
 
         for (removed_range, bucket) in self.mmap_by_address.remove( range ) {
-            trace!( "  Removed chunk: 0x{:016X}..0x{:016X}, id = {}", removed_range.start, removed_range.end, bucket.id );
+            trace!( "  Removed chunk: 0x{:016X}..0x{:016X}, id = {}, pages = {}", removed_range.start, removed_range.end, bucket.id, (removed_range.end - removed_range.start) / 4096 );
             self.munmap_by_address.insert( removed_range, MapBucket { id: bucket.id, source: source.clone() } );
         }
     }
@@ -503,7 +503,7 @@ fn generate_unmaps(
 
     // Let's try to find which calls resulted in its disappearance.
     for (unmap_range, unmap_bucket) in tmp_munmap_by_address.get_in_range( address_start..address_end ) {
-        trace!( "Found a source for an unmap: 0x{:016X}, id = {}", unmap_range.start, id );
+        trace!( "Found a source for an unmap: 0x{:016X}..0x{:016X}, id = {}, pages = {}", unmap_range.start, unmap_range.end, id, (unmap_range.end - unmap_range.start) / 4096 );
 
         sources.push( RegionRemovalSource {
             address: unmap_range.start,
@@ -528,6 +528,8 @@ pub fn update_smaps(
     serializer: &mut impl Write,
     force_emit: bool,
 ) {
+    trace!( "Scanning smaps..." );
+
     state.clear_ephemeral();
     state.epoch += 1;
 
@@ -789,7 +791,14 @@ pub fn update_smaps(
                 }
 
                 for region in &new_regions {
-                    trace!( "Found new map: 0x{:016X}, id = {}, source = {}", region.info.address, id, state.tmp_mmap_by_address.get_value( region.info.address ).is_some() );
+                    trace!(
+                        "Found new map: 0x{:016X}..0x{:016X}, id = {}, source = {}",
+                        region.info.address,
+                        region.info.address + region.info.length,
+                        id,
+                        state.tmp_mmap_by_address.get_value( region.info.address ).is_some()
+                    );
+
                     events.push( PendingEvent::AddRegion {
                         timestamp,
                         epoch: state.epoch,
@@ -848,4 +857,8 @@ pub fn update_smaps(
 
     emit_events( backtrace_cache, serializer, state.tmp_all_new_events.drain( .. ) );
     std::mem::swap( &mut state.map_by_id, &mut state.tmp_new_map_by_id );
+
+    for (id, mmap) in state.tmp_mmaps.drain() {
+        debug!( "Map registered yet not found in smaps: 0x{:016X}..0x{:016X}, id = {}", mmap.address, mmap.address + mmap.requested_length, id );
+    }
 }
