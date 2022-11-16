@@ -14,7 +14,6 @@ parking_lot = { version = "0.12" }
 libc = "0.2"
 sc = { version = "0.2", optional = true }
 lazy_static = "1"
-memmap = "0.7"
 log = "0.4"
 glob = "0.2"
 lru = { version = "0.6", default-features = false }
