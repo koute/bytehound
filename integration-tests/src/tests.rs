@@ -543,6 +543,10 @@ pub fn run_in_the_background_on_target< C, E, S, P, Q >( cwd: C, executable: E, 
     run_in_the_background( cwd, executable, &args, &envs )
 }
 
+fn get_log_level() -> OsString {
+    std::env::var_os( "MEMORY_PROFILER_LOG" ).unwrap_or_else( || "debug".into() )
+}
+
 #[test]
 fn test_basic() {
     let cwd = workdir();
@@ -555,7 +559,7 @@ fn test_basic() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-basic.dat".into())
         ]
     ).assert_success();
@@ -575,7 +579,7 @@ fn test_mmap() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-mmap.dat".into())
         ]
     ).assert_success();
@@ -724,7 +728,7 @@ fn run_jemalloc_test( name: &str ) {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", format!( "memory-profiling-{}.dat", name ).into())
         ]
     ).assert_success();
@@ -802,7 +806,7 @@ fn test_alloc_in_tls() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-alloc-in-tls.dat".into())
         ]
     ).assert_success();
@@ -822,7 +826,7 @@ fn test_start_stop_generic( kind: &str ) {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", format!( "start-stop_{}.dat", kind ).into()),
             ("MEMORY_PROFILER_DISABLE_BY_DEFAULT", "1".into())
         ]
@@ -878,7 +882,7 @@ fn test_fork() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "fork_%n.dat".into())
         ]
     ).assert_success();
@@ -924,7 +928,7 @@ fn test_normal_exit() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "exit_1.dat".into())
         ]
     ).assert_success();
@@ -949,7 +953,7 @@ fn test_immediate_exit_unistd() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "exit_2.dat".into())
         ]
     ).assert_success();
@@ -974,7 +978,7 @@ fn test_immediate_exit_stdlib() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "exit_3.dat".into())
         ]
     ).assert_success();
@@ -1026,7 +1030,7 @@ fn test_gather_generic( expected_allocations: usize, callback: impl FnOnce( Gath
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", format!( "gather_{}.dat", port ).into()),
             ("MEMORY_PROFILER_REGISTER_SIGUSR1", "0".into()),
             ("MEMORY_PROFILER_REGISTER_SIGUSR2", "0".into()),
@@ -1160,7 +1164,7 @@ fn test_dlopen() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "dlopen.dat".into())
         ]
     ).assert_success();
@@ -1185,7 +1189,7 @@ fn test_throw() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "throw.dat".into())
         ]
     ).assert_success();
@@ -1238,7 +1242,7 @@ fn test_longjmp() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "longjmp.dat".into())
         ]
     ).assert_success();
@@ -1291,7 +1295,7 @@ fn test_backtrace() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "backtrace.dat".into())
         ]
     ).assert_success();
@@ -1311,7 +1315,7 @@ fn test_return_opt_u128() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "return-opt-u128.dat".into())
         ]
     ).assert_success();
@@ -1331,7 +1335,7 @@ fn test_return_f64() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "return-f64.dat".into())
         ]
     ).assert_success();
@@ -1352,7 +1356,7 @@ fn test_wasmtime_linking() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "linking.dat".into())
         ]
     ).assert_success();
@@ -1377,7 +1381,7 @@ fn test_wasmtime_interrupt() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "interrupt.dat".into())
         ]
     ).assert_success();
@@ -1402,7 +1406,7 @@ fn test_cull() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-cull.dat".into()),
             ("MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS", "1".into()),
             ("MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD", "100".into())
@@ -1445,7 +1449,7 @@ fn test_cross_thread_alloc_culled() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-cross-thread-alloc-culled.dat".into()),
             ("MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS", "1".into()),
             ("MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD", "1000".into())
@@ -1469,7 +1473,7 @@ fn test_cross_thread_alloc_non_culled() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-cross-thread-alloc-non-culled.dat".into()),
             ("MEMORY_PROFILER_CULL_TEMPORARY_ALLOCATIONS", "1".into()),
             ("MEMORY_PROFILER_TEMPORARY_ALLOCATION_LIFETIME_THRESHOLD", "1".into())
@@ -1502,7 +1506,7 @@ fn test_track_spawned_children() {
         EMPTY_ARGS,
         &[
             ("LD_PRELOAD", preload_path().into_os_string()),
-            ("MEMORY_PROFILER_LOG", "debug".into()),
+            ("MEMORY_PROFILER_LOG", get_log_level()),
             ("MEMORY_PROFILER_TRACK_CHILD_PROCESSES", "1".into()),
             ("MEMORY_PROFILER_OUTPUT", "memory-profiling-%e.dat".into())
         ]
