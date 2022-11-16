@@ -609,7 +609,9 @@ pub fn update_smaps(
                 name = Cow::Borrowed( "[anon:bytehound]" );
             }
         } else if let Some( (_, compact_name) ) = state.tmp_emulated_vma_name_map.get( address ) {
-            name = Cow::Owned( format!( "[anon:{}]", compact_name.kind().as_str() ) );
+            if name != "anon_inode:[perf_event]" {
+                name = Cow::Owned( format!( "[anon:{}]", compact_name.kind().as_str() ) );
+            }
             id = Some( compact_name.id() );
         }
 
