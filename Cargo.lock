@@ -572,7 +572,7 @@ dependencies = [
  "fast_range_map",
  "glob 0.2.11",
  "goblin",
- "hashbrown 0.12.3",
+ "hashbrown 0.13.1",
  "lazy_static",
  "libc",
  "log",
@@ -1108,7 +1108,7 @@ version = "0.1.0"
 dependencies = [
  "btree-range-map",
  "criterion",
- "hashbrown 0.12.3",
+ "hashbrown 0.13.1",
  "oorandom",
  "rangemap",
 ]
@@ -1297,8 +1297,14 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
+
+[[package]]
+name = "hashbrown"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33ff8ae62cd3a9102e5637afc8452c55acf3844001bd5374e0b0bd7b6616c038"
 dependencies = [
- "ahash 0.7.6",
+ "ahash 0.8.0",
 ]
 
 [[package]]
@@ -1763,7 +1769,7 @@ dependencies = [
 [[package]]
 name = "nwind"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
+source = "git+https://github.com/koute/not-perf.git?rev=911723c#911723cf9099cc0f9e45b921f045117535cd1f06"
 dependencies = [
  "addr2line 0.16.0",
  "byteorder",
@@ -1827,17 +1833,6 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d17b78036a60663b797adeaee46f5c9dfebb86948d1255007a1d6be0271ff99"
-dependencies = [
- "instant",
- "lock_api 0.4.7",
- "parking_lot_core 0.8.5",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3742b2c103b9f06bc9fff0a37ff4912935851bee6d36f3c02bcc755bcfec228f"
@@ -1879,20 +1874,6 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d76e8e1493bcac0d2766c42737f34458f1c8c50c0d23bcb24ea953affb273216"
-dependencies = [
- "cfg-if 1.0.0",
- "instant",
- "libc",
- "redox_syscall 0.2.15",
- "smallvec 1.9.0",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "parking_lot_core"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09a279cbf25cb0757810394fbc1e359949b59e348145c643a939a525692e6929"
@@ -1919,12 +1900,12 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 [[package]]
 name = "perf_event_open"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
+source = "git+https://github.com/koute/not-perf.git?rev=911723c#911723cf9099cc0f9e45b921f045117535cd1f06"
 dependencies = [
  "byteorder",
  "libc",
  "log",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.1",
 ]
 
 [[package]]
@@ -2038,7 +2019,7 @@ dependencies = [
 [[package]]
 name = "proc-maps"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
+source = "git+https://github.com/koute/not-perf.git?rev=911723c#911723cf9099cc0f9e45b921f045117535cd1f06"
 
 [[package]]
 name = "quick-error"
@@ -2799,7 +2780,7 @@ dependencies = [
 [[package]]
 name = "thread-local-reentrant"
 version = "0.1.0"
-source = "git+https://github.com/koute/not-perf.git?rev=18bd8d3#18bd8d3788e678becf09cfe585cb886587faa70b"
+source = "git+https://github.com/koute/not-perf.git?rev=911723c#911723cf9099cc0f9e45b921f045117535cd1f06"
 dependencies = [
  "libc",
 ]
