@@ -847,6 +847,25 @@ pub unsafe extern "C" fn __mmap( addr: *mut c_void, length: size_t, prot: c_int,
 }
 
 #[inline(always)]
+unsafe fn call_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t ) -> *mut c_void {
+    let mut ptr = libc::MAP_FAILED;
+    if !crate::global::is_pr_set_vma_anon_name_supported() && flags & (libc::MAP_FIXED | libc::MAP_FIXED_NOREPLACE) == 0 {
+        let p0 = syscall::mmap( std::ptr::null_mut(), length + 8192, 0, libc::MAP_PRIVATE, crate::global::dummy_memfd(), 0 );
+        if p0 != libc::MAP_FAILED {
+            ptr = syscall::mmap( p0.add( 4096 ), length, prot, flags | libc::MAP_FIXED, fildes, off );
+            if ptr == libc::MAP_FAILED {
+                error!( "Failed to mmap over a dummy mapping!" );
+                libc::abort();
+            }
+        }
+    } else {
+        ptr = syscall::mmap( addr, length, prot, flags, fildes, off )
+    }
+
+    ptr
+}
+
+#[inline(always)]
 unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, kind: MapKind ) -> *mut c_void {
     if !opt::is_initialized() || !opt::get().gather_maps {
         return syscall::mmap( addr, length, prot, flags, fildes, off );
@@ -857,7 +876,7 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
         if let Some( backtrace ) = unwind::grab_from_any( &mut thread ) {
             let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
             let timestamp = get_timestamp();
-            let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
+            let ptr = call_mmap( addr, length, prot, flags, fildes, off );
             if ptr != libc::MAP_FAILED {
                 let range = ptr as u64..ptr as u64 + length as u64;
                 let source = MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() };
@@ -880,7 +899,7 @@ unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: 
     }
 
     let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
-    let ptr = syscall::mmap( addr, length, prot, flags, fildes, off );
+    let ptr = call_mmap( addr, length, prot, flags, fildes, off );
     maps_registry.set_vma_name( ptr, length, id, kind );
 
     ptr
@@ -896,15 +915,25 @@ unsafe extern "C" fn munmap_internal( ptr: *mut c_void, length: size_t ) -> c_in
         if let Some( backtrace ) = unwind::grab_from_any( &mut thread ) {
             let mut maps_registry = crate::global::MMAP_REGISTRY.lock().unwrap();
             let timestamp = get_timestamp();
-            let result = syscall::munmap( ptr, length );
-            if result == 0 {
+            let result;
+            if !crate::global::is_pr_set_vma_anon_name_supported() {
+                result = syscall::mmap( ptr, length, 0, libc::MAP_PRIVATE | libc::MAP_FIXED, crate::global::dummy_memfd(), 0 ) != libc::MAP_FAILED;
+            } else {
+                result = syscall::munmap( ptr, length ) == 0;
+            }
+
+            if result {
                 let range = ptr as u64..ptr as u64 + length as u64;
                 let source = MapSource { timestamp, backtrace: backtrace.clone(), tid: thread.system_tid() };
                 maps_registry.on_munmap( range, source );
                 maps_registry.clear_vma_name( ptr, length );
             }
 
-            return result;
+            if result {
+                return 0;
+            } else {
+                return -1;
+            }
         }
     }
 

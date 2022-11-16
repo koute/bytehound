@@ -260,6 +260,7 @@ impl< T > std::ops::DerefMut for CacheAligned< T > {
 }
 
 pub type HashMap< K, V > = hashbrown::HashMap< K, V, ahash::random_state::RandomState >;
+pub type HashSet< T > = hashbrown::HashSet< T, ahash::random_state::RandomState >;
 pub type Entry< 'a, K, V > = hashbrown::hash_map::Entry< 'a, K, V, ahash::random_state::RandomState >;
 pub const fn empty_hashmap< K, V >() -> HashMap< K, V > {
     hashbrown::HashMap::with_hasher( ahash::random_state::RandomState::with_seeds(

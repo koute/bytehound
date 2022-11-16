@@ -1,4 +1,4 @@
-use crate::utils::HashMap;
+use crate::utils::{HashMap, HashSet};
 use std::ops::Range;
 use std::io::{Read, Write};
 use std::borrow::Cow;
@@ -318,6 +318,8 @@ pub struct State {
     tmp_new_map_by_id: HashMap< u64, Map >,
     tmp_all_new_events: Vec< PendingEvent >,
     tmp_emulated_vma_name_map: fast_range_map::RangeMap< CompactName >,
+    tmp_padding_maps: Vec< (u64, u64) >,
+    tmp_seen_maps: HashSet< u64 >,
 
     map_by_id: HashMap< u64, Map >,
     pending: HashMap< u64, PendingMap >,
@@ -328,6 +330,11 @@ impl State {
     pub fn new_preallocated() -> Self {
         let mut state = Self::default();
         state.tmp_buffer.reserve( 64 * 1024 );
+        if !crate::global::is_pr_set_vma_anon_name_supported() {
+            state.tmp_padding_maps.reserve( 1024 );
+            state.tmp_seen_maps.reserve( 4096 );
+        }
+
         state
     }
 
@@ -340,6 +347,8 @@ impl State {
         self.tmp_new_map_by_id.clear();
         self.tmp_all_new_events.clear();
         self.tmp_emulated_vma_name_map.clear();
+        self.tmp_padding_maps.clear();
+        self.tmp_seen_maps.clear();
     }
 }
 
@@ -585,6 +594,18 @@ pub fn update_smaps(
         let mut id: Option< u64 > = None;
 
         const BYTEHOUND_MEMFD_PREFIX: &str = "/memfd:bytehound::";
+        const BYTEHOUND_MEMFD_PADDING: &str = "/memfd:bytehound_padding";
+
+        let mut is_padding = false;
+        if !crate::global::is_pr_set_vma_anon_name_supported() {
+            if name.starts_with( BYTEHOUND_MEMFD_PADDING ) {
+                state.tmp_padding_maps.push( (address, address_end - address) );
+                is_padding = true;
+            } else {
+                state.tmp_seen_maps.insert( address );
+                state.tmp_seen_maps.insert( address_end - 1 );
+            }
+        }
 
         // Try to extract the ID we've packed into the name.
         if crate::global::is_pr_set_vma_anon_name_supported() && name.starts_with( "[anon:" ) {
@@ -657,6 +678,10 @@ pub fn update_smaps(
             }
 
             lines.next();
+        }
+
+        if is_padding {
+            continue;
         }
 
         debug_assert_eq!( rss, shared_clean + shared_dirty + private_clean + private_dirty );
@@ -857,6 +882,17 @@ pub fn update_smaps(
 
     emit_events( backtrace_cache, serializer, state.tmp_all_new_events.drain( .. ) );
     std::mem::swap( &mut state.map_by_id, &mut state.tmp_new_map_by_id );
+
+    for (address, length) in state.tmp_padding_maps.drain( .. ) {
+        if state.tmp_seen_maps.contains( &(address - 1) ) || state.tmp_seen_maps.contains( &(address + length) ) {
+            continue;
+        }
+
+        trace!( "Unmapping a padding map at 0x{:016X}..0x{:016X}", address, address + length );
+        unsafe {
+            crate::syscall::munmap( address as *mut libc::c_void, length as libc::size_t );
+        }
+    }
 
     for (id, mmap) in state.tmp_mmaps.drain() {
         debug!( "Map registered yet not found in smaps: 0x{:016X}..0x{:016X}, id = {}", mmap.address, mmap.address + mmap.requested_length, id );

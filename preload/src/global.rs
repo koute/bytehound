@@ -77,9 +77,16 @@ pub fn next_map_id() -> u64 {
 pub static MMAP_REGISTRY: Mutex< crate::smaps::MapsRegistry > = Mutex::new( crate::smaps::MapsRegistry::new() );
 static mut PR_SET_VMA_ANON_NAME_SUPPORTED: bool = true;
 
+static mut DUMMY_MEMFD: i32 = -1;
+
 #[inline(always)]
 pub fn is_pr_set_vma_anon_name_supported() -> bool {
     unsafe { crate::global::PR_SET_VMA_ANON_NAME_SUPPORTED }
+}
+
+#[inline(always)]
+pub fn dummy_memfd() -> i32 {
+    unsafe { DUMMY_MEMFD }
 }
 
 #[cfg(feature = "jemalloc")]
@@ -594,6 +601,18 @@ fn initialize_stage_1() {
     }
 
     check_set_vma_anon_name();
+    if !is_pr_set_vma_anon_name_supported() {
+        unsafe {
+            let fd = libc::memfd_create( b"bytehound_padding\0".as_ptr().cast(), libc::MFD_CLOEXEC );
+            if fd < 0 {
+                error!( "Failed to create a memfd for a dummy map!" );
+                libc::abort();
+            }
+
+            info!( "Dummy memfd created: fd = {}", fd );
+            DUMMY_MEMFD = fd;
+        }
+    }
 
     if !crate::opt::get().disabled_by_default {
         toggle();
