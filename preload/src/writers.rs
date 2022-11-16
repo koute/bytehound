@@ -3,7 +3,6 @@ use std::ffi::CStr;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::mem;
-use std::ops::Deref;
 use std::path::Path;
 
 use nwind::proc_maps::Region;
@@ -29,10 +28,28 @@ fn read_maps() -> io::Result< Vec< Region > > {
 }
 
 fn mmap_file< P: AsRef< Path >, R, F: FnOnce( &[u8] ) -> R >( path: P, callback: F ) -> io::Result< R > {
+    use std::os::fd::AsRawFd;
+
     let fp = File::open( &path )?;
-    let mmap = unsafe { memmap::Mmap::map( &fp ) }?;
-    let slice = mmap.deref();
-    Ok( callback( slice ) )
+    let length = fp.metadata()?.len();
+    let pointer = unsafe {
+        crate::syscall::mmap( std::ptr::null_mut(), length as libc::size_t, libc::PROT_READ, libc::MAP_PRIVATE, fp.as_raw_fd(), 0 )
+    };
+    if pointer == libc::MAP_FAILED {
+        return Err( std::io::Error::last_os_error() );
+    }
+
+    struct UnmapOnDrop( *mut libc::c_void, u64 );
+    impl Drop for UnmapOnDrop {
+        fn drop( &mut self ) {
+            if unsafe { crate::syscall::munmap( self.0, self.1 as libc::size_t ) } < 0 {
+                error!( "munmap failed" );
+            }
+        }
+    }
+
+    let _unmap_on_drop = UnmapOnDrop( pointer, length );
+    Ok( callback( unsafe { std::slice::from_raw_parts( pointer.cast::< u8 >(), length as usize ) } ) )
 }
 
 fn write_file< U: Write >( mut serializer: &mut U, path: &str, bytes: &[u8] ) -> io::Result< () > {
