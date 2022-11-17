@@ -24,7 +24,9 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
     const S_BACKTRACE: usize = 4;
     const S_FILE: usize = 5;
     const S_STATS: usize = 6;
-    const S_MAX: usize = 7;
+    const S_MAPS: usize = 7;
+    const S_MAPS_USAGE: usize = 8;
+    const S_MAX: usize = 9;
 
     const SIZE_TO_NAME: &[&str] = &[
         "Other",
@@ -33,7 +35,9 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
         "Free",
         "Backtrace",
         "Files",
-        "GroupStatistics"
+        "GroupStatistics",
+        "Maps",
+        "MapsUsage",
     ];
 
     #[derive(Default)]
@@ -102,6 +106,10 @@ pub fn analyze_size( fp: impl Read + Send + 'static ) -> Result< (), io::Error >
             | Event::File { .. } => S_FILE,
             | Event::File64 { .. } => S_FILE,
             | Event::GroupStatistics { .. } => S_STATS,
+            | Event::AddRegion { .. }
+            | Event::RemoveRegion { .. }
+            | Event::MemoryMapEx { .. } => S_MAPS,
+            | Event::UpdateRegionUsage { .. } => S_MAPS_USAGE,
             _ => S_OTHER
         };
 
