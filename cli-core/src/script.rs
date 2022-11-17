@@ -1014,8 +1014,8 @@ struct Graph {
     hide_empty: bool,
     trim_left: bool,
     trim_right: bool,
-    extend_until: Option< Duration >,
-    truncate_until: Option< Duration >,
+    start_at: Option< Duration >,
+    end_at: Option< Duration >,
     allocation_lists: Vec< AllocationList >,
     map_lists: Vec< MapList >,
     labels: Vec< Option< String > >,
@@ -1117,8 +1117,8 @@ impl Graph {
             hide_empty: false,
             trim_left: false,
             trim_right: false,
-            extend_until: None,
-            truncate_until: None,
+            start_at: None,
+            end_at: None,
             allocation_lists: Vec::new(),
             map_lists: Vec::new(),
             labels: Vec::new(),
@@ -1201,15 +1201,15 @@ impl Graph {
         cloned
     }
 
-    fn extend_until( &mut self, offset: Duration ) -> Self {
+    fn start_at( &mut self, offset: Duration ) -> Self {
         let mut cloned = self.clone();
-        cloned.extend_until = Some( offset );
+        cloned.start_at = Some( offset );
         cloned
     }
 
-    fn truncate_until( &mut self, offset: Duration ) -> Self {
+    fn end_at( &mut self, offset: Duration ) -> Self {
         let mut cloned = self.clone();
-        cloned.truncate_until = Some( offset );
+        cloned.end_at = Some( offset );
         cloned
     }
 
@@ -1305,7 +1305,7 @@ impl Graph {
             return Err( error( "not every allocation list given is from the same data file" ) );
         }
 
-        let threshold = self.truncate_until.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp );
+        let threshold = self.end_at.map( |offset| data.initial_timestamp + offset.0 ).unwrap_or( data.last_timestamp );
 
         let mut seen = HashSet::new();
         let ops_for_list: Vec< _ > = lists.iter_mut().map( |list|
@@ -1401,27 +1401,47 @@ impl Graph {
     fn save_to_string_impl( &self, xs: &[u64], datapoints_for_ops: &[Vec< (u64, u64) >], labels: &[Option< String >] ) -> Result< String, String > {
         let data = self.data().ok_or_else( || "empty graph".to_owned() )?;
 
+        let mut x_min =
+            if self.trim_left {
+                xs.first().copied().unwrap_or( 0 )
+            } else {
+                data.initial_timestamp.as_usecs()
+            };
+
+        let mut x_max =
+            if self.trim_right {
+                xs.last().copied().unwrap_or( 0 )
+            } else {
+                data.last_timestamp.as_usecs()
+            };
+
+        if let Some( start_at ) = self.start_at {
+            x_min = std::cmp::max( x_min, (data.initial_timestamp + start_at.0).as_usecs() );
+        }
+
+        if let Some( end_at ) = self.end_at {
+            x_max = (data.initial_timestamp + end_at.0).as_usecs();
+        }
+
+        x_max = std::cmp::max( x_min, x_max );
+
+        let datapoints_for_ops: Vec< _ > =
+            if x_min > xs.first().copied().unwrap_or( 0 ) || x_max < xs.last().copied().unwrap_or( 0 ) {
+                datapoints_for_ops.iter().map( |list| {
+                    let list = list.as_slice();
+                    let list = &list[ list.iter().take_while( |&&(x, _)| x < x_min ).count().. ];
+                    let list = &list[ ..list.len() - list.iter().rev().take_while( |&&(x, _)| x > x_max ).count() ];
+                    list
+                }).collect()
+            } else {
+                datapoints_for_ops.iter().map( |list| list.as_slice() ).collect()
+            };
+
         let mut max_usage = 0;
-        for datapoints in datapoints_for_ops {
+        for &datapoints in &datapoints_for_ops {
             for (_, value) in datapoints {
                 max_usage = std::cmp::max( max_usage, *value );
             }
-        }
-
-        let mut x_min = xs.first().copied().unwrap_or( 0 );
-        let mut x_max = xs.last().copied().unwrap_or( 0 );
-        if let Some( truncate_until ) = self.truncate_until {
-            x_max = std::cmp::min( x_max, (data.initial_timestamp + truncate_until.0).as_usecs() );
-        }
-        if let Some( extend_until ) = self.extend_until {
-            x_max = std::cmp::max( x_max, (data.initial_timestamp + extend_until.0).as_usecs() );
-        }
-
-        if !self.trim_left {
-            x_min = std::cmp::min( x_min, data.initial_timestamp.as_usecs() );
-        }
-        if !self.trim_right {
-            x_max = std::cmp::max( x_max, data.last_timestamp.as_usecs() );
         }
 
         // This is a dirty hack, but it works.
@@ -2056,8 +2076,8 @@ impl Engine {
         engine.register_fn( "trim_left", Graph::trim_left );
         engine.register_fn( "trim_right", Graph::trim_right );
         engine.register_fn( "trim", Graph::trim );
-        engine.register_fn( "extend_until", Graph::extend_until );
-        engine.register_fn( "truncate_until", Graph::truncate_until );
+        engine.register_fn( "start_at", Graph::start_at );
+        engine.register_fn( "end_at", Graph::end_at );
         engine.register_fn( "only_non_empty_series", Graph::only_non_empty_series );
         engine.register_fn( "without_legend", Graph::without_legend );
         engine.register_fn( "without_axes", Graph::without_axes );

@@ -1,13 +1,13 @@
-## Graph::extend_until
+## Graph::start_at
 
 ```rhai
-fn extend_until(
+fn start_at(
     self: Graph,
     duration: Duration
 ) -> Graph
 ```
 
-Extends the graph until given `duration` as measured from the start of the profiling.
+Make the graph start after the given `duration` as measured from the start of the profiling.
 
 ### Examples
 
@@ -21,13 +21,13 @@ graph()
     .save();
 ```
 
-We can extend it to the right like this:
+We can make it start later like this:
 
 ```rhai,%run
 graph()
     // %hide_next_line
     .trim_left()
     .add(allocations())
-    .extend_until(data().runtime() + s(5))
+    .start_at(s(2))
     .save();
 ```

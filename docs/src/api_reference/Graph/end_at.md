@@ -1,13 +1,13 @@
-## Graph::truncate_until
+## Graph::end_at
 
 ```rhai
-fn truncate_until(
+fn end_at(
     self: Graph,
     duration: Duration
 ) -> Graph
 ```
 
-Truncate the graph until given `duration` as measured from the start of the profiling.
+Truncate or extend the graph until given `duration` as measured from the start of the profiling.
 
 ### Examples
 
@@ -28,6 +28,17 @@ graph()
     // %hide_next_line
     .trim_left()
     .add(allocations())
-    .truncate_until(data().runtime() - s(2))
+    .end_at(data().runtime() - s(2))
+    .save();
+```
+
+It can also be used to extend the graph:
+
+```rhai,%run
+graph()
+    // %hide_next_line
+    .trim_left()
+    .add(allocations())
+    .end_at(data().runtime() + s(5))
     .save();
 ```
