@@ -1915,6 +1915,12 @@ fn to_string( value: rhai::plugin::Dynamic ) -> String {
         format!( "{} map(s)", value.len() )
     } else if value.is::< Backtrace >() {
         value.cast::< Backtrace >().to_string()
+    } else if value.is::< Option< Backtrace > >() {
+        if let Some( backtrace ) = value.cast::< Option< Backtrace > >() {
+            backtrace.to_string()
+        } else {
+            "None".into()
+        }
     } else {
         value.type_name().into()
     }
