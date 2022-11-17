@@ -1,5 +1,3 @@
-#![feature(const_btree_new)]
-
 use std::ops::Range;
 use std::collections::BTreeMap;
 
