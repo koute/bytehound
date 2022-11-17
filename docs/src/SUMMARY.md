@@ -116,7 +116,6 @@
       - [`\*` (operator)](./api_reference/Duration/op_multiply.md)
    - [`Graph`](./api_reference/Graph.md)
       - [`add`](./api_reference/Graph/add.md)
-      - [`extend_until`](./api_reference/Graph/extend_until.md)
       - [`only_non_empty_series`](./api_reference/Graph/only_non_empty_series.md)
       - [`save_each_series_as_flamegraph`](./api_reference/Graph/save_each_series_as_flamegraph.md)
       - [`save_each_series_as_graph`](./api_reference/Graph/save_each_series_as_graph.md)
