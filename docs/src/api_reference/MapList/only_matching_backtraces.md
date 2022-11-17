@@ -1,17 +1,17 @@
-## AllocationList::only_matching_backtraces
+## MapList::only_matching_backtraces
 
 ```rhai
 fn only_matching_backtraces(
-    self: AllocationList,
+    self: MapList,
     backtrace_ids: [Backtrace|AllocationList|MapList|AllocationGroupList|Integer]
-) -> AllocationList
+) -> MapList
 ```
 
 ```rhai
 fn only_matching_backtraces(
-    self: AllocationList,
+    self: MapList,
     backtrace_ids: Backtrace|AllocationList|MapList|AllocationGroupList|Integer
-) -> AllocationList
+) -> MapList
 ```
 
-Returns a new `AllocationList` with only the allocations that come from one of the given `backtrace_ids`.
+Returns a new `MapList` with only the maps that come from one of the given `backtrace_ids`.

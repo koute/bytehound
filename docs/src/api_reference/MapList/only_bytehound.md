@@ -1,0 +1,9 @@
+## MapList::only_bytehound
+
+```rhai
+fn only_bytehound(
+    self: MapList
+) -> MapList
+```
+
+Returns a new `MapList` with only maps which were mapped by Bytehound itself.

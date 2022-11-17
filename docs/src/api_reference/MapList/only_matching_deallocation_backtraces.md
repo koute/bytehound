@@ -1,17 +1,17 @@
-## AllocationList::only_matching_deallocation_backtraces
+## MapList::only_matching_deallocation_backtraces
 
 ```rhai
 fn only_matching_deallocation_backtraces(
-    self: AllocationList,
+    self: MapList,
     backtrace_ids: [Backtrace|AllocationList|MapList|AllocationGroupList|Integer]
-) -> AllocationList
+) -> MapList
 ```
 
 ```rhai
 fn only_matching_deallocation_backtraces(
-    self: AllocationList,
+    self: MapList,
     backtrace_ids: Backtrace|AllocationList|MapList|AllocationGroupList|Integer
-) -> AllocationList
+) -> MapList
 ```
 
-Returns a new `AllocationList` with only the allocations that were deallocated at one of the given `backtrace_ids`.
+Returns a new `MapList` with only the maps that were unmapped at one of the given `backtrace_ids`.
