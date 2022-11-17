@@ -1447,6 +1447,7 @@ impl Graph {
         // This is a dirty hack, but it works.
         thread_local! {
             static SCALE_X: Cell< (u64, u64) > = Cell::new( (0, 0) );
+            static SCALE_X_TOTAL: Cell< (u64, u64) > = Cell::new( (0, 0) );
             static SCALE_Y: Cell< (u64, u64) > = Cell::new( (0, 0) );
             static KIND: Cell< GraphKind > = Cell::new( GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) );
         }
@@ -1569,7 +1570,7 @@ impl Graph {
 
         impl plotters::coord::ranged1d::ValueFormatter< u64 > for TimeRangeOffset {
             fn format( value: &u64 ) -> String {
-                SCALE_X.with( |cell| {
+                SCALE_X_TOTAL.with( |cell| {
                     let (min, _max) = cell.get();
                     debug_assert!( *value >= min );
                     let relative = *value - min;
@@ -1598,6 +1599,7 @@ impl Graph {
         let graph_kind = self.graph_kind().unwrap_or( GraphKind::Allocation( AllocationGraphKind::MemoryUsage ) );
 
         SCALE_X.with( |cell| cell.set( (x_min, x_max + 1) ) );
+        SCALE_X_TOTAL.with( |cell| cell.set( (data.initial_timestamp.as_usecs(), data.last_timestamp.as_usecs() + 1) ) );
         SCALE_Y.with( |cell| cell.set( (0, (max_usage + 1) as u64) ) );
         KIND.with( |cell| cell.set( graph_kind ) );
 
