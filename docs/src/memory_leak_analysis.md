@@ -80,21 +80,10 @@ We have a clear-cut memory leak here! Every allocation from this backtrace was l
 
 #### Group #1
 
-Let's try the next one:
-
-```rhai,%run
-analyze_group(groups[1]);
-```
-
-Looks like while this is *technically* a leak it's just one allocation
-made at the very start; we can just ignore this one.
-
-#### Group #2
-
 Let's try yet another one:
 
 ```rhai,%run
-analyze_group(groups[2]);
+analyze_group(groups[1]);
 ```
 
 Now this is interesting. If we only look at the supposedly leaked part it
@@ -106,12 +95,12 @@ the leaked part would get.
 So is this a problem? Usually not. If you have something like, say, an LRU cache,
 you might see this kind of allocation pattern.
 
-#### Group #3
+#### Group #2
 
 Let's look at the last group from our original leaked graph:
 
 ```rhai,%run
-analyze_group(groups[3]);
+analyze_group(groups[2]);
 ```
 
 This is the toughest case so far. Do we have a memory leak here on not? Well, it depends.
