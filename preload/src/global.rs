@@ -680,6 +680,7 @@ static ALLOW_STAGE_2: AtomicBool = AtomicBool::new( false );
 static INIT_ARRAY: unsafe extern "C" fn( libc::c_int, *mut *mut u8, *mut *mut u8 ) = {
     unsafe extern "C" fn function( _argc: libc::c_int, _argv: *mut *mut u8, _envp: *mut *mut u8 ) {
         ALLOW_STAGE_2.store( true, Ordering::SeqCst );
+        try_enable( STATE.load( Ordering::Relaxed ) );
     }
     function
 };
