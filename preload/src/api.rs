@@ -425,7 +425,10 @@ pub unsafe extern "C" fn free( pointer: *mut c_void ) {
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_malloc( requested_size: size_t ) -> *mut c_void {
-    jemalloc_allocate( requested_size, JeAllocationKind::Malloc )
+    let pointer = jemalloc_allocate( requested_size, JeAllocationKind::Malloc );
+    #[cfg(feature = "debug-logs")]
+    trace!( "_rjem_malloc: requested_size={} -> 0x{:X}", requested_size, pointer as usize );
+    pointer
 }
 
 enum JeAllocationKind {
@@ -498,7 +501,10 @@ unsafe fn jemalloc_allocate( requested_size: usize, kind: JeAllocationKind ) -> 
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_mallocx( requested_size: size_t, flags: c_int ) -> *mut c_void {
-    jemalloc_allocate( requested_size, JeAllocationKind::MallocX( flags ) )
+    let pointer = jemalloc_allocate( requested_size, JeAllocationKind::MallocX( flags ) );
+    #[cfg(feature = "debug-logs")]
+    trace!( "_rjem_mallocx: requested_size={} flags={} -> 0x{:X}", requested_size, flags, pointer as usize );
+    pointer
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -508,11 +514,17 @@ pub unsafe extern "C" fn _rjem_calloc( count: size_t, element_size: size_t ) -> 
         Some( size ) => size
     };
 
-    jemalloc_allocate( requested_size, JeAllocationKind::Calloc )
+    let pointer = jemalloc_allocate( requested_size, JeAllocationKind::Calloc );
+    #[cfg(feature = "debug-logs")]
+    trace!( "_rjem_calloc: requested_size={} -> 0x{:X}", requested_size, pointer as usize );
+    pointer
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: size_t, flags: c_int ) {
+    #[cfg(feature = "debug-logs")]
+    trace!( "_rjem_sdallocx: pointer=0x{:X} requested_size={} flags={}", pointer as usize, requested_size, flags );
+
     let address = match NonZeroUsize::new( pointer as usize ) {
         Some( address ) => address,
         None => return
@@ -549,12 +561,18 @@ pub unsafe extern "C" fn _rjem_sdallocx( pointer: *mut c_void, requested_size: s
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_realloc( old_pointer: *mut c_void, requested_size: size_t ) -> *mut c_void {
-    jemalloc_reallocate( old_pointer, requested_size, None )
+    let new_pointer = jemalloc_reallocate( old_pointer, requested_size, None );
+    #[cfg(feature = "debug-logs")]
+    trace!( "_rjem_realloc: old_pointer=0x{:X} requested_size={} -> 0x{:X}", old_pointer as usize, requested_size, new_pointer as usize );
+    new_pointer
 }
 
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _rjem_rallocx( old_pointer: *mut c_void, requested_size: size_t, flags: c_int ) -> *mut c_void {
-    jemalloc_reallocate( old_pointer, requested_size, Some( flags ) )
+    let new_pointer = jemalloc_reallocate( old_pointer, requested_size, Some( flags ) );
+    #[cfg(feature = "debug-logs")]
+    trace!( "_rjem_rallocx: old_pointer=0x{:X} requested_size={} flags={} -> 0x{:X}", old_pointer as usize, requested_size, flags, new_pointer as usize );
+    new_pointer
 }
 
 unsafe fn jemalloc_reallocate( old_pointer: *mut c_void, requested_size: size_t, flags: Option< c_int > ) -> *mut c_void {
