@@ -51,6 +51,7 @@ use tikv_jemalloc_sys::mallctlbymib as jem_mallctlbymib_real;
 use tikv_jemalloc_sys::malloc_stats_print as jem_malloc_stats_print_real;
 use tikv_jemalloc_sys::free as jem_free_real;
 use tikv_jemalloc_sys::is_initialized as jem_is_initialized;
+use tikv_jemalloc_sys::aligned_alloc as jem_aligned_alloc_real;
 
 extern "C" {
     #[link_name = "_rjem_mp_memalign"]
@@ -435,7 +436,8 @@ enum JeAllocationKind {
     Malloc,
     MallocX( c_int ),
     Calloc,
-    Aligned( size_t )
+    Memalign( size_t ),
+    AlignedAlloc( size_t )
 }
 
 fn translate_jemalloc_flags( flags: c_int ) -> u32 {
@@ -460,7 +462,8 @@ unsafe fn jemalloc_allocate( requested_size: usize, kind: JeAllocationKind ) -> 
         JeAllocationKind::Malloc => (jem_malloc_real( effective_size ), event::ALLOC_FLAG_JEMALLOC),
         JeAllocationKind::MallocX( flags ) => (jem_mallocx_real( effective_size, flags ), translate_jemalloc_flags( flags )),
         JeAllocationKind::Calloc => (jem_calloc_real( 1, effective_size ), event::ALLOC_FLAG_JEMALLOC | event::ALLOC_FLAG_CALLOC),
-        JeAllocationKind::Aligned( alignment ) => (jem_memalign_real( alignment, effective_size as size_t ), event::ALLOC_FLAG_JEMALLOC),
+        JeAllocationKind::Memalign( alignment ) => (jem_memalign_real( alignment, effective_size as size_t ), event::ALLOC_FLAG_JEMALLOC),
+        JeAllocationKind::AlignedAlloc( alignment ) => (jem_aligned_alloc_real( alignment, effective_size as size_t ), event::ALLOC_FLAG_JEMALLOC)
     };
 
     if !crate::global::is_actively_running() {
@@ -739,7 +742,7 @@ pub unsafe extern "C" fn _rjem_posix_memalign( memptr: *mut *mut c_void, alignme
         return libc::EINVAL;
     }
 
-    let pointer = jemalloc_allocate( requested_size, JeAllocationKind::Aligned( alignment ) );
+    let pointer = jemalloc_allocate( requested_size, JeAllocationKind::Memalign( alignment ) );
     *memptr = pointer;
 
     if pointer.is_null() {
@@ -750,8 +753,13 @@ pub unsafe extern "C" fn _rjem_posix_memalign( memptr: *mut *mut c_void, alignme
 }
 
 #[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn _rjem_aligned_alloc( _alignment: size_t, _size: size_t ) -> *mut c_void {
-    todo!( "_rjem_aligned_alloc" );
+pub unsafe extern "C" fn _rjem_aligned_alloc( alignment: size_t, size: size_t ) -> *mut c_void {
+    if !alignment.is_power_of_two() || size % alignment != 0 {
+        *libc::__errno_location() = libc::EINVAL;
+        return std::ptr::null_mut();
+    }
+
+    jemalloc_allocate( size, JeAllocationKind::AlignedAlloc( alignment ) )
 }
 
 #[cfg_attr(not(test), no_mangle)]
