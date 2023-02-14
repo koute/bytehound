@@ -562,7 +562,7 @@ pub fn update_smaps(
         std::mem::drop( fp );
     };
 
-    let smaps = std::str::from_utf8( &state.tmp_buffer ).expect( "failed to parse smaps as UTF-8" ); // TODO: This is probably not always true.
+    let smaps = String::from_utf8_lossy( &state.tmp_buffer );
 
     let region_info_to_id: HashMap< RegionInfo, (u64, usize) > =
         state.map_by_id.iter()
