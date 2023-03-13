@@ -1,7 +1,7 @@
 use std::mem;
 use std::ptr;
 use std::num::NonZeroUsize;
-
+use std::convert::TryInto;
 use libc::{
     c_void,
     c_int,
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn bytehound_jemalloc_raw_mmap( addr: *mut c_void, length:
         return ptr;
     }
 
-    mmap_internal( addr, length, prot, flags, fildes, off, MapKind::Jemalloc )
+    mmap_internal( addr, length, prot, flags, fildes, off.try_into().unwrap(), MapKind::Jemalloc )
 }
 
 #[no_mangle]
@@ -878,14 +878,14 @@ unsafe fn call_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_in
     if !crate::global::is_pr_set_vma_anon_name_supported() && flags & (libc::MAP_FIXED | libc::MAP_FIXED_NOREPLACE) == 0 {
         let p0 = syscall::mmap( std::ptr::null_mut(), length + 8192, 0, libc::MAP_PRIVATE, crate::global::dummy_memfd(), 0 );
         if p0 != libc::MAP_FAILED {
-            ptr = syscall::mmap( p0.add( 4096 ), length, prot, flags | libc::MAP_FIXED, fildes, off );
+            ptr = syscall::mmap( p0.add( 4096 ), length, prot, flags | libc::MAP_FIXED, fildes, off.try_into().unwrap() );
             if ptr == libc::MAP_FAILED {
                 error!( "Failed to mmap over a dummy mapping!" );
                 libc::abort();
             }
         }
     } else {
-        ptr = syscall::mmap( addr, length, prot, flags, fildes, off )
+        ptr = syscall::mmap( addr, length, prot, flags, fildes, off.try_into().unwrap() )
     }
 
     ptr
@@ -894,7 +894,7 @@ unsafe fn call_mmap( addr: *mut c_void, length: size_t, prot: c_int, flags: c_in
 #[inline(always)]
 unsafe fn mmap_internal( addr: *mut c_void, length: size_t, prot: c_int, flags: c_int, fildes: c_int, off: libc::off64_t, kind: MapKind ) -> *mut c_void {
     if !opt::is_initialized() || !opt::get().gather_maps {
-        return syscall::mmap( addr, length, prot, flags, fildes, off );
+        return syscall::mmap( addr, length, prot, flags, fildes, off.try_into().unwrap() );
     }
 
     let id = crate::global::next_map_id();
