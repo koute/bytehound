@@ -120,22 +120,19 @@ fn main() {
                 println!( "cargo:warning=You're using an ancient version of Yarn; this is unsupported" );
                 "node_modules/.bin".into()
             } else {
-                let mut bin_path = Command::new( yarn )
-                    .args( &[ "bin" ] )
+                let bin_path = Command::new( yarn )
+                    .args( &[ "bin", "parcel" ] )
                     .current_dir( &webui_dir )
                     .output()
                     .expect( "cannot launch a child process to get Yarn's bin directory" )
                     .stdout;
 
-                while bin_path.ends_with( b"\n" ) {
-                    bin_path.pop();
-                }
-
-                let bin_path = String::from_utf8( bin_path ).unwrap();
+                let path = String::from_utf8(bin_path).unwrap();
+                let bin_path = path.trim();
                 bin_path.into()
             };
 
-        let mut child = Command::new( bin_path.join( "parcel" ) )
+        let mut child = Command::new( bin_path )
             .args( &[
                 "build".into(),
                 "src/index.html".into(),

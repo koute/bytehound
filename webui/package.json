@@ -33,6 +33,9 @@
     "reactdom": "^2.0.0",
     "reactstrap": "^6.2.0"
   },
+  "optionalDependencies": {
+    "@parcel/css-linux-arm64-gnu": "^1.13.1"
+  },
   "scripts": {
     "start": "parcel ./src/index.html",
     "test": "echo \"Error: no test specified\" && exit 1"
