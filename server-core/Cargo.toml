@@ -25,4 +25,4 @@ rayon = "1"
 md5 = "0.7"
 
 [build-dependencies]
-semalock = "0.2"
+semalock = "0.3"
