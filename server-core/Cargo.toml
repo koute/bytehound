@@ -20,7 +20,7 @@ bytes = "0.4"
 lru = "0.10"
 parking_lot = "0.12"
 common = { path = "../common" }
-ahash = "0.7"
+ahash = "0.8"
 rayon = "1"
 md5 = "0.7"
 

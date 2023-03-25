@@ -18,7 +18,7 @@ lru = "0.10"
 bitflags = "1"
 inferno = { version = "0.9", default-features = false }
 lazy_static = "1"
-ahash = "0.7"
+ahash = "0.8"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 rayon = "1"
