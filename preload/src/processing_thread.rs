@@ -2,6 +2,7 @@ use std::fs::{self, remove_file, File};
 use std::hash::Hash;
 use std::mem;
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::num::NonZeroUsize;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
@@ -450,7 +451,7 @@ impl BacktraceCache {
     pub fn new(cache_size: usize) -> Self {
         BacktraceCache {
             next_id: 1,
-            cache: lru::LruCache::with_hasher(cache_size, NoHash),
+            cache: lru::LruCache::with_hasher(NonZeroUsize::new(cache_size).unwrap(), NoHash),
         }
     }
 
@@ -464,7 +465,7 @@ impl BacktraceCache {
         match self.cache.get_mut(&key) {
             None => {
                 if cfg!(debug_assertions) {
-                    if self.cache.len() >= self.cache.cap() {
+                    if self.cache.len() >= self.cache.cap().get() {
                         debug!("2nd level backtrace cache overflow");
                     }
                 }

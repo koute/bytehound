@@ -16,7 +16,7 @@ sc = { version = "0.2", optional = true }
 lazy_static = "1"
 log = "0.4"
 glob = "0.2"
-lru = { version = "0.6", default-features = false }
+lru = { version = "0.10", default-features = false }
 tikv-jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
 mimalloc = { path = "../mimalloc_rust", default-features = false }
 goblin = "0.0.24"

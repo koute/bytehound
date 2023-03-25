@@ -10,6 +10,7 @@ use std::error::Error;
 use std::fmt::{self, Write};
 use std::fs::File;
 use std::io;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -166,7 +167,7 @@ impl State {
         State {
             data: HashMap::new(),
             data_ids: Vec::new(),
-            allocation_group_cache: Mutex::new(LruCache::new(4)),
+            allocation_group_cache: Mutex::new(LruCache::new(NonZeroUsize::new(4).unwrap())),
             generated_files: Default::default(),
         }
     }

@@ -2,6 +2,7 @@ use libc::{self, c_int, c_void, uintptr_t};
 use nwind::{LocalAddressSpace, LocalAddressSpaceOptions, LocalUnwindContext, UnwindControl};
 use perf_event_open::{Event, EventSource, Perf};
 use std::mem::{self, transmute};
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{RwLock, RwLockReadGuard};
 
@@ -147,7 +148,7 @@ impl ThreadUnwindState {
             current_backtrace: Vec::new(),
             buffer: Vec::new(),
             cache: lru::LruCache::with_hasher(
-                crate::opt::get().backtrace_cache_size_level_1,
+                NonZeroUsize::new(crate::opt::get().backtrace_cache_size_level_1).unwrap(),
                 NoHash,
             ),
         }
@@ -486,7 +487,7 @@ fn grab_with_unwind_state(unwind_state: &mut ThreadUnwindState) -> Backtrace {
     let backtrace = match unwind_state.cache.get_mut(&key) {
         None => {
             if cfg!(debug_assertions) {
-                if unwind_state.cache.len() >= unwind_state.cache.cap() {
+                if unwind_state.cache.len() >= unwind_state.cache.cap().get() {
                     debug!("1st level backtrace cache overflow");
                 }
             }
