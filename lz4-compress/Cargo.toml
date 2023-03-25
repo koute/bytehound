@@ -11,4 +11,4 @@ exclude = ["target", "Cargo.lock"]
 
 [dependencies]
 byteorder = "1"
-quick-error = "1"
+quick-error = "2"
