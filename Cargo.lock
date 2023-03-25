@@ -564,7 +564,7 @@ dependencies = [
  "ahash 0.8.3",
  "common",
  "fast_range_map",
- "glob 0.2.11",
+ "glob",
  "goblin 0.6.1",
  "hashbrown 0.13.2",
  "lazy_static",
@@ -722,7 +722,7 @@ dependencies = [
  "chrono",
  "colorgrad",
  "common",
- "cpp_demangle 0.2.16",
+ "cpp_demangle 0.4.0",
  "crossbeam-channel 0.5.7",
  "ctrlc",
  "derive_more 0.99.17",
@@ -811,19 +811,18 @@ checksum = "a2df960f5d869b2dd8532793fde43eb5427cceb126c929747a26823ab0eeb536"
 
 [[package]]
 name = "cpp_demangle"
-version = "0.2.16"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13c924384107361ca729c7d46b9134151b9a955ce99a773784f2777498e8552d"
+checksum = "eeaa953eaad386a53111e47172c2fedba671e5684c8dd601a5f474f4f118710f"
 dependencies = [
- "cfg-if 0.1.10",
- "glob 0.3.0",
+ "cfg-if 1.0.0",
 ]
 
 [[package]]
 name = "cpp_demangle"
-version = "0.3.5"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eeaa953eaad386a53111e47172c2fedba671e5684c8dd601a5f474f4f118710f"
+checksum = "b446fd40bcc17eddd6a4a78f24315eb90afdb3334999ddfd4909985c47722442"
 dependencies = [
  "cfg-if 1.0.0",
 ]
@@ -1243,12 +1242,6 @@ name = "glob"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8be18de09a56b60ed0edf84bc9df007e30040691af7acd1c41874faac5895bfb"
-
-[[package]]
-name = "glob"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
 
 [[package]]
 name = "goblin"

@@ -10,7 +10,7 @@ byteorder = "1"
 ctrlc = "3"
 goblin = "0.6.1"
 string-interner = { version = "0.7", default-features = false }
-cpp_demangle = "0.2"
+cpp_demangle = "0.4"
 chrono = "0.4"
 libc = "0.2"
 log = "0.4"
