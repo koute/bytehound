@@ -19,7 +19,7 @@ glob = "0.2"
 lru = { version = "0.10", default-features = false }
 tikv-jemalloc-sys = { path = "../jemallocator/jemalloc-sys", default-features = false }
 mimalloc = { path = "../mimalloc_rust", default-features = false }
-goblin = "0.0.24"
+goblin = "0.6.1"
 smallvec = { version = "1", features = ["union"] }
 ahash = "0.8"
 hashbrown = "0.13"
