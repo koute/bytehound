@@ -9,7 +9,7 @@ edition = "2021"
 hashbrown = { version = "0.13", features = ["raw"] }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4"
 btree-range-map = "0.3.0"
 oorandom = "11.1.3"
 rangemap = "1.3.0"
