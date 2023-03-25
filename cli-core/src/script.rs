@@ -1831,11 +1831,11 @@ impl Graph {
             for index in 0..datapoints_for_ops.len() {
                 let position = index as f64 * step;
                 let color = gradient.at(position);
-                let color_rgb = color.rgba_u8();
+                let color_rgb = color.to_rgba8();
                 colors.push(
-                    RGBColor(color_rgb.0, color_rgb.1, color_rgb.2)
+                    RGBColor(color_rgb[0], color_rgb[1], color_rgb[2])
                         .to_rgba()
-                        .mix(color.alpha()),
+                        .mix(color.to_linear_rgba().3),
                 );
             }
         } else {

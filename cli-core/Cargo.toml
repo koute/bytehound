@@ -25,7 +25,7 @@ rayon = "1"
 regex = "1"
 rhai = { version = "1", features = ["unchecked"] }
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "all_series"] }
-colorgrad = "0.4"
+colorgrad = "0.6"
 serde_json = "1"
 derive_more = "0.99"
 
