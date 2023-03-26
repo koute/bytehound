@@ -13,25 +13,25 @@
     "process": "^0.11.10"
   },
   "dependencies": {
-    "bootstrap": "^4.6.2",
-    "bootswatch": "^4.6.2",
+    "bootstrap": "^5.2.3",
+    "bootswatch": "^5.2.3",
     "classnames": "^2.3.2",
     "dygraphs": "^2.2.1",
     "feather-icons": "^4.29.0",
     "font-awesome": "^4.7.0",
     "jquery": "^3.6.4",
     "lodash": "^4.17.21",
-    "memoize-one": "^4.0.3",
+    "memoize-one": "^6.0.0",
     "popper.js": "^1.16.1",
     "prop-types": "^15.8.1",
-    "react": ">= 16.5",
-    "react-ace": "^9.5.0",
+    "react": "^18.2.0",
+    "react-ace": "^10.1.0",
     "react-contextmenu": "^2.14.0",
-    "react-dom": "^16.14.0",
+    "react-dom": "^18.2.0",
     "react-router-dom": "^5.3.4",
     "react-table": "^6.11.5",
     "reactdom": "^2.0.0",
-    "reactstrap": "^6.5.0"
+    "reactstrap": "^9.1.6"
   },
   "optionalDependencies": {
     "@parcel/css-linux-arm64-gnu": "^1.13.1"

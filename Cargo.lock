@@ -3,30 +3,6 @@
 version = 3
 
 [[package]]
-name = "actix"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f728064aca1c318585bf4bb04ffcfac9e75e508ab4e8b1bd9ba5dfe04e2cbed5"
-dependencies = [
- "actix-rt",
- "actix_derive",
- "bitflags",
- "bytes 1.4.0",
- "crossbeam-channel",
- "futures-core",
- "futures-sink",
- "futures-task",
- "futures-util",
- "log",
- "once_cell",
- "parking_lot",
- "pin-project-lite",
- "smallvec",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "actix-codec"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -192,17 +168,6 @@ dependencies = [
  "socket2",
  "time 0.3.20",
  "url 2.3.1",
-]
-
-[[package]]
-name = "actix_derive"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d44b8fee1ced9671ba043476deddef739dd0959bf77030b26b738cc591737a7"
-dependencies = [
- "proc-macro2 1.0.53",
- "quote 1.0.26",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -2222,7 +2187,6 @@ dependencies = [
 name = "server-core"
 version = "0.11.0"
 dependencies = [
- "actix",
  "actix-cors",
  "actix-web",
  "ahash 0.8.3",

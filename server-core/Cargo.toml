@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
-actix = "0.13"
 actix-web = { version = "4.3", default-features = false }
 actix-cors = "0.6"
 serde = "1"
