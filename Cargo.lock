@@ -163,7 +163,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "serde_urlencoded 0.7.1",
+ "serde_urlencoded",
  "smallvec",
  "socket2",
  "time 0.3.20",
@@ -791,12 +791,6 @@ dependencies = [
  "block-buffer",
  "crypto-common",
 ]
-
-[[package]]
-name = "dtoa"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
 
 [[package]]
 name = "either"
@@ -2161,18 +2155,6 @@ dependencies = [
 
 [[package]]
 name = "serde_urlencoded"
-version = "0.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "642dd69105886af2efd227f75a520ec9b44a820d65bc133a9131f7d229fd165a"
-dependencies = [
- "dtoa",
- "itoa 0.4.8",
- "serde",
- "url 1.7.2",
-]
-
-[[package]]
-name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
@@ -2205,7 +2187,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "serde_urlencoded 0.5.5",
+ "serde_urlencoded",
 ]
 
 [[package]]
