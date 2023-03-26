@@ -74,13 +74,13 @@ enum Opt {
         #[structopt(
             long,
             short = "a",
-            parse(from_str = "parse_anonymize"),
+            parse(from_str = parse_anonymize),
             default_value = "none",
-            raw(possible_values = r#"&[
+            possible_values = &[
             "none",
             "partial",
             "full"
-        ]"#)
+        ]
         )]
         anonymize: Anonymize,
 
@@ -105,7 +105,7 @@ enum Opt {
         #[structopt(parse(from_os_str), required = false)]
         input: PathBuf,
     },
-    #[structopt(name = "repack", raw(setting = "structopt::clap::AppSettings::Hidden"))]
+    #[structopt(name = "repack", setting = structopt::clap::AppSettings::Hidden)]
     Repack {
         #[structopt(long)]
         disable_compression: bool,
@@ -118,7 +118,7 @@ enum Opt {
     },
     #[structopt(
         name = "analyze-size",
-        raw(setting = "structopt::clap::AppSettings::Hidden")
+        setting = structopt::clap::AppSettings::Hidden
     )]
     AnalyzeSize { input: PathBuf },
     /// Runs give analysis script
@@ -135,7 +135,7 @@ enum Opt {
     },
     #[structopt(
         name = "script-slave",
-        raw(setting = "structopt::clap::AppSettings::Hidden")
+        setting = structopt::clap::AppSettings::Hidden
     )]
     ScriptSlave {
         #[structopt(long, short = "d", parse(from_os_str))]
