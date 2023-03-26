@@ -292,9 +292,9 @@ dependencies = [
 
 [[package]]
 name = "btree-range-map"
-version = "0.3.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e78b7d02bdee8ad3398ef4ac5c69d5dd361b75bd4f6d17f32899c2f19cc4ab8"
+checksum = "def3a109c2af9d583d0cba192ea3b8a1c62690f795d5e012d75a350322ce12e4"
 dependencies = [
  "btree-slab",
  "cc-traits",
@@ -304,9 +304,9 @@ dependencies = [
 
 [[package]]
 name = "btree-slab"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6d5d99a446fc43a159e25be12c72f84674e1e67ec8c7402e55d1cb49205507f"
+checksum = "cbd15ebdf1711bae315f668ac8865d35754613955f6473515b6aa2762ea2ec86"
 dependencies = [
  "cc-traits",
  "slab",
@@ -417,9 +417,9 @@ checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
 
 [[package]]
 name = "cc-traits"
-version = "0.8.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20e1d2b5991b9e82142d4e0bae811651928b98fcea218b2faca1095c8f7801e9"
+checksum = "becb23f44ae9dd141d637d520b908c291bf4c5eed016ca368daa1430d54ebf4c"
 dependencies = [
  "slab",
 ]
@@ -1909,9 +1909,9 @@ dependencies = [
 
 [[package]]
 name = "range-traits"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4473d273e456fd55eb6539c391f22c6e501fff9a800e84431ba68b26001c0a16"
+checksum = "9ea26694da042b4016873b8c55515348f40d77281f239ade1f2ede3afb8da92c"
 
 [[package]]
 name = "rangemap"
