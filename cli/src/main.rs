@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io;
 use std::path::PathBuf;
 use std::process;
-
 use structopt::StructOpt;
 
 use cli_core::{export_as_heaptrack, export_as_replay, postprocess, Anonymize, Loader};
@@ -151,7 +150,7 @@ enum Opt {
     },
 }
 
-fn run(opt: Opt) -> Result<(), Box<dyn Error>> {
+async fn run(opt: Opt) -> Result<(), Box<dyn Error>> {
     match opt {
         Opt::ExportReplay { output, input } => {
             let fp = File::open(input)?;
@@ -183,7 +182,7 @@ fn run(opt: Opt) -> Result<(), Box<dyn Error>> {
             interface,
             port,
         } => {
-            server_core::main(input, debug_symbols, false, &interface, port)?;
+            server_core::server_main(input, debug_symbols, false, &interface, port).await?;
         }
         Opt::Postprocess {
             debug_symbols,
@@ -231,7 +230,8 @@ fn run(opt: Opt) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info");
     }
@@ -239,7 +239,7 @@ fn main() {
     env_logger::init();
 
     let opt = Opt::from_args();
-    let result = run(opt);
+    let result = run(opt).await;
     if let Err(error) = result {
         error!("{}", error);
         if !log_enabled!(log::Level::Error) {

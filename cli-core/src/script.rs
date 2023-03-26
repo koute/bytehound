@@ -338,7 +338,8 @@ fn to_chrono(timestamp: u64) -> chrono::DateTime<chrono::Utc> {
     use chrono::prelude::*;
 
     let secs = timestamp / 1_000_000;
-    Utc.timestamp(secs as i64, ((timestamp - secs * 1_000_000) * 1000) as u32)
+    Utc.timestamp_opt(secs as i64, ((timestamp - secs * 1_000_000) * 1000) as u32)
+        .unwrap()
 }
 
 fn expand_datapoints<V>(xs: &[u64], datapoints: &[(u64, V)]) -> Vec<(u64, V)>

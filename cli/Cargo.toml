@@ -15,6 +15,7 @@ structopt = "0.2"
 cli-core = { path = "../cli-core" }
 server-core = { path = "../server-core", optional = true }
 tikv-jemallocator = "0.4"
+tokio = { version = "1.26.0", features = ["macros", "rt-multi-thread"] }
 
 [features]
 default = ["subcommand-server"]

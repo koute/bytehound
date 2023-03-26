@@ -1,11 +1,15 @@
 use std::collections::VecDeque;
+use std::io;
+use std::pin::Pin;
 use std::sync::{Arc, Condvar, Mutex};
+use std::task::{Context, Poll};
 
 use futures;
+use futures::task::AtomicWaker;
 
 struct Inner<T> {
     buffer: VecDeque<T>,
-    task: Option<futures::task::Task>,
+    waker: AtomicWaker,
     sender_closed: bool,
     receiver_closed: bool,
 }
@@ -30,9 +34,7 @@ impl<T> Sender<T> {
 
         inner.buffer.push_back(value);
 
-        if let Some(ref mut task) = inner.task {
-            task.notify();
-        }
+        inner.waker.wake();
 
         Ok(())
     }
@@ -42,32 +44,27 @@ impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
         let mut inner = (self.0).1.lock().unwrap();
         inner.sender_closed = true;
-        if let Some(ref mut task) = inner.task {
-            task.notify();
-        }
+        inner.waker.wake();
     }
 }
 
 pub struct Receiver<T>(Arc<(Condvar, Mutex<Inner<T>>)>);
+impl<T> futures_core::stream::Stream for Receiver<T> {
+    type Item = Result<T, io::Error>;
 
-impl<T> futures::Stream for Receiver<T> {
-    type Item = T;
-    type Error = ();
-
-    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut inner = (self.0).1.lock().unwrap();
         match inner.buffer.pop_front() {
             Some(value) => {
                 (self.0).0.notify_all();
-                Ok(futures::Async::Ready(Some(value)))
+                Poll::Ready(Some(Ok(value)))
             }
             None => {
                 if inner.sender_closed {
-                    return Ok(futures::Async::Ready(None));
+                    return Poll::Ready(None);
                 }
-
-                inner.task = Some(futures::task::current());
-                Ok(futures::Async::NotReady)
+                inner.waker.register(cx.waker());
+                Poll::Pending
             }
         }
     }
@@ -84,7 +81,7 @@ impl<T> Drop for Receiver<T> {
 pub fn streaming_channel<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Inner {
         buffer: VecDeque::new(),
-        task: None,
+        waker: AtomicWaker::new(),
         sender_closed: false,
         receiver_closed: false,
     };

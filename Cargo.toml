@@ -1,10 +1,23 @@
 [workspace]
-members = ["common", "lz4-compress", "jemallocator/jemalloc-sys", "preload", "cli-core", "cli", "server-core", "gather", "integration-tests", "mimalloc_rust", "fast_range_map"]
+members = [
+  "common",
+  "lz4-compress",
+  "jemallocator/jemalloc-sys",
+  "preload",
+  "cli-core",
+  "cli",
+  "server-core",
+  "gather",
+  "integration-tests",
+  "mimalloc_rust",
+  "fast_range_map",
+]
 resolver = "2"
 
 [profile.dev]
-opt-level = 2
+opt-level = 0
 incremental = true
+debug = true
 
 [profile.release]
 opt-level = 3

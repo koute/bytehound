@@ -3,6 +3,11 @@ extern crate log;
 #[macro_use]
 extern crate serde_derive;
 
+use actix_web::{
+    body::{BodyStream, BoxBody},
+    web, App, HttpRequest, HttpResponse, Result,
+};
+
 use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
@@ -16,17 +21,12 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 
-use actix_web::{
-    body::{Body, BodyStream},
-    web, App, HttpRequest, HttpResponse, Responder, Result,
-};
-
 use ahash::AHashMap as HashMap;
 
 use actix_cors::Cors;
 use actix_web::error::Error as ActixWebError;
-use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorNotFound};
-use futures::Stream;
+use actix_web::error::{ErrorBadRequest, ErrorNotFound};
+
 use itertools::Itertools;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -231,7 +231,7 @@ trait StateGetter {
 
 impl StateGetter for HttpRequest {
     fn state(&self) -> &StateRef {
-        self.app_data::<StateRef>().unwrap()
+        self.app_data::<web::Data<StateRef>>().unwrap()
     }
 }
 
@@ -276,11 +276,11 @@ impl From<PrepareFilterError> for ActixWebError {
 fn async_data_handler<F: FnOnce(Arc<Data>, byte_channel::ByteSender) + Send + 'static>(
     req: &HttpRequest,
     callback: F,
-) -> Result<Body> {
+) -> Result<BoxBody> {
     let (tx, rx) = byte_channel();
-    let rx = rx.map_err(|_| ErrorInternalServerError("internal error"));
+    // let rx = rx.map_err(|_| ErrorInternalServerError("internal error"));
     let rx = BodyStream::new(rx);
-    let body = Body::Message(Box::new(rx));
+    let body = BoxBody::new(rx);
 
     let data_id = get_data_id(&req)?;
     let state = req.state().clone();
@@ -400,7 +400,7 @@ impl protocol::ResponseMetadata {
     }
 }
 
-fn handler_list(req: HttpRequest) -> HttpResponse {
+async fn handler_list(req: HttpRequest) -> HttpResponse {
     let list: Vec<_> = req
         .state()
         .data
@@ -453,13 +453,13 @@ fn build_timeline(data: &Data, ops: &[OperationId]) -> protocol::ResponseTimelin
     }
 }
 
-fn handler_timeline(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_timeline(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let timeline = build_timeline(&data, data.operation_ids());
     Ok(HttpResponse::Ok().json(timeline))
 }
 
-fn handler_timeline_leaked(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_timeline_leaked(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let ops: Vec<_> = data
         .operation_ids()
@@ -478,7 +478,7 @@ fn handler_timeline_leaked(req: HttpRequest) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(timeline))
 }
 
-fn handler_timeline_maps(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_timeline_maps(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let mut ops = Vec::new();
     for map in data.maps() {
@@ -663,7 +663,7 @@ fn get_allocations<'a>(
     }
 }
 
-fn handler_allocations(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_allocations(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let params: protocol::RequestAllocations = query(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
@@ -929,7 +929,7 @@ fn get_maps<'a>(
     }
 }
 
-fn handler_maps(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_maps(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let params: protocol::RequestMaps = query(&req)?;
     let filter: protocol::MapFilter = query(&req)?;
@@ -1142,7 +1142,7 @@ fn get_allocation_groups<'a>(
     response
 }
 
-fn handler_allocation_groups(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_allocation_groups(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter_params: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1303,7 +1303,7 @@ fn handler_allocation_groups(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_raw_allocations(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_raw_allocations(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let iter = data
         .alloc_sorted_by_timestamp(None, None)
@@ -1379,7 +1379,7 @@ fn dump_node<T: fmt::Write, K: PartialEq + Clone, V, F: Fn(&mut T, &V) -> fmt::R
     Ok(())
 }
 
-fn handler_tree(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_tree(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1412,7 +1412,7 @@ fn handler_tree(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_backtrace(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_backtrace(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let backtrace_id: u32 = req
         .match_info()
@@ -1434,7 +1434,7 @@ fn handler_backtrace(req: HttpRequest) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(response))
 }
 
-fn handler_backtraces(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_backtraces(req: HttpRequest) -> Result<HttpResponse> {
     let backtrace_format: protocol::BacktraceFormat = query(&req)?;
     let filter: protocol::BacktraceFilter = query(&req)?;
     let filter = crate::filter::prepare_backtrace_filter(&filter)?;
@@ -1546,7 +1546,7 @@ fn generate_regions<'a, F: Fn(AllocationId, &Allocation) -> bool + Clone + 'a>(
     }
 }
 
-fn handler_regions(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_regions(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1564,7 +1564,7 @@ fn handler_regions(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_mallopts(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_mallopts(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let backtrace_format: protocol::BacktraceFormat = query(&req)?;
 
@@ -1604,7 +1604,7 @@ fn handler_mallopts(req: HttpRequest) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(response))
 }
 
-fn handler_export_flamegraph_pl(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_export_flamegraph_pl(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1621,7 +1621,7 @@ fn handler_export_flamegraph_pl(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_export_flamegraph(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_export_flamegraph(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1636,7 +1636,7 @@ fn handler_export_flamegraph(req: HttpRequest) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().content_type("image/svg+xml").body(body))
 }
 
-fn handler_export_replay(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_export_replay(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1653,7 +1653,7 @@ fn handler_export_replay(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_export_heaptrack(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_export_heaptrack(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1670,7 +1670,7 @@ fn handler_export_heaptrack(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_allocation_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_allocation_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let custom_filter: protocol::CustomFilter = query(&req)?;
@@ -1688,7 +1688,7 @@ fn handler_allocation_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn handler_collation_json<F>(req: HttpRequest, callback: F) -> Result<HttpResponse>
+async fn handler_collation_json<F>(req: HttpRequest, callback: F) -> Result<HttpResponse>
 where
     F: Fn(&Data) -> BTreeMap<String, BTreeMap<u32, CountAndSize>> + Send + 'static,
 {
@@ -1742,15 +1742,15 @@ where
         .body(body))
 }
 
-fn handler_dynamic_constants(req: HttpRequest) -> Result<HttpResponse> {
-    handler_collation_json(req, |data| data.get_dynamic_constants())
+async fn handler_dynamic_constants(req: HttpRequest) -> Result<HttpResponse> {
+    handler_collation_json(req, |data| data.get_dynamic_constants()).await
 }
 
-fn handler_dynamic_statics(req: HttpRequest) -> Result<HttpResponse> {
-    handler_collation_json(req, |data| data.get_dynamic_statics())
+async fn handler_dynamic_statics(req: HttpRequest) -> Result<HttpResponse> {
+    handler_collation_json(req, |data| data.get_dynamic_statics()).await
 }
 
-fn handler_dynamic_constants_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_dynamic_constants_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
     let body = async_data_handler(&req, move |data, mut tx| {
         let table = data.get_dynamic_constants_ascii_tree();
         let _ = writeln!(tx, "{}", table);
@@ -1761,7 +1761,7 @@ fn handler_dynamic_constants_ascii_tree(req: HttpRequest) -> Result<HttpResponse
         .body(body))
 }
 
-fn handler_dynamic_statics_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_dynamic_statics_ascii_tree(req: HttpRequest) -> Result<HttpResponse> {
     let body = async_data_handler(&req, move |data, mut tx| {
         let table = data.get_dynamic_statics_ascii_tree();
         let _ = writeln!(tx, "{}", table);
@@ -1772,7 +1772,7 @@ fn handler_dynamic_statics_ascii_tree(req: HttpRequest) -> Result<HttpResponse> 
         .body(body))
 }
 
-fn handler_script_files(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_script_files(req: HttpRequest) -> Result<HttpResponse> {
     let hash = req.match_info().get("hash").unwrap();
     let entry = match req.state().generated_files.lock().by_hash.get(hash) {
         Some(entry) => entry.clone(),
@@ -1782,9 +1782,9 @@ fn handler_script_files(req: HttpRequest) -> Result<HttpResponse> {
     };
 
     let (mut tx, rx) = byte_channel();
-    let rx = rx.map_err(|_| ErrorInternalServerError("internal error"));
+    // let rx = rx.map_err(|_| ErrorInternalServerError("internal error"));
     let rx = BodyStream::new(rx);
-    let body = Body::Message(Box::new(rx));
+    let body = BoxBody::new(rx);
     let mime = entry.mime;
     thread::spawn(move || {
         use std::io::Write;
@@ -1794,7 +1794,7 @@ fn handler_script_files(req: HttpRequest) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().content_type(mime).body(body))
 }
 
-fn handler_allocation_filter_to_script(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_allocation_filter_to_script(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::AllocFilter = query(&req)?;
     let filter = prepare_raw_allocation_filter(data, &filter)?;
@@ -1820,14 +1820,15 @@ fn handler_allocation_filter_to_script(req: HttpRequest) -> Result<HttpResponse>
     let body = serde_json::json! {{
         "prologue": prologue,
         "code": code
-    }};
+    }}
+    .to_string();
 
     Ok(HttpResponse::Ok()
         .content_type("application/json; charset=utf-8")
         .body(body))
 }
 
-fn handler_map_filter_to_script(req: HttpRequest) -> Result<HttpResponse> {
+async fn handler_map_filter_to_script(req: HttpRequest) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let filter: protocol::MapFilter = query(&req)?;
     let filter = prepare_raw_map_filter(data, &filter)?;
@@ -1853,14 +1854,15 @@ fn handler_map_filter_to_script(req: HttpRequest) -> Result<HttpResponse> {
     let body = serde_json::json! {{
         "prologue": prologue,
         "code": code
-    }};
+    }}
+    .to_string();
 
     Ok(HttpResponse::Ok()
         .content_type("application/json; charset=utf-8")
         .body(body))
 }
 
-fn handler_execute_script(req: HttpRequest, body: web::Bytes) -> Result<HttpResponse> {
+async fn handler_execute_script(req: HttpRequest, body: web::Bytes) -> Result<HttpResponse> {
     let data = get_data(&req)?;
     let body = String::from_utf8(body.to_vec()).unwrap();
     let args = cli_core::script::EngineArgs {
@@ -1936,7 +1938,7 @@ fn handler_execute_script(req: HttpRequest, body: web::Bytes) -> Result<HttpResp
 
     Ok(HttpResponse::Ok()
         .content_type("application/json; charset=utf-8")
-        .header("Access-Control-Allow-Origin", "http://localhost:1234")
+        .append_header(("Access-Control-Allow-Origin", "http://localhost:1234"))
         .body(serde_json::to_string(&result).unwrap()))
 }
 
@@ -1963,18 +1965,16 @@ fn guess_mime(path: &str) -> &str {
     "application/octet-stream"
 }
 
+#[derive(Clone)]
 struct StaticResponse(&'static str, &'static [u8]);
-impl Responder for StaticResponse {
-    type Error = actix_web::Error;
-    type Future = Result<HttpResponse>;
 
-    fn respond_to(self, _: &HttpRequest) -> Self::Future {
-        Ok(HttpResponse::Ok()
+impl StaticResponse {
+    pub(crate) async fn respond(self) -> HttpResponse {
+        HttpResponse::Ok()
             .content_type(guess_mime(self.0))
-            .body(self.1))
+            .body(BoxBody::new(self.1))
     }
 }
-
 include!(concat!(env!("OUT_DIR"), "/webui_assets.rs"));
 
 #[derive(Debug)]
@@ -2004,8 +2004,7 @@ impl From<io::Error> for ServerError {
 }
 
 impl Error for ServerError {}
-
-pub fn main(
+pub async fn server_main(
     inputs: Vec<PathBuf>,
     debug_symbols: Vec<PathBuf>,
     load_in_parallel: bool,
@@ -2047,11 +2046,10 @@ pub fn main(
     }
 
     let state = Arc::new(state);
-    let sys = actix::System::new("server");
     actix_web::HttpServer::new(move || {
         App::new()
-            .data(state.clone())
-            .wrap(Cors::new())
+            .app_data(web::Data::new(state.clone()))
+            .wrap(Cors::permissive())
             .configure(|app| {
                 app.service(web::resource("/list").route(web::get().to(handler_list)))
                     .service(
@@ -2179,15 +2177,21 @@ pub fn main(
                     );
 
                 for (key, bytes) in WEBUI_ASSETS {
-                    app.service(
-                        web::resource(&format!("/{}", key))
-                            .route(web::get().to(move || StaticResponse(key, bytes))),
-                    );
+                    // app.service(
+                    //     web::resource(&format!("/{}", key))
+                    //         .route(web::get().to::<_, HttpRequest>(StaticResponse(key, bytes))),
+                    // );
+                    app.service(web::resource(&format!("/{}", key)).route(web::get().to(
+                        move || {
+                            let res = StaticResponse(key, bytes);
+                            res.respond()
+                        },
+                    )));
                     if *key == "index.html" {
-                        app.service(
-                            web::resource("/")
-                                .route(web::get().to(move || StaticResponse(key, bytes))),
-                        );
+                        app.service(web::resource("/").route(web::get().to(move || {
+                            let res = StaticResponse(key, bytes);
+                            res.respond()
+                        })));
                     }
                 }
             })
@@ -2195,8 +2199,8 @@ pub fn main(
     .bind(&format!("{}:{}", interface, port))
     .map_err(|err| ServerError::BindFailed(err))?
     .shutdown_timeout(1)
-    .start();
+    .run()
+    .await?;
 
-    let _ = sys.run();
     Ok(())
 }
