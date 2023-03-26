@@ -1,9 +1,9 @@
-use std::time::Duration;
-use std::sync::Arc;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
+use std::time::Duration;
 
-use common::Timestamp;
 use common::event::AllocationId;
+use common::Timestamp;
 
 use crate::channel::{Channel, ChannelBuffer};
 use crate::global::WeakThreadHandle;
@@ -14,15 +14,19 @@ use crate::unwind::Backtrace;
 pub struct InternalAllocationId {
     pub thread: u64,
     pub allocation: u64,
-    pub checksum: u64
+    pub checksum: u64,
 }
 
 impl std::fmt::Display for InternalAllocationId {
-    fn fmt( &self, fmt: &mut std::fmt::Formatter ) -> std::fmt::Result {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.is_valid() {
-            write!( fmt, "{{{}, {}}}", self.thread, self.allocation )
+            write!(fmt, "{{{}, {}}}", self.thread, self.allocation)
         } else {
-            write!( fmt, "{{0x{:X}, 0x{:X}, 0x{:X}}}", self.thread, self.allocation, self.checksum )
+            write!(
+                fmt,
+                "{{0x{:X}, 0x{:X}, 0x{:X}}}",
+                self.thread, self.allocation, self.checksum
+            )
         }
     }
 }
@@ -34,27 +38,27 @@ const UNTRACKED_ALLOCATION: u64 = 0xEBBDDB5F42D04E74;
 const CHECKSUM_CONSTANT: u64 = 0x8000000000000000;
 
 impl InternalAllocationId {
-    pub const UNTRACKED: Self = Self::new( UNTRACKED_THREAD, UNTRACKED_ALLOCATION );
+    pub const UNTRACKED: Self = Self::new(UNTRACKED_THREAD, UNTRACKED_ALLOCATION);
 
-    pub const fn new( thread: u64, allocation: u64 ) -> Self {
+    pub const fn new(thread: u64, allocation: u64) -> Self {
         InternalAllocationId {
             thread,
             allocation,
-            checksum: thread ^ allocation ^ CHECKSUM_CONSTANT
+            checksum: thread ^ allocation ^ CHECKSUM_CONSTANT,
         }
     }
 
-    pub fn is_untracked( self ) -> bool {
+    pub fn is_untracked(self) -> bool {
         self == Self::UNTRACKED
     }
 
-    pub fn is_valid( self ) -> bool {
+    pub fn is_valid(self) -> bool {
         self.thread ^ self.allocation ^ CHECKSUM_CONSTANT == self.checksum
     }
 }
 
-impl From< InternalAllocationId > for common::event::AllocationId {
-    fn from( id: InternalAllocationId ) -> Self {
+impl From<InternalAllocationId> for common::event::AllocationId {
+    fn from(id: InternalAllocationId) -> Self {
         if id.is_untracked() {
             common::event::AllocationId::UNTRACKED
         } else if !id.is_valid() {
@@ -62,7 +66,7 @@ impl From< InternalAllocationId > for common::event::AllocationId {
         } else {
             common::event::AllocationId {
                 thread: id.thread,
-                allocation: id.allocation
+                allocation: id.allocation,
             }
         }
     }
@@ -94,13 +98,13 @@ pub(crate) enum InternalEvent {
         id: AllocationId,
         timestamp: Timestamp,
         address: NonZeroUsize,
-        backtrace: Option< Backtrace >,
-        tid: u32
+        backtrace: Option<Backtrace>,
+        tid: u32,
     },
     Exit,
     GrabMemoryDump,
     SetMarker {
-        value: u32
+        value: u32,
     },
     Mallopt {
         param: i32,
@@ -108,37 +112,40 @@ pub(crate) enum InternalEvent {
         result: i32,
         backtrace: Backtrace,
         timestamp: Timestamp,
-        thread: WeakThreadHandle
+        thread: WeakThreadHandle,
     },
     OverrideNextTimestamp {
-        timestamp: Timestamp
+        timestamp: Timestamp,
     },
     AddressSpaceUpdated {
         timestamp: Timestamp,
         maps: String,
-        new_binaries: Vec< Arc< nwind::BinaryData > >
+        new_binaries: Vec<Arc<nwind::BinaryData>>,
     },
-    AllocationBucket( crate::allocation_tracker::AllocationBucket ),
+    AllocationBucket(crate::allocation_tracker::AllocationBucket),
 }
 
-static EVENT_CHANNEL: Channel< InternalEvent > = Channel::new();
+static EVENT_CHANNEL: Channel<InternalEvent> = Channel::new();
 
-pub(crate) fn send_event( event: InternalEvent ) {
-    EVENT_CHANNEL.send( event );
-}
-
-#[inline(always)]
-pub(crate) fn send_event_throttled< F: FnOnce() -> InternalEvent >( callback: F ) {
-    EVENT_CHANNEL.chunked_send_with( callback );
+pub(crate) fn send_event(event: InternalEvent) {
+    EVENT_CHANNEL.send(event);
 }
 
 #[inline(always)]
-pub(crate) fn send_event_throttled_sharded< F: FnOnce() -> InternalEvent >( address: usize, callback: F ) {
-    EVENT_CHANNEL.sharded_chunked_send_with( address, callback );
+pub(crate) fn send_event_throttled<F: FnOnce() -> InternalEvent>(callback: F) {
+    EVENT_CHANNEL.chunked_send_with(callback);
 }
 
-pub(crate) fn timed_recv_all_events( buffer: &mut ChannelBuffer< InternalEvent >, duration: Duration ) {
-    EVENT_CHANNEL.timed_recv_all( buffer, duration )
+#[inline(always)]
+pub(crate) fn send_event_throttled_sharded<F: FnOnce() -> InternalEvent>(
+    address: usize,
+    callback: F,
+) {
+    EVENT_CHANNEL.sharded_chunked_send_with(address, callback);
+}
+
+pub(crate) fn timed_recv_all_events(buffer: &mut ChannelBuffer<InternalEvent>, duration: Duration) {
+    EVENT_CHANNEL.timed_recv_all(buffer, duration)
 }
 
 pub(crate) fn flush() {

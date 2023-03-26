@@ -25,8 +25,8 @@
 */
 
 use libc::{c_char, c_void, size_t};
-use std::ops::ControlFlow;
 use std::ffi::CStr;
+use std::ops::ControlFlow;
 
 const STT_GNU_IFUNC: u8 = 10;
 
@@ -48,109 +48,121 @@ pub struct Dynamic {
     value: usize,
 }
 
-pub struct ObjectInfo< 'a > {
+pub struct ObjectInfo<'a> {
     pub address: usize,
     pub name: &'a [u8],
-    program_headers: &'a [ProgramHeader]
+    program_headers: &'a [ProgramHeader],
 }
 
-impl< 'a > ObjectInfo< 'a > {
-    pub fn each< F, R >( mut callback: F ) -> Option< R > where F: FnMut( ObjectInfo ) -> ControlFlow< R, () > {
-        Self::each_impl( &mut callback )
+impl<'a> ObjectInfo<'a> {
+    pub fn each<F, R>(mut callback: F) -> Option<R>
+    where
+        F: FnMut(ObjectInfo) -> ControlFlow<R, ()>,
+    {
+        Self::each_impl(&mut callback)
     }
 
-    pub fn name_contains( &self, substr: impl AsRef< [u8] > ) -> bool {
+    pub fn name_contains(&self, substr: impl AsRef<[u8]>) -> bool {
         let substr = substr.as_ref();
-        self.name.windows( substr.len() ).any( |window| window == substr )
+        self.name
+            .windows(substr.len())
+            .any(|window| window == substr)
     }
 
-    fn each_impl< R >( callback: &mut dyn FnMut( ObjectInfo ) -> ControlFlow< R, () > ) -> Option< R > {
-        struct Arg< 'a, R > {
-            callback: &'a mut dyn FnMut( ObjectInfo ) -> ControlFlow< R, () >,
-            result: Option< R >
+    fn each_impl<R>(callback: &mut dyn FnMut(ObjectInfo) -> ControlFlow<R, ()>) -> Option<R> {
+        struct Arg<'a, R> {
+            callback: &'a mut dyn FnMut(ObjectInfo) -> ControlFlow<R, ()>,
+            result: Option<R>,
         }
 
         let mut arg = Arg {
             callback,
-            result: None
+            result: None,
         };
 
-        extern "C" fn callback_static< R >( info: *mut libc::dl_phdr_info, _size: size_t, arg: *mut c_void ) -> i32 {
+        extern "C" fn callback_static<R>(
+            info: *mut libc::dl_phdr_info,
+            _size: size_t,
+            arg: *mut c_void,
+        ) -> i32 {
             let info = unsafe { &*info };
-            let arg = unsafe { &mut *(arg as *mut Arg< R >) };
+            let arg = unsafe { &mut *(arg as *mut Arg<R>) };
             let info = ObjectInfo {
                 address: info.dlpi_addr as usize,
-                name:
-                    if info.dlpi_name.is_null() {
-                        &[]
-                    } else {
-                        unsafe {
-                            CStr::from_ptr( info.dlpi_name ).to_bytes()
-                        }
-                    },
-                program_headers:
-                    if info.dlpi_phnum == 0 {
-                        &[]
-                    } else {
-                        unsafe {
-                            std::slice::from_raw_parts( info.dlpi_phdr, info.dlpi_phnum as usize )
-                        }
-                    }
+                name: if info.dlpi_name.is_null() {
+                    &[]
+                } else {
+                    unsafe { CStr::from_ptr(info.dlpi_name).to_bytes() }
+                },
+                program_headers: if info.dlpi_phnum == 0 {
+                    &[]
+                } else {
+                    unsafe { std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) }
+                },
             };
 
-            let result = (arg.callback)( info );
+            let result = (arg.callback)(info);
             match result {
-                ControlFlow::Break( result ) => {
-                    arg.result = Some( result );
+                ControlFlow::Break(result) => {
+                    arg.result = Some(result);
                     1
-                },
-                ControlFlow::Continue(()) => {
-                    0
                 }
+                ControlFlow::Continue(()) => 0,
             }
         }
 
         unsafe {
-            libc::dl_iterate_phdr( Some( callback_static::< R > ), (&mut arg) as *mut Arg< R > as *mut c_void );
+            libc::dl_iterate_phdr(
+                Some(callback_static::<R>),
+                (&mut arg) as *mut Arg<R> as *mut c_void,
+            );
         }
 
         arg.result
     }
 
-    pub fn dlsym( &self, name: impl AsRef< [u8] > ) -> Option< *mut c_void > {
-        self.dlsym_impl( name.as_ref() )
+    pub fn dlsym(&self, name: impl AsRef<[u8]>) -> Option<*mut c_void> {
+        self.dlsym_impl(name.as_ref())
     }
 
-    fn dlsym_impl( &self, name: &[u8] ) -> Option< *mut c_void > {
+    fn dlsym_impl(&self, name: &[u8]) -> Option<*mut c_void> {
         let mut dt_hash = None;
         let mut dt_strtab = None;
         let mut dt_symtab = None;
         let mut dt_gnu_hash = None;
         for dynamic in self.dynamic() {
             match dynamic.tag {
-                4 if self.check_address( dynamic.value ) => dt_hash = Some( dynamic.value as *const u32 ),
-                5 if self.check_address( dynamic.value ) => dt_strtab = Some( dynamic.value as *const u8 ),
-                6 if self.check_address( dynamic.value ) => dt_symtab = Some( dynamic.value as *const Symbol ),
-                0x6fff_fef5 if self.check_address( dynamic.value ) => dt_gnu_hash = Some( dynamic.value as *const u32 ),
+                4 if self.check_address(dynamic.value) => {
+                    dt_hash = Some(dynamic.value as *const u32)
+                }
+                5 if self.check_address(dynamic.value) => {
+                    dt_strtab = Some(dynamic.value as *const u8)
+                }
+                6 if self.check_address(dynamic.value) => {
+                    dt_symtab = Some(dynamic.value as *const Symbol)
+                }
+                0x6fff_fef5 if self.check_address(dynamic.value) => {
+                    dt_gnu_hash = Some(dynamic.value as *const u32)
+                }
                 _ => {}
             }
         }
 
-        if let (Some( dt_strtab ), Some( dt_symtab )) = (dt_strtab, dt_symtab) {
-            let result_gnu_hash = dt_gnu_hash.and_then( |dt_gnu_hash| unsafe {
-                self.dlsym_gnu_hash( dt_strtab, dt_symtab, dt_gnu_hash, name )
+        if let (Some(dt_strtab), Some(dt_symtab)) = (dt_strtab, dt_symtab) {
+            let result_gnu_hash = dt_gnu_hash.and_then(|dt_gnu_hash| unsafe {
+                self.dlsym_gnu_hash(dt_strtab, dt_symtab, dt_gnu_hash, name)
             });
 
-            if result_gnu_hash.is_some() && !cfg!( test ) {
+            if result_gnu_hash.is_some() && !cfg!(test) {
                 return result_gnu_hash;
             }
 
-            let result_elf_hash = dt_hash.and_then( |dt_hash| unsafe {
-                self.dlsym_elf_hash( dt_strtab, dt_symtab, dt_hash, name )
+            let result_elf_hash = dt_hash.and_then(|dt_hash| unsafe {
+                self.dlsym_elf_hash(dt_strtab, dt_symtab, dt_hash, name)
             });
 
-            if cfg!( test ) {
-                assert_eq!( result_gnu_hash, result_elf_hash );
+            if cfg!(test) {
+                assert_eq!(result_gnu_hash, result_elf_hash);
             }
 
             return result_elf_hash;
@@ -159,11 +171,17 @@ impl< 'a > ObjectInfo< 'a > {
         None
     }
 
-    unsafe fn dlsym_gnu_hash( &self, dt_strtab: *const u8, dt_symtab: *const Symbol, dt_gnu_hash: *const u32, name: &[u8] ) -> Option< *mut c_void > {
-        fn calculate_hash( name: &[u8] ) -> u32 {
+    unsafe fn dlsym_gnu_hash(
+        &self,
+        dt_strtab: *const u8,
+        dt_symtab: *const Symbol,
+        dt_gnu_hash: *const u32,
+        name: &[u8],
+    ) -> Option<*mut c_void> {
+        fn calculate_hash(name: &[u8]) -> u32 {
             let mut hash: u32 = 5381;
             for &byte in name {
-                hash = ( hash << 5 ).wrapping_add( hash ).wrapping_add( byte as u32 )
+                hash = (hash << 5).wrapping_add(hash).wrapping_add(byte as u32)
             }
 
             hash
@@ -174,18 +192,21 @@ impl< 'a > ObjectInfo< 'a > {
         }
 
         let nbuckets: u32 = *dt_gnu_hash;
-        let symbias: u32 = *dt_gnu_hash.add( 1 );
-        let bitmask_nwords: u32 = *dt_gnu_hash.add( 2 );
+        let symbias: u32 = *dt_gnu_hash.add(1);
+        let bitmask_nwords: u32 = *dt_gnu_hash.add(2);
         let bitmask_idxbits: u32 = bitmask_nwords - 1;
-        let shift: u32 = *dt_gnu_hash.add( 3 );
-        let bitmask: *const usize = dt_gnu_hash.add( 4 ).cast();
-        let buckets: *const u32 = dt_gnu_hash.add( 4 + (std::mem::size_of::< usize >() / 4) * bitmask_nwords as usize );
-        let chain_zero: *const u32 = buckets.wrapping_add( (nbuckets as usize).wrapping_sub( symbias as usize ) );
+        let shift: u32 = *dt_gnu_hash.add(3);
+        let bitmask: *const usize = dt_gnu_hash.add(4).cast();
+        let buckets: *const u32 =
+            dt_gnu_hash.add(4 + (std::mem::size_of::<usize>() / 4) * bitmask_nwords as usize);
+        let chain_zero: *const u32 =
+            buckets.wrapping_add((nbuckets as usize).wrapping_sub(symbias as usize));
 
-        let hash: u32 = calculate_hash( name );
+        let hash: u32 = calculate_hash(name);
 
-        let bitmask_word: usize = *bitmask.add((hash as usize / (std::mem::size_of::< usize >() * 8)) & (bitmask_idxbits as usize));
-        let mask = (std::mem::size_of::< usize >() as u32) * 8 - 1;
+        let bitmask_word: usize = *bitmask
+            .add((hash as usize / (std::mem::size_of::<usize>() * 8)) & (bitmask_idxbits as usize));
+        let mask = (std::mem::size_of::<usize>() as u32) * 8 - 1;
         let hashbit1: u32 = hash & mask;
         let hashbit2: u32 = (hash >> shift) & mask;
 
@@ -193,17 +214,20 @@ impl< 'a > ObjectInfo< 'a > {
             return None;
         }
 
-        let bucket = *buckets.add( (hash % nbuckets) as usize );
+        let bucket = *buckets.add((hash % nbuckets) as usize);
         if bucket == 0 {
             return None;
         }
 
-        let mut hasharr: *const u32 = chain_zero.add( bucket as usize );
+        let mut hasharr: *const u32 = chain_zero.add(bucket as usize);
         loop {
             if ((*hasharr ^ hash) >> 1) == 0 {
-                let symtab_offset = ((hasharr as usize) - (chain_zero as usize)) / std::mem::size_of::< u32 >();
-                if let Some( pointer ) = self.resolve_symbol( dt_strtab, dt_symtab, symtab_offset, name ) {
-                    return Some( pointer );
+                let symtab_offset =
+                    ((hasharr as usize) - (chain_zero as usize)) / std::mem::size_of::<u32>();
+                if let Some(pointer) =
+                    self.resolve_symbol(dt_strtab, dt_symtab, symtab_offset, name)
+                {
+                    return Some(pointer);
                 }
             }
 
@@ -211,17 +235,23 @@ impl< 'a > ObjectInfo< 'a > {
                 break;
             }
 
-            hasharr = hasharr.add( 1 );
+            hasharr = hasharr.add(1);
         }
 
         None
     }
 
-    unsafe fn dlsym_elf_hash( &self, dt_strtab: *const u8, dt_symtab: *const Symbol, dt_hash: *const u32, name: &[u8] ) -> Option< *mut c_void > {
-        fn calculate_hash( name: &[u8] ) -> usize {
+    unsafe fn dlsym_elf_hash(
+        &self,
+        dt_strtab: *const u8,
+        dt_symtab: *const Symbol,
+        dt_hash: *const u32,
+        name: &[u8],
+    ) -> Option<*mut c_void> {
+        fn calculate_hash(name: &[u8]) -> usize {
             let mut hash: usize = 0;
             for &byte in name {
-                hash = (hash << 4).wrapping_add( byte as usize );
+                hash = (hash << 4).wrapping_add(byte as usize);
                 let tmp = hash & 0xf0000000;
                 if tmp != 0 {
                     hash = hash ^ (tmp >> 24);
@@ -235,81 +265,94 @@ impl< 'a > ObjectInfo< 'a > {
             return None;
         }
 
+        let hash: usize = calculate_hash(name);
+        let bucket_idx = *dt_hash.add(2 + (hash % (*dt_hash as usize))) as usize;
+        let chain: *const u32 = dt_hash.add(2 + (*dt_hash as usize) + bucket_idx);
 
-        let hash: usize = calculate_hash( name );
-        let bucket_idx = *dt_hash.add( 2 + (hash % (*dt_hash as usize)) ) as usize;
-        let chain: *const u32 = dt_hash.add( 2 + (*dt_hash as usize) + bucket_idx );
-
-        std::iter::once( bucket_idx as usize )
-            .chain( (0..).map( |index| (*chain.add( index )) as usize ).take_while( |&offset| offset != 0 ) )
-            .flat_map( |offset| self.resolve_symbol( dt_strtab, dt_symtab, offset, name ) )
+        std::iter::once(bucket_idx as usize)
+            .chain(
+                (0..)
+                    .map(|index| (*chain.add(index)) as usize)
+                    .take_while(|&offset| offset != 0),
+            )
+            .flat_map(|offset| self.resolve_symbol(dt_strtab, dt_symtab, offset, name))
             .next()
     }
 
-    unsafe fn resolve_symbol( &self, dt_strtab: *const u8, dt_symtab: *const Symbol, symtab_offset: usize, expected_name: &[u8] ) -> Option< *mut c_void > {
-        let sym = &*dt_symtab.add( symtab_offset );
+    unsafe fn resolve_symbol(
+        &self,
+        dt_strtab: *const u8,
+        dt_symtab: *const Symbol,
+        symtab_offset: usize,
+        expected_name: &[u8],
+    ) -> Option<*mut c_void> {
+        let sym = &*dt_symtab.add(symtab_offset);
         if sym.st_name == 0 {
             return None;
         }
 
-        let symbol_name = CStr::from_ptr( dt_strtab.add( sym.st_name as usize ) as *const c_char ).to_bytes();
+        let symbol_name =
+            CStr::from_ptr(dt_strtab.add(sym.st_name as usize) as *const c_char).to_bytes();
         if symbol_name != expected_name {
             return None;
         }
 
         let mut address = (self.address + sym.st_value as usize) as *mut c_void;
         if sym.st_info & 0b1111 == STT_GNU_IFUNC {
-            let resolver: extern "C" fn() -> *mut c_void = std::mem::transmute( address );
+            let resolver: extern "C" fn() -> *mut c_void = std::mem::transmute(address);
             address = resolver();
         }
 
-        Some( address )
+        Some(address)
     }
 
-    fn check_address( &self, address: usize ) -> bool {
+    fn check_address(&self, address: usize) -> bool {
         let address = address as u64;
-        self.program_headers.iter().any( |header| {
-            header.p_type == libc::PT_LOAD &&
-            (address < (header.p_memsz as u64) + (header.p_vaddr as u64) + (self.address as u64)) &&
-            (address >= (header.p_vaddr as u64) + (self.address as u64))
+        self.program_headers.iter().any(|header| {
+            header.p_type == libc::PT_LOAD
+                && (address
+                    < (header.p_memsz as u64) + (header.p_vaddr as u64) + (self.address as u64))
+                && (address >= (header.p_vaddr as u64) + (self.address as u64))
         })
     }
 
-    fn dynamic( &self ) -> impl Iterator< Item = &Dynamic > {
-        let mut dynamic = self.program_headers.iter()
-            .find( |header| header.p_type == libc::PT_DYNAMIC )
-            .map( |header| (header.p_vaddr as usize + self.address) as *const Dynamic )
-            .unwrap_or( std::ptr::null() );
+    fn dynamic(&self) -> impl Iterator<Item = &Dynamic> {
+        let mut dynamic = self
+            .program_headers
+            .iter()
+            .find(|header| header.p_type == libc::PT_DYNAMIC)
+            .map(|header| (header.p_vaddr as usize + self.address) as *const Dynamic)
+            .unwrap_or(std::ptr::null());
 
-        std::iter::from_fn( move ||
-            unsafe {
-                if dynamic.is_null() || (*dynamic).tag == 0 {
-                    return None;
-                }
-
-                let out = dynamic;
-                dynamic = dynamic.add( 1 );
-                Some( &*out )
+        std::iter::from_fn(move || unsafe {
+            if dynamic.is_null() || (*dynamic).tag == 0 {
+                return None;
             }
-        )
+
+            let out = dynamic;
+            dynamic = dynamic.add(1);
+            Some(&*out)
+        })
     }
 }
 
 #[test]
 fn test_dlsym() {
-    let result = ObjectInfo::each( |info| {
-        if info.name_contains( "libc.so" ) {
-            assert!( info.dlsym( "gettimeofday" ).is_some() );
-            assert!( info.dlsym( "malloc" ).is_some() );
-            assert!( info.dlsym( "sleep" ).is_some() );
+    let result = ObjectInfo::each(|info| {
+        if info.name_contains("libc.so") {
+            assert!(info.dlsym("gettimeofday").is_some());
+            assert!(info.dlsym("malloc").is_some());
+            assert!(info.dlsym("sleep").is_some());
 
             unsafe {
-                let strlen: extern "C" fn( *const u8 ) -> usize = std::mem::transmute( info.dlsym( "strlen" ).unwrap() );
-                assert_eq!( strlen( b"foobar\0".as_ptr() ), 6 );
+                let strlen: extern "C" fn(*const u8) -> usize =
+                    std::mem::transmute(info.dlsym("strlen").unwrap());
+                assert_eq!(strlen(b"foobar\0".as_ptr()), 6);
 
-                let isalnum: extern "C" fn( u32 ) -> u32 = std::mem::transmute( info.dlsym( "isalnum" ).unwrap() );
+                let isalnum: extern "C" fn(u32) -> u32 =
+                    std::mem::transmute(info.dlsym("isalnum").unwrap());
                 for byte in 0..=255 {
-                    assert_eq!( isalnum( byte as u32 ), libc::isalnum( byte as _ ) as _ );
+                    assert_eq!(isalnum(byte as u32), libc::isalnum(byte as _) as _);
                 }
             }
 
@@ -319,5 +362,5 @@ fn test_dlsym() {
         ControlFlow::Continue(())
     });
 
-    assert!( result.is_some() );
+    assert!(result.is_some());
 }

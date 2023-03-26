@@ -1,16 +1,16 @@
 #[inline(never)]
 #[cold]
-pub fn fatal_error( args: std::fmt::Arguments ) -> ! {
+pub fn fatal_error(args: std::fmt::Arguments) -> ! {
     use log::Log;
 
     let record = log::RecordBuilder::new()
-        .level( log::Level::Error )
-        .args( args )
+        .level(log::Level::Error)
+        .args(args)
         .build();
 
     unsafe {
-        crate::init::SYSCALL_LOGGER.log( &record );
-        crate::init::FILE_LOGGER.log( &record );
+        crate::init::SYSCALL_LOGGER.log(&record);
+        crate::init::FILE_LOGGER.log(&record);
     }
 
     panic!();
@@ -37,14 +37,17 @@ macro_rules! assert_eq {
         match (&$lhs, &$rhs) {
             (lhs, rhs) => {
                 if lhs != rhs {
-                    $crate::macros::fatal_error( format_args!(
+                    $crate::macros::fatal_error(format_args!(
                         "assertion failed at {}:{}: {} == {}",
-                        std::file!(), std::line!(), stringify!( $lhs ), stringify!( $rhs )
+                        std::file!(),
+                        std::line!(),
+                        stringify!($lhs),
+                        stringify!($rhs)
                     ));
                 }
             }
         }
-    }}
+    }};
 }
 
 macro_rules! assert_ne {
@@ -52,12 +55,15 @@ macro_rules! assert_ne {
         match (&$lhs, &$rhs) {
             (lhs, rhs) => {
                 if lhs == rhs {
-                    $crate::macros::fatal_error( format_args!(
+                    $crate::macros::fatal_error(format_args!(
                         "assertion failed at {}:{}: {} != {}",
-                        std::file!(), std::line!(), stringify!( $lhs ), stringify!( $rhs )
+                        std::file!(),
+                        std::line!(),
+                        stringify!($lhs),
+                        stringify!($rhs)
                     ));
                 }
             }
         }
-    }}
+    }};
 }
