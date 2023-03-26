@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 log = "0.4"
-env_logger = "0.6"
+env_logger = "0.10"
 structopt = "0.3"
 cli-core = { path = "../cli-core" }
 server-core = { path = "../server-core", optional = true }
