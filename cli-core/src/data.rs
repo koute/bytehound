@@ -211,6 +211,7 @@ pub enum SourceKey {
 }
 
 bitflags! {
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
     pub struct AllocationFlags: u8 {
         const IS_PREV_IN_USE    = 1 << 0;
         const IS_MMAPED         = 1 << 1;

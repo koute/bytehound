@@ -119,13 +119,24 @@ pub struct AllocBody {
 }
 
 bitflags::bitflags! {
-    #[derive(Readable, Writable)]
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
     #[repr(transparent)]
     pub struct RegionFlags: u32 {
         const READABLE = 1 << 0;
         const WRITABLE = 1 << 1;
         const EXECUTABLE = 1 << 2;
         const SHARED = 1 << 3;
+    }
+}
+
+impl<C: Context> Writable<C> for RegionFlags {
+    fn write_to<T: ?Sized + Writer<C>>(&self, writer: &mut T) -> Result<(), C::Error> {
+        writer.write_u32(self.bits())
+    }
+}
+impl<'a, C: Context> Readable<'a, C> for RegionFlags {
+    fn read_from<R: Reader<'a, C>>(reader: &mut R) -> Result<Self, <C as Context>::Error> {
+        Ok(Self::from_bits(reader.read_u32()?).unwrap())
     }
 }
 
