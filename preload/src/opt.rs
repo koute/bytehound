@@ -4,13 +4,13 @@ pub struct Opts {
     is_initialized: bool,
 
     pub base_server_port: u16,
-    pub chown_output_to: Option< u32 >,
+    pub chown_output_to: Option<u32>,
     pub disabled_by_default: bool,
     pub enable_broadcasts: bool,
     pub enable_server: bool,
     pub enable_shadow_stack: bool,
     pub grab_backtraces_on_free: bool,
-    pub include_file: Option< Buffer >,
+    pub include_file: Option<Buffer>,
     pub output_path_pattern: Buffer,
     pub register_sigusr1: bool,
     pub register_sigusr2: bool,
@@ -22,7 +22,7 @@ pub struct Opts {
     pub backtrace_cache_size_level_2: usize,
     pub cull_temporary_allocations: bool,
     pub temporary_allocation_lifetime_threshold: u64,
-    pub temporary_allocation_pending_threshold: Option< usize >,
+    pub temporary_allocation_pending_threshold: Option<usize>,
     pub track_child_processes: bool,
     pub disable_pr_set_vma_anon_name: bool,
 }
@@ -38,7 +38,7 @@ static mut OPTS: Opts = Opts {
     enable_shadow_stack: true,
     grab_backtraces_on_free: true,
     include_file: None,
-    output_path_pattern: Buffer::from_fixed_slice( b"memory-profiling_%e_%t_%p.dat" ),
+    output_path_pattern: Buffer::from_fixed_slice(b"memory-profiling_%e_%t_%p.dat"),
     register_sigusr1: true,
     register_sigusr2: true,
     use_perf_event_open: true,
@@ -55,49 +55,54 @@ static mut OPTS: Opts = Opts {
 };
 
 trait ParseVar: Sized {
-    fn parse_var( value: Buffer ) -> Option< Self >;
+    fn parse_var(value: Buffer) -> Option<Self>;
 }
 
 impl ParseVar for bool {
-    fn parse_var( value: Buffer ) -> Option< Self > {
-        Some( value.as_slice() == b"1" || value.as_slice() == b"true" )
+    fn parse_var(value: Buffer) -> Option<Self> {
+        Some(value.as_slice() == b"1" || value.as_slice() == b"true")
     }
 }
 
 impl ParseVar for u16 {
-    fn parse_var( value: Buffer ) -> Option< Self > {
+    fn parse_var(value: Buffer) -> Option<Self> {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for u32 {
-    fn parse_var( value: Buffer ) -> Option< Self > {
+    fn parse_var(value: Buffer) -> Option<Self> {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for u64 {
-    fn parse_var( value: Buffer ) -> Option< Self > {
+    fn parse_var(value: Buffer) -> Option<Self> {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for usize {
-    fn parse_var( value: Buffer ) -> Option< Self > {
+    fn parse_var(value: Buffer) -> Option<Self> {
         value.to_str()?.parse().ok()
     }
 }
 
 impl ParseVar for Buffer {
-    fn parse_var( value: Buffer ) -> Option< Self > {
-        value.to_str().and_then( |value| Buffer::from_slice( value.as_bytes() ) )
+    fn parse_var(value: Buffer) -> Option<Self> {
+        value
+            .to_str()
+            .and_then(|value| Buffer::from_slice(value.as_bytes()))
     }
 }
 
-impl< T > ParseVar for Option< T > where T: ParseVar {
-    fn parse_var( value: Buffer ) -> Option< Self > {
-        if let Some( value ) = T::parse_var( value ) {
-            Some( Some( value ) )
+impl<T> ParseVar for Option<T>
+where
+    T: ParseVar,
+{
+    fn parse_var(value: Buffer) -> Option<Self> {
+        if let Some(value) = T::parse_var(value) {
+            Some(Some(value))
         } else {
             None
         }
@@ -119,7 +124,7 @@ macro_rules! opts {
 }
 
 pub unsafe fn initialize() {
-    info!( "Options:" );
+    info!("Options:");
 
     let opts = &mut OPTS;
     opts! {
@@ -165,7 +170,9 @@ pub fn is_initialized() -> bool {
 #[inline(never)]
 #[cold]
 fn crash() {
-    crate::logger::raw_eprint( b"bytehound: fatal error: opts accessed before they're initialized\n" );
+    crate::logger::raw_eprint(
+        b"bytehound: fatal error: opts accessed before they're initialized\n",
+    );
     unsafe {
         libc::abort();
     }
@@ -193,14 +200,15 @@ pub fn emit_partial_backtraces() -> bool {
 
     lazy_static! {
         static ref VALUE: bool = {
-            let value = unsafe { crate::syscall::getenv( b"MEMORY_PROFILER_EMIT_PARTIAL_BACKTRACES" ) }
-                .map( |value| value.as_slice() == b"1" )
-                .unwrap_or( true );
+            let value =
+                unsafe { crate::syscall::getenv(b"MEMORY_PROFILER_EMIT_PARTIAL_BACKTRACES") }
+                    .map(|value| value.as_slice() == b"1")
+                    .unwrap_or(true);
 
             if value {
-                info!( "Will emit partial backtraces" );
+                info!("Will emit partial backtraces");
             } else {
-                info!( "Will NOT emit partial backtraces" );
+                info!("Will NOT emit partial backtraces");
             }
 
             value
