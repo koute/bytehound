@@ -114,7 +114,7 @@ pub unsafe extern "C" fn bytehound_mimalloc_raw_mmap( addr: *mut c_void, length:
     // Here we abuse the fact that an memfd-based map will have its name displayed in maps.
     //
     // It's nasty, but it works.
-    let fd = libc::memfd_create( name.as_ptr().cast(), libc::MFD_CLOEXEC );
+    let fd = syscall::memfd_create( name.as_ptr().cast(), libc::MFD_CLOEXEC );
     assert!( fd >= 0 );
     libc::ftruncate( fd, length as _ );
     fildes = fd;
