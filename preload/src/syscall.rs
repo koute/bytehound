@@ -18,6 +18,7 @@ macro_rules! syscall {
     (@to_libc MMAP2) => { libc::SYS_mmap2 };
     (@to_libc MUNMAP) => { libc::SYS_munmap };
     (@to_libc GETPID) => { libc::SYS_getpid };
+    (@to_libc MEMFD_CREATE) => { libc::SYS_memfd_create };
 
     ($num:ident) => {
         libc::syscall( syscall!( @to_libc $num ) )
@@ -166,4 +167,10 @@ pub unsafe fn pr_set_vma_anon_name( addr: *mut libc::c_void, length: usize, name
     );
 
     errcode >= 0
+}
+
+pub fn memfd_create( name: *const libc::c_char, flags: libc::c_uint ) -> libc::c_int {
+    unsafe {
+        syscall!( MEMFD_CREATE, name, flags ) as _
+    }
 }

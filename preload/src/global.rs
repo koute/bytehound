@@ -603,7 +603,7 @@ fn initialize_stage_1() {
     check_set_vma_anon_name();
     if !is_pr_set_vma_anon_name_supported() {
         unsafe {
-            let fd = libc::memfd_create( b"bytehound_padding\0".as_ptr().cast(), libc::MFD_CLOEXEC );
+            let fd = syscall::memfd_create( b"bytehound_padding\0".as_ptr().cast(), libc::MFD_CLOEXEC );
             if fd < 0 {
                 error!( "Failed to create a memfd for a dummy map!" );
                 libc::abort();
