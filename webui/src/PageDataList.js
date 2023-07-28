@@ -19,7 +19,14 @@ export default class PageDataList extends React.Component {
                 Cell: cell => {
                     return fmt_date_unix( cell.original.timestamp.secs );
                 },
-                maxWidth: 200
+                maxWidth: 200,
+                accessor: d => d.timestamp,
+                sortMethod: (a, b) => {
+                    if (a.secs === b.secs) {
+                        return a.fract_nsecs > b.fract_nsecs ? 1 : -1;
+                    }
+                    return a.secs > b.secs ? 1 : -1;
+                }
             },
             {
                 Header: "Binary",
