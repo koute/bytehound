@@ -1279,7 +1279,7 @@ impl Loader {
 
         for (raw_backtrace_id, stats) in self.group_stats.iter().enumerate() {
             let (backtrace_offset, backtrace_len) = self.backtraces[ raw_backtrace_id ];
-            for &frame_id in &self.backtraces_storage[ backtrace_offset as usize..(backtrace_offset + backtrace_len) as usize ] {
+            for &frame_id in &self.backtraces_storage[ backtrace_offset as usize..(backtrace_offset as usize + backtrace_len as usize) ] {
                 self.frames[ frame_id ].increment_count( stats.alloc_count );
             }
         }

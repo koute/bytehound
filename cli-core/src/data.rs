@@ -830,7 +830,7 @@ impl Data {
     #[inline]
     pub fn get_frame_ids( &self, id: BacktraceId ) -> &[FrameId] {
         let (offset, length) = self.backtraces[ id.0 as usize ];
-        &self.backtraces_storage[ (offset as usize)..(offset + length) as usize ]
+        &self.backtraces_storage[ (offset as usize)..(offset as usize + length as usize) ]
     }
 
     pub fn get_frame( &self, id: FrameId ) -> &Frame {
