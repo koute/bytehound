@@ -821,7 +821,13 @@ impl Loader {
                 self.address_space_needs_reloading = true;
             },
             Event::MemoryMapEx { map_id, address, requested_length, mmap_protection, mmap_flags, source, requested_address: _, file_descriptor: _, offset: _ } => {
-                let backtrace = self.lookup_backtrace( source.backtrace ).unwrap();
+                let backtrace = match self.lookup_backtrace( source.backtrace ) {
+                    None => {
+                        warn!("cannot file backtrace: id = {}", source.backtrace);
+                        return;
+                    }
+                    Some(backtrace) => backtrace,
+                };
                 let source = MapSource {
                     timestamp: self.shift_timestamp( source.timestamp ),
                     backtrace,
@@ -977,15 +983,22 @@ impl Loader {
                     }
                 };
 
-                let sources = sources.iter().map( |source| {
-                    let backtrace = self.lookup_backtrace( source.source.backtrace ).unwrap();
-                    MapRegionDeallocationSource {
-                        address: source.address,
-                        length: source.length,
-                        source: MapSource {
-                            timestamp: self.shift_timestamp( source.source.timestamp ),
-                            backtrace,
-                            thread: source.source.thread
+                let sources = sources.iter().filter_map( |source| {
+                    match self.lookup_backtrace( source.source.backtrace ) {
+                        None => {
+                            warn!("cannot file backtrace: id = {}", source.source.backtrace);
+                            None
+                        }
+                        Some(backtrace) => {
+                            Some(MapRegionDeallocationSource {
+                                address: source.address,
+                                length: source.length,
+                                source: MapSource {
+                                    timestamp: self.shift_timestamp( source.source.timestamp ),
+                                    backtrace,
+                                    thread: source.source.thread
+                                }
+                            })
                         }
                     }
                 }).collect();
